@@ -335,10 +335,7 @@ void x86_cpu_dump_local_apic_state(CPUState *cs, int flags)
     }
     qemu_printf(" PPR 0x%02x\n", apic_get_ppr(s));
 }
-#else
-void x86_cpu_dump_local_apic_state(CPUState *cs, int flags)
-{
-}
+
 #endif /* !CONFIG_USER_ONLY */
 
 #define DUMP_CODE_BYTES_TOTAL    50
@@ -464,13 +461,13 @@ void x86_cpu_dump_state(CPUState *cs, FILE *f, int flags)
             snprintf(cc_op_name, sizeof(cc_op_name), "[%d]", env->cc_op);
 #ifdef TARGET_X86_64
         if (env->hflags & HF_CS64_MASK) {
-            qemu_fprintf(f, "CCS=%016" PRIx64 " CCD=%016" PRIx64 " CCO=%-8s\n",
+            qemu_fprintf(f, "CCS=%016" PRIx64 " CCD=%016" PRIx64 " CCO=%s\n",
                          env->cc_src, env->cc_dst,
                          cc_op_name);
         } else
 #endif
         {
-            qemu_fprintf(f, "CCS=%08x CCD=%08x CCO=%-8s\n",
+            qemu_fprintf(f, "CCS=%08x CCD=%08x CCO=%s\n",
                          (uint32_t)env->cc_src, (uint32_t)env->cc_dst,
                          cc_op_name);
         }

@@ -24,7 +24,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/pci/pci.h"
+#include "hw/pci/pci_device.h"
 #include "hw/irq.h"
 #include "hw/nvram/eeprom93xx.h"
 #include "hw/scsi/esp.h"
@@ -79,7 +79,7 @@ struct PCIESPState {
 
 static void esp_pci_handle_idle(PCIESPState *pci, uint32_t val)
 {
-    ESPState *s = ESP(&pci->esp);
+    ESPState *s = &pci->esp;
 
     trace_esp_pci_dma_idle(val);
     esp_dma_enable(s, 0, 0);
@@ -93,7 +93,7 @@ static void esp_pci_handle_blast(PCIESPState *pci, uint32_t val)
 
 static void esp_pci_handle_abort(PCIESPState *pci, uint32_t val)
 {
-    ESPState *s = ESP(&pci->esp);
+    ESPState *s = &pci->esp;
 
     trace_esp_pci_dma_abort(val);
     if (s->current_req) {
@@ -103,7 +103,7 @@ static void esp_pci_handle_abort(PCIESPState *pci, uint32_t val)
 
 static void esp_pci_handle_start(PCIESPState *pci, uint32_t val)
 {
-    ESPState *s = ESP(&pci->esp);
+    ESPState *s = &pci->esp;
 
     trace_esp_pci_dma_start(val);
 
@@ -161,7 +161,7 @@ static void esp_pci_dma_write(PCIESPState *pci, uint32_t saddr, uint32_t val)
 
 static uint32_t esp_pci_dma_read(PCIESPState *pci, uint32_t saddr)
 {
-    ESPState *s = ESP(&pci->esp);
+    ESPState *s = &pci->esp;
     uint32_t val;
 
     val = pci->dma_regs[saddr];
@@ -183,7 +183,7 @@ static void esp_pci_io_write(void *opaque, hwaddr addr,
                              uint64_t val, unsigned int size)
 {
     PCIESPState *pci = opaque;
-    ESPState *s = ESP(&pci->esp);
+    ESPState *s = &pci->esp;
 
     if (size < 4 || addr & 3) {
         /* need to upgrade request: we only support 4-bytes accesses */
@@ -228,7 +228,7 @@ static uint64_t esp_pci_io_read(void *opaque, hwaddr addr,
                                 unsigned int size)
 {
     PCIESPState *pci = opaque;
-    ESPState *s = ESP(&pci->esp);
+    ESPState *s = &pci->esp;
     uint32_t ret;
 
     if (addr < 0x40) {
@@ -280,7 +280,7 @@ static void esp_pci_dma_memory_rw(PCIESPState *pci, uint8_t *buf, int len,
         len = pci->dma_regs[DMA_WBC];
     }
 
-    pci_dma_rw(PCI_DEVICE(pci), addr, buf, len, dir);
+    pci_dma_rw(PCI_DEVICE(pci), addr, buf, len, dir, MEMTXATTRS_UNSPECIFIED);
 
     /* update status registers */
     pci->dma_regs[DMA_WBC] -= len;
@@ -315,7 +315,7 @@ static const MemoryRegionOps esp_pci_io_ops = {
 static void esp_pci_hard_reset(DeviceState *dev)
 {
     PCIESPState *pci = PCI_ESP(dev);
-    ESPState *s = ESP(&pci->esp);
+    ESPState *s = &pci->esp;
 
     esp_hard_reset(s);
     pci->dma_regs[DMA_CMD] &= ~(DMA_CMD_DIR | DMA_CMD_INTE_D | DMA_CMD_INTE_P
@@ -333,7 +333,7 @@ static const VMStateDescription vmstate_esp_pci_scsi = {
     .version_id = 2,
     .minimum_version_id = 1,
     .pre_save = esp_pre_save,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(parent_obj, PCIESPState),
         VMSTATE_BUFFER_UNSAFE(dma_regs, PCIESPState, 0, 8 * sizeof(uint32_t)),
         VMSTATE_UINT8_V(esp.mig_version_id, PCIESPState, 2),
@@ -366,7 +366,7 @@ static void esp_pci_scsi_realize(PCIDevice *dev, Error **errp)
 {
     PCIESPState *pci = PCI_ESP(dev);
     DeviceState *d = DEVICE(dev);
-    ESPState *s = ESP(&pci->esp);
+    ESPState *s = &pci->esp;
     uint8_t *pci_conf;
 
     if (!qdev_realize(DEVICE(s), NULL, errp)) {
@@ -388,13 +388,13 @@ static void esp_pci_scsi_realize(PCIDevice *dev, Error **errp)
     pci_register_bar(dev, 0, PCI_BASE_ADDRESS_SPACE_IO, &pci->io);
     s->irq = pci_allocate_irq(dev);
 
-    scsi_bus_new(&s->bus, sizeof(s->bus), d, &esp_pci_scsi_info, NULL);
+    scsi_bus_init(&s->bus, sizeof(s->bus), d, &esp_pci_scsi_info);
 }
 
 static void esp_pci_scsi_exit(PCIDevice *d)
 {
     PCIESPState *pci = PCI_ESP(d);
-    ESPState *s = ESP(&pci->esp);
+    ESPState *s = &pci->esp;
 
     qemu_free_irq(s->irq);
 }

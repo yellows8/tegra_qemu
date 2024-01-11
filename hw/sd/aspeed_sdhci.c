@@ -14,6 +14,7 @@
 #include "hw/irq.h"
 #include "migration/vmstate.h"
 #include "hw/qdev-properties.h"
+#include "trace.h"
 
 #define ASPEED_SDHCI_INFO            0x00
 #define  ASPEED_SDHCI_INFO_SLOT1     (1 << 17)
@@ -60,6 +61,8 @@ static uint64_t aspeed_sdhci_read(void *opaque, hwaddr addr, unsigned int size)
         }
     }
 
+    trace_aspeed_sdhci_read(addr, size, (uint64_t) val);
+
     return (uint64_t)val;
 }
 
@@ -67,6 +70,8 @@ static void aspeed_sdhci_write(void *opaque, hwaddr addr, uint64_t val,
                                unsigned int size)
 {
     AspeedSDHCIState *sdhci = opaque;
+
+    trace_aspeed_sdhci_write(addr, size, val);
 
     switch (addr) {
     case ASPEED_SDHCI_INFO:
@@ -172,7 +177,7 @@ static void aspeed_sdhci_reset(DeviceState *dev)
 static const VMStateDescription vmstate_aspeed_sdhci = {
     .name = TYPE_ASPEED_SDHCI,
     .version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, AspeedSDHCIState, ASPEED_SDHCI_NUM_REGS),
         VMSTATE_END_OF_LIST(),
     },
@@ -193,16 +198,13 @@ static void aspeed_sdhci_class_init(ObjectClass *classp, void *data)
     device_class_set_props(dc, aspeed_sdhci_properties);
 }
 
-static TypeInfo aspeed_sdhci_info = {
-    .name          = TYPE_ASPEED_SDHCI,
-    .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(AspeedSDHCIState),
-    .class_init    = aspeed_sdhci_class_init,
+static const TypeInfo aspeed_sdhci_types[] = {
+    {
+        .name           = TYPE_ASPEED_SDHCI,
+        .parent         = TYPE_SYS_BUS_DEVICE,
+        .instance_size  = sizeof(AspeedSDHCIState),
+        .class_init     = aspeed_sdhci_class_init,
+    },
 };
 
-static void aspeed_sdhci_register_types(void)
-{
-    type_register_static(&aspeed_sdhci_info);
-}
-
-type_init(aspeed_sdhci_register_types)
+DEFINE_TYPES(aspeed_sdhci_types)

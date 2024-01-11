@@ -26,7 +26,7 @@
 #include "qom/object.h"
 
 #define TYPE_VIRTIO_IOMMU "virtio-iommu-device"
-#define TYPE_VIRTIO_IOMMU_PCI "virtio-iommu-device-base"
+#define TYPE_VIRTIO_IOMMU_PCI "virtio-iommu-pci"
 OBJECT_DECLARE_SIMPLE_TYPE(VirtIOIOMMU, VIRTIO_IOMMU)
 
 #define TYPE_VIRTIO_IOMMU_MEMORY_REGION "virtio-iommu-memory-region"
@@ -37,6 +37,11 @@ typedef struct IOMMUDevice {
     int           devfn;
     IOMMUMemoryRegion  iommu_mr;
     AddressSpace  as;
+    MemoryRegion root;          /* The root container of the device */
+    MemoryRegion bypass_mr;     /* The alias of shared memory MR */
+    GList *resv_regions;
+    GList *host_resv_ranges;
+    bool probe_done;
 } IOMMUDevice;
 
 typedef struct IOMMUPciBus {
@@ -53,11 +58,14 @@ struct VirtIOIOMMU {
     GHashTable *as_by_busptr;
     IOMMUPciBus *iommu_pcibus_by_bus_num[PCI_BUS_MAX];
     PCIBus *primary_bus;
-    ReservedRegion *reserved_regions;
-    uint32_t nb_reserved_regions;
+    ReservedRegion *prop_resv_regions;
+    uint32_t nr_prop_resv_regions;
     GTree *domains;
-    QemuMutex mutex;
+    QemuRecMutex mutex;
     GTree *endpoints;
+    bool boot_bypass;
+    Notifier machine_done;
+    bool granule_frozen;
 };
 
 #endif

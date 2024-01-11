@@ -35,8 +35,9 @@ static bool kvm_cpu_realizefn(CPUState *cs, Error **errp)
      * x86_cpu_realize():
      *  -> x86_cpu_expand_features()
      *  -> cpu_exec_realizefn():
-     *            -> accel_cpu_realizefn()
+     *            -> accel_cpu_common_realize()
      *               kvm_cpu_realizefn() -> host_cpu_realizefn()
+     *  -> cpu_common_realizefn()
      *  -> check/update ucode_rev, phys_bits, mwait
      */
     if (cpu->max_features) {
@@ -84,7 +85,7 @@ static void kvm_cpu_max_instance_init(X86CPU *cpu)
 static void kvm_cpu_xsave_init(void)
 {
     static bool first = true;
-    KVMState *s = kvm_state;
+    uint32_t eax, ebx, ecx, edx;
     int i;
 
     if (!first) {
@@ -99,12 +100,18 @@ static void kvm_cpu_xsave_init(void)
     for (i = XSTATE_SSE_BIT + 1; i < XSAVE_STATE_AREA_COUNT; i++) {
         ExtSaveArea *esa = &x86_ext_save_areas[i];
 
-        if (esa->size) {
-            int sz = kvm_arch_get_supported_cpuid(s, 0xd, i, R_EAX);
-            if (sz != 0) {
-                assert(esa->size == sz);
-                esa->offset = kvm_arch_get_supported_cpuid(s, 0xd, i, R_EBX);
-            }
+        if (!esa->size) {
+            continue;
+        }
+        if ((x86_cpu_get_supported_feature_word(esa->feature, false) & esa->bits)
+            != esa->bits) {
+            continue;
+        }
+        host_cpuid(0xd, i, &eax, &ebx, &ecx, &edx);
+        if (eax != 0) {
+            assert(esa->size == eax);
+            esa->offset = ebx;
+            esa->ecx = ecx;
         }
     }
 }
@@ -165,7 +172,7 @@ static void kvm_cpu_instance_init(CPUState *cs)
         /* only applies to builtin_x86_defs cpus */
         if (!kvm_irqchip_in_kernel()) {
             x86_cpu_change_kvm_default("x2apic", "off");
-        } else if (kvm_irqchip_is_split() && kvm_enable_x2apic()) {
+        } else if (kvm_irqchip_is_split()) {
             x86_cpu_change_kvm_default("kvm-msi-ext-dest-id", "on");
         }
 
@@ -184,7 +191,7 @@ static void kvm_cpu_accel_class_init(ObjectClass *oc, void *data)
 {
     AccelCPUClass *acc = ACCEL_CPU_CLASS(oc);
 
-    acc->cpu_realizefn = kvm_cpu_realizefn;
+    acc->cpu_target_realize = kvm_cpu_realizefn;
     acc->cpu_instance_init = kvm_cpu_instance_init;
 }
 static const TypeInfo kvm_cpu_accel_type_info = {

@@ -27,7 +27,7 @@
 #include "helper_regs.h"
 #include "sysemu/tcg.h"
 
-target_ulong cpu_read_xer(CPUPPCState *env)
+target_ulong cpu_read_xer(const CPUPPCState *env)
 {
     if (is_isa300(env)) {
         return env->xer | (env->so << XER_SO) |
@@ -59,6 +59,7 @@ void ppc_store_vscr(CPUPPCState *env, uint32_t vscr)
     env->vscr_sat.u64[0] = vscr & (1u << VSCR_SAT);
     env->vscr_sat.u64[1] = 0;
     set_flush_to_zero((vscr >> VSCR_NJ) & 1, &env->vec_status);
+    set_flush_inputs_to_zero((vscr >> VSCR_NJ) & 1, &env->vec_status);
 }
 
 uint32_t ppc_get_vscr(CPUPPCState *env)
@@ -67,33 +68,22 @@ uint32_t ppc_get_vscr(CPUPPCState *env)
     return env->vscr | (sat << VSCR_SAT);
 }
 
-#ifdef CONFIG_SOFTMMU
-void ppc_store_sdr1(CPUPPCState *env, target_ulong value)
+void ppc_set_cr(CPUPPCState *env, uint64_t cr)
 {
-    PowerPCCPU *cpu = env_archcpu(env);
-    qemu_log_mask(CPU_LOG_MMU, "%s: " TARGET_FMT_lx "\n", __func__, value);
-    assert(!cpu->env.has_hv_mode || !cpu->vhyp);
-#if defined(TARGET_PPC64)
-    if (mmu_is_64bit(env->mmu_model)) {
-        target_ulong sdr_mask = SDR_64_HTABORG | SDR_64_HTABSIZE;
-        target_ulong htabsize = value & SDR_64_HTABSIZE;
-
-        if (value & ~sdr_mask) {
-            qemu_log_mask(LOG_GUEST_ERROR, "Invalid bits 0x"TARGET_FMT_lx
-                     " set in SDR1", value & ~sdr_mask);
-            value &= sdr_mask;
-        }
-        if (htabsize > 28) {
-            qemu_log_mask(LOG_GUEST_ERROR, "Invalid HTABSIZE 0x" TARGET_FMT_lx
-                     " stored in SDR1", htabsize);
-            return;
-        }
+    for (int i = 7; i >= 0; i--) {
+        env->crf[i] = cr & 0xf;
+        cr >>= 4;
     }
-#endif /* defined(TARGET_PPC64) */
-    /* FIXME: Should check for valid HTABMASK values in 32-bit case */
-    env->spr[SPR_SDR1] = value;
 }
-#endif /* CONFIG_SOFTMMU */
+
+uint64_t ppc_get_cr(const CPUPPCState *env)
+{
+    uint64_t cr = 0;
+    for (int i = 0; i < 8; i++) {
+        cr |= (env->crf[i] & 0xf) << (4 * (7 - i));
+    }
+    return cr;
+}
 
 /* GDBstub can read and write MSR... */
 void ppc_store_msr(CPUPPCState *env, target_ulong value)
@@ -101,6 +91,7 @@ void ppc_store_msr(CPUPPCState *env, target_ulong value)
     hreg_store_msr(env, value, 0);
 }
 
+#if !defined(CONFIG_USER_ONLY)
 void ppc_store_lpcr(PowerPCCPU *cpu, target_ulong val)
 {
     PowerPCCPUClass *pcc = POWERPC_CPU_GET_CLASS(cpu);
@@ -109,14 +100,103 @@ void ppc_store_lpcr(PowerPCCPU *cpu, target_ulong val)
     env->spr[SPR_LPCR] = val & pcc->lpcr_mask;
     /* The gtse bit affects hflags */
     hreg_compute_hflags(env);
+
+    ppc_maybe_interrupt(env);
 }
+
+#if defined(TARGET_PPC64)
+void ppc_update_ciabr(CPUPPCState *env)
+{
+    CPUState *cs = env_cpu(env);
+    target_ulong ciabr = env->spr[SPR_CIABR];
+    target_ulong ciea, priv;
+
+    ciea = ciabr & PPC_BITMASK(0, 61);
+    priv = ciabr & PPC_BITMASK(62, 63);
+
+    if (env->ciabr_breakpoint) {
+        cpu_breakpoint_remove_by_ref(cs, env->ciabr_breakpoint);
+        env->ciabr_breakpoint = NULL;
+    }
+
+    if (priv) {
+        cpu_breakpoint_insert(cs, ciea, BP_CPU, &env->ciabr_breakpoint);
+    }
+}
+
+void ppc_store_ciabr(CPUPPCState *env, target_ulong val)
+{
+    env->spr[SPR_CIABR] = val;
+    ppc_update_ciabr(env);
+}
+
+void ppc_update_daw0(CPUPPCState *env)
+{
+    CPUState *cs = env_cpu(env);
+    target_ulong deaw = env->spr[SPR_DAWR0] & PPC_BITMASK(0, 60);
+    uint32_t dawrx = env->spr[SPR_DAWRX0];
+    int mrd = extract32(dawrx, PPC_BIT_NR(48), 54 - 48);
+    bool dw = extract32(dawrx, PPC_BIT_NR(57), 1);
+    bool dr = extract32(dawrx, PPC_BIT_NR(58), 1);
+    bool hv = extract32(dawrx, PPC_BIT_NR(61), 1);
+    bool sv = extract32(dawrx, PPC_BIT_NR(62), 1);
+    bool pr = extract32(dawrx, PPC_BIT_NR(62), 1);
+    vaddr len;
+    int flags;
+
+    if (env->dawr0_watchpoint) {
+        cpu_watchpoint_remove_by_ref(cs, env->dawr0_watchpoint);
+        env->dawr0_watchpoint = NULL;
+    }
+
+    if (!dr && !dw) {
+        return;
+    }
+
+    if (!hv && !sv && !pr) {
+        return;
+    }
+
+    len = (mrd + 1) * 8;
+    flags = BP_CPU | BP_STOP_BEFORE_ACCESS;
+    if (dr) {
+        flags |= BP_MEM_READ;
+    }
+    if (dw) {
+        flags |= BP_MEM_WRITE;
+    }
+
+    cpu_watchpoint_insert(cs, deaw, len, flags, &env->dawr0_watchpoint);
+}
+
+void ppc_store_dawr0(CPUPPCState *env, target_ulong val)
+{
+    env->spr[SPR_DAWR0] = val;
+    ppc_update_daw0(env);
+}
+
+void ppc_store_dawrx0(CPUPPCState *env, uint32_t val)
+{
+    int hrammc = extract32(val, PPC_BIT_NR(56), 1);
+
+    if (hrammc) {
+        /* This might be done with a second watchpoint at the xor of DEAW[0] */
+        qemu_log_mask(LOG_UNIMP, "%s: DAWRX0[HRAMMC] is unimplemented\n",
+                      __func__);
+    }
+
+    env->spr[SPR_DAWRX0] = val;
+    ppc_update_daw0(env);
+}
+#endif
+#endif
 
 static inline void fpscr_set_rounding_mode(CPUPPCState *env)
 {
     int rnd_type;
 
     /* Set rounding mode */
-    switch (fpscr_rn) {
+    switch (env->fpscr & FP_RN) {
     case 0:
         /* Best approximation (round to nearest) */
         rnd_type = float_round_nearest_even;
@@ -140,7 +220,7 @@ static inline void fpscr_set_rounding_mode(CPUPPCState *env)
 
 void ppc_store_fpscr(CPUPPCState *env, target_ulong val)
 {
-    val &= ~(FP_VX | FP_FEX);
+    val &= FPSCR_MTFS_MASK;
     if (val & FPSCR_IX) {
         val |= FP_VX;
     }
@@ -148,6 +228,8 @@ void ppc_store_fpscr(CPUPPCState *env, target_ulong val)
         val |= FP_FEX;
     }
     env->fpscr = val;
+    env->fp_status.rebias_overflow  = (FP_OE & env->fpscr) ? true : false;
+    env->fp_status.rebias_underflow = (FP_UE & env->fpscr) ? true : false;
     if (tcg_enabled()) {
         fpscr_set_rounding_mode(env);
     }

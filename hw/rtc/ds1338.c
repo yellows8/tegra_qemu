@@ -11,12 +11,12 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "hw/i2c/i2c.h"
 #include "migration/vmstate.h"
 #include "qemu/bcd.h"
 #include "qemu/module.h"
 #include "qom/object.h"
+#include "sysemu/rtc.h"
 
 /* Size of NVRAM including both the user-accessible area and the
  * secondary register area.
@@ -46,7 +46,7 @@ static const VMStateDescription vmstate_ds1338 = {
     .name = "ds1338",
     .version_id = 2,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_I2C_SLAVE(parent_obj, DS1338State),
         VMSTATE_INT64(offset, DS1338State),
         VMSTATE_UINT8_V(wday_offset, DS1338State, 2),

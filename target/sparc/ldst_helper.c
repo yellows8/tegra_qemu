@@ -18,6 +18,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/log.h"
 #include "cpu.h"
 #include "tcg/tcg.h"
 #include "exec/helper-proto.h"
@@ -27,7 +28,6 @@
 
 //#define DEBUG_MMU
 //#define DEBUG_MXCC
-//#define DEBUG_UNALIGNED
 //#define DEBUG_UNASSIGNED
 //#define DEBUG_ASI
 //#define DEBUG_CACHE_CONTROL
@@ -360,22 +360,15 @@ static inline void do_check_asi(CPUSPARCState *env, int asi, uintptr_t ra)
 #endif /* !CONFIG_USER_ONLY */
 #endif
 
+#if defined(TARGET_SPARC64) || !defined(CONFIG_USER_ONLY)
 static void do_check_align(CPUSPARCState *env, target_ulong addr,
                            uint32_t align, uintptr_t ra)
 {
     if (addr & align) {
-#ifdef DEBUG_UNALIGNED
-        printf("Unaligned access to 0x" TARGET_FMT_lx " from 0x" TARGET_FMT_lx
-               "\n", addr, env->pc);
-#endif
         cpu_raise_exception_ra(env, TT_UNALIGNED, ra);
     }
 }
-
-void helper_check_align(CPUSPARCState *env, target_ulong addr, uint32_t align)
-{
-    do_check_align(env, addr, align, GETPC());
-}
+#endif
 
 #if !defined(TARGET_SPARC64) && !defined(CONFIG_USER_ONLY) &&   \
     defined(DEBUG_MXCC)
@@ -434,12 +427,12 @@ static void sparc_raise_mmu_fault(CPUState *cs, hwaddr addr,
 
 #ifdef DEBUG_UNASSIGNED
     if (is_asi) {
-        printf("Unassigned mem %s access of %d byte%s to " TARGET_FMT_plx
+        printf("Unassigned mem %s access of %d byte%s to " HWADDR_FMT_plx
                " asi 0x%02x from " TARGET_FMT_lx "\n",
                is_exec ? "exec" : is_write ? "write" : "read", size,
                size == 1 ? "" : "s", addr, is_asi, env->pc);
     } else {
-        printf("Unassigned mem %s access of %d byte%s to " TARGET_FMT_plx
+        printf("Unassigned mem %s access of %d byte%s to " HWADDR_FMT_plx
                " from " TARGET_FMT_lx "\n",
                is_exec ? "exec" : is_write ? "write" : "read", size,
                size == 1 ? "" : "s", addr, env->pc);
@@ -494,7 +487,7 @@ static void sparc_raise_mmu_fault(CPUState *cs, hwaddr addr,
     CPUSPARCState *env = &cpu->env;
 
 #ifdef DEBUG_UNASSIGNED
-    printf("Unassigned mem access to " TARGET_FMT_plx " from " TARGET_FMT_lx
+    printf("Unassigned mem access to " HWADDR_FMT_plx " from " TARGET_FMT_lx
            "\n", addr, env->pc);
 #endif
 
@@ -597,6 +590,7 @@ uint64_t helper_ld_asi(CPUSPARCState *env, target_ulong addr,
 #if defined(DEBUG_MXCC) || defined(DEBUG_ASI)
     uint32_t last_addr = addr;
 #endif
+    MemOpIdx oi;
 
     do_check_align(env, addr, size - 1, GETPC());
     switch (asi) {
@@ -696,19 +690,20 @@ uint64_t helper_ld_asi(CPUSPARCState *env, target_ulong addr,
     case ASI_M_IODIAG:  /* Turbosparc IOTLB Diagnostic */
         break;
     case ASI_KERNELTXT: /* Supervisor code access */
+        oi = make_memop_idx(memop, cpu_mmu_index(env, true));
         switch (size) {
         case 1:
-            ret = cpu_ldub_code(env, addr);
+            ret = cpu_ldb_code_mmu(env, addr, oi, GETPC());
             break;
         case 2:
-            ret = cpu_lduw_code(env, addr);
+            ret = cpu_ldw_code_mmu(env, addr, oi, GETPC());
             break;
         default:
         case 4:
-            ret = cpu_ldl_code(env, addr);
+            ret = cpu_ldl_code_mmu(env, addr, oi, GETPC());
             break;
         case 8:
-            ret = cpu_ldq_code(env, addr);
+            ret = cpu_ldq_code_mmu(env, addr, oi, GETPC());
             break;
         }
         break;
@@ -1193,7 +1188,7 @@ uint64_t helper_ld_asi(CPUSPARCState *env, target_ulong addr,
     case ASI_PNFL: /* Primary no-fault LE */
     case ASI_SNF:  /* Secondary no-fault */
     case ASI_SNFL: /* Secondary no-fault LE */
-        if (page_check_range(addr, size, PAGE_READ) == -1) {
+        if (!page_check_range(addr, size, PAGE_READ)) {
             ret = 0;
             break;
         }
@@ -1318,7 +1313,7 @@ uint64_t helper_ld_asi(CPUSPARCState *env, target_ulong addr,
     case ASI_SNF:
     case ASI_SNFL:
         {
-            TCGMemOpIdx oi;
+            MemOpIdx oi;
             int idx = (env->pstate & PS_PRIV
                        ? (asi & 1 ? MMU_KERNEL_SECONDARY_IDX : MMU_KERNEL_IDX)
                        : (asi & 1 ? MMU_USER_SECONDARY_IDX : MMU_USER_IDX));
@@ -1333,28 +1328,16 @@ uint64_t helper_ld_asi(CPUSPARCState *env, target_ulong addr,
             oi = make_memop_idx(memop, idx);
             switch (size) {
             case 1:
-                ret = helper_ret_ldub_mmu(env, addr, oi, GETPC());
+                ret = cpu_ldb_mmu(env, addr, oi, GETPC());
                 break;
             case 2:
-                if (asi & 8) {
-                    ret = helper_le_lduw_mmu(env, addr, oi, GETPC());
-                } else {
-                    ret = helper_be_lduw_mmu(env, addr, oi, GETPC());
-                }
+                ret = cpu_ldw_mmu(env, addr, oi, GETPC());
                 break;
             case 4:
-                if (asi & 8) {
-                    ret = helper_le_ldul_mmu(env, addr, oi, GETPC());
-                } else {
-                    ret = helper_be_ldul_mmu(env, addr, oi, GETPC());
-                }
+                ret = cpu_ldl_mmu(env, addr, oi, GETPC());
                 break;
             case 8:
-                if (asi & 8) {
-                    ret = helper_le_ldq_mmu(env, addr, oi, GETPC());
-                } else {
-                    ret = helper_be_ldq_mmu(env, addr, oi, GETPC());
-                }
+                ret = cpu_ldq_mmu(env, addr, oi, GETPC());
                 break;
             default:
                 g_assert_not_reached();
@@ -1667,7 +1650,7 @@ void helper_st_asi(CPUSPARCState *env, target_ulong addr, target_ulong val,
             int idx = ((asi & 2) >> 1) | ((asi & 8) >> 2);
             env->dmmu.sun4v_tsb_pointers[idx] = val;
         } else {
-            helper_raise_exception(env, TT_ILL_INSN);
+            goto illegal_insn;
         }
         break;
     case 0x33:
@@ -1679,7 +1662,7 @@ void helper_st_asi(CPUSPARCState *env, target_ulong addr, target_ulong val,
              */
             env->dmmu.sun4v_ctx_config[(asi & 8) >> 3] = val;
         } else {
-            helper_raise_exception(env, TT_ILL_INSN);
+            goto illegal_insn;
         }
         break;
     case 0x35:
@@ -1696,7 +1679,7 @@ void helper_st_asi(CPUSPARCState *env, target_ulong addr, target_ulong val,
             int idx = ((asi & 2) >> 1) | ((asi & 8) >> 2);
             env->immu.sun4v_tsb_pointers[idx] = val;
         } else {
-            helper_raise_exception(env, TT_ILL_INSN);
+            goto illegal_insn;
         }
       break;
     case 0x37:
@@ -1708,7 +1691,7 @@ void helper_st_asi(CPUSPARCState *env, target_ulong addr, target_ulong val,
              */
             env->immu.sun4v_ctx_config[(asi & 8) >> 3] = val;
         } else {
-          helper_raise_exception(env, TT_ILL_INSN);
+            goto illegal_insn;
         }
         break;
     case ASI_UPA_CONFIG: /* UPA config */
@@ -1937,6 +1920,8 @@ void helper_st_asi(CPUSPARCState *env, target_ulong addr, target_ulong val,
     default:
         sparc_raise_mmu_fault(cs, addr, true, false, 1, size, GETPC());
         return;
+    illegal_insn:
+        cpu_raise_exception_ra(env, TT_ILL_INSN, GETPC());
     }
 }
 #endif /* CONFIG_USER_ONLY */
@@ -1956,22 +1941,5 @@ void sparc_cpu_do_transaction_failed(CPUState *cs, hwaddr physaddr,
 
     sparc_raise_mmu_fault(cs, physaddr, is_write, is_exec,
                           is_asi, size, retaddr);
-}
-#endif
-
-#if !defined(CONFIG_USER_ONLY)
-void QEMU_NORETURN sparc_cpu_do_unaligned_access(CPUState *cs, vaddr addr,
-                                                 MMUAccessType access_type,
-                                                 int mmu_idx,
-                                                 uintptr_t retaddr)
-{
-    SPARCCPU *cpu = SPARC_CPU(cs);
-    CPUSPARCState *env = &cpu->env;
-
-#ifdef DEBUG_UNALIGNED
-    printf("Unaligned access to 0x" TARGET_FMT_lx " from 0x" TARGET_FMT_lx
-           "\n", addr, env->pc);
-#endif
-    cpu_raise_exception_ra(env, TT_UNALIGNED, retaddr);
 }
 #endif

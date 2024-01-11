@@ -18,25 +18,6 @@
  */
 
 /*
- * Incorporate CIA into the constant when R=1.
- * Validate that when R=1, RA=0.
- */
-static bool resolve_PLS_D(DisasContext *ctx, arg_D *d, arg_PLS_D *a)
-{
-    d->rt = a->rt;
-    d->ra = a->ra;
-    d->si = a->si;
-    if (a->r) {
-        if (unlikely(a->ra != 0)) {
-            gen_invalid(ctx);
-            return false;
-        }
-        d->si += ctx->cia;
-    }
-    return true;
-}
-
-/*
  * Fixed-Point Load/Store Instructions
  */
 
@@ -51,15 +32,7 @@ static bool do_ldst(DisasContext *ctx, int rt, int ra, TCGv displ, bool update,
     }
     gen_set_access_type(ctx, ACCESS_INT);
 
-    ea = tcg_temp_new();
-    if (ra) {
-        tcg_gen_add_tl(ea, cpu_gpr[ra], displ);
-    } else {
-        tcg_gen_mov_tl(ea, displ);
-    }
-    if (NARROW_MODE(ctx)) {
-        tcg_gen_ext32u_tl(ea, ea);
-    }
+    ea = do_ea_calc(ctx, ra, displ);
     mop ^= ctx->default_tcg_memop_mask;
     if (store) {
         tcg_gen_qemu_st_tl(cpu_gpr[rt], ea, ctx->mem_idx, mop);
@@ -69,8 +42,6 @@ static bool do_ldst(DisasContext *ctx, int rt, int ra, TCGv displ, bool update,
     if (update) {
         tcg_gen_mov_tl(cpu_gpr[ra], ea);
     }
-    tcg_temp_free(ea);
-
     return true;
 }
 
@@ -94,6 +65,66 @@ static bool do_ldst_X(DisasContext *ctx, arg_X *a, bool update,
                       bool store, MemOp mop)
 {
     return do_ldst(ctx, a->rt, a->ra, cpu_gpr[a->rb], update, store, mop);
+}
+
+static bool do_ldst_quad(DisasContext *ctx, arg_D *a, bool store, bool prefixed)
+{
+#if defined(TARGET_PPC64)
+    TCGv ea;
+    TCGv_i64 lo, hi;
+    TCGv_i128 t16;
+
+    REQUIRE_INSNS_FLAGS(ctx, 64BX);
+
+    if (!prefixed && !(ctx->insns_flags2 & PPC2_LSQ_ISA207)) {
+        /* lq and stq were privileged prior to V. 2.07 */
+        REQUIRE_SV(ctx);
+
+        if (ctx->le_mode) {
+            gen_align_no_le(ctx);
+            return true;
+        }
+    }
+
+    if (!store && unlikely(a->ra == a->rt)) {
+        gen_invalid(ctx);
+        return true;
+    }
+
+    gen_set_access_type(ctx, ACCESS_INT);
+    ea = do_ea_calc(ctx, a->ra, tcg_constant_tl(a->si));
+
+    if (ctx->le_mode && prefixed) {
+        lo = cpu_gpr[a->rt];
+        hi = cpu_gpr[a->rt + 1];
+    } else {
+        lo = cpu_gpr[a->rt + 1];
+        hi = cpu_gpr[a->rt];
+    }
+    t16 = tcg_temp_new_i128();
+
+    if (store) {
+        tcg_gen_concat_i64_i128(t16, lo, hi);
+        tcg_gen_qemu_st_i128(t16, ea, ctx->mem_idx, DEF_MEMOP(MO_128));
+    } else {
+        tcg_gen_qemu_ld_i128(t16, ea, ctx->mem_idx, DEF_MEMOP(MO_128));
+        tcg_gen_extr_i128_i64(lo, hi, t16);
+    }
+#else
+    qemu_build_not_reached();
+#endif
+
+    return true;
+}
+
+static bool do_ldst_quad_PLS_D(DisasContext *ctx, arg_PLS_D *a, bool store)
+{
+    arg_D d;
+    if (!resolve_PLS_D(ctx, &d, a)) {
+        return true;
+    }
+
+    return do_ldst_quad(ctx, &d, store, true);
 }
 
 /* Load Byte and Zero */
@@ -131,11 +162,15 @@ TRANS64(LWAUX, do_ldst_X, true, false, MO_SL)
 TRANS64(PLWA, do_ldst_PLS_D, false, false, MO_SL)
 
 /* Load Doubleword */
-TRANS64(LD, do_ldst_D, false, false, MO_Q)
-TRANS64(LDX, do_ldst_X, false, false, MO_Q)
-TRANS64(LDU, do_ldst_D, true, false, MO_Q)
-TRANS64(LDUX, do_ldst_X, true, false, MO_Q)
-TRANS64(PLD, do_ldst_PLS_D, false, false, MO_Q)
+TRANS64(LD, do_ldst_D, false, false, MO_UQ)
+TRANS64(LDX, do_ldst_X, false, false, MO_UQ)
+TRANS64(LDU, do_ldst_D, true, false, MO_UQ)
+TRANS64(LDUX, do_ldst_X, true, false, MO_UQ)
+TRANS64(PLD, do_ldst_PLS_D, false, false, MO_UQ)
+
+/* Load Quadword */
+TRANS64(LQ, do_ldst_quad, false, false);
+TRANS64(PLQ, do_ldst_quad_PLS_D, false);
 
 /* Store Byte */
 TRANS(STB, do_ldst_D, false, true, MO_UB)
@@ -159,11 +194,15 @@ TRANS(STWUX, do_ldst_X, true, true, MO_UL)
 TRANS(PSTW, do_ldst_PLS_D, false, true, MO_UL)
 
 /* Store Doubleword */
-TRANS64(STD, do_ldst_D, false, true, MO_Q)
-TRANS64(STDX, do_ldst_X, false, true, MO_Q)
-TRANS64(STDU, do_ldst_D, true, true, MO_Q)
-TRANS64(STDUX, do_ldst_X, true, true, MO_Q)
-TRANS64(PSTD, do_ldst_PLS_D, false, true, MO_Q)
+TRANS64(STD, do_ldst_D, false, true, MO_UQ)
+TRANS64(STDX, do_ldst_X, false, true, MO_UQ)
+TRANS64(STDU, do_ldst_D, true, true, MO_UQ)
+TRANS64(STDUX, do_ldst_X, true, true, MO_UQ)
+TRANS64(PSTD, do_ldst_PLS_D, false, true, MO_UQ)
+
+/* Store Quadword */
+TRANS64(STQ, do_ldst_quad, true, false);
+TRANS64(PSTQ, do_ldst_quad_PLS_D, true);
 
 /*
  * Fixed-Point Compare Instructions
@@ -303,15 +342,15 @@ static bool do_set_bool_cond(DisasContext *ctx, arg_X_bi *a, bool neg, bool rev)
     uint32_t mask = 0x08 >> (a->bi & 0x03);
     TCGCond cond = rev ? TCG_COND_EQ : TCG_COND_NE;
     TCGv temp = tcg_temp_new();
+    TCGv zero = tcg_constant_tl(0);
 
     tcg_gen_extu_i32_tl(temp, cpu_crf[a->bi >> 2]);
     tcg_gen_andi_tl(temp, temp, mask);
-    tcg_gen_setcondi_tl(cond, cpu_gpr[a->rt], temp, 0);
     if (neg) {
-        tcg_gen_neg_tl(cpu_gpr[a->rt], cpu_gpr[a->rt]);
+        tcg_gen_negsetcond_tl(cond, cpu_gpr[a->rt], temp, zero);
+    } else {
+        tcg_gen_setcond_tl(cond, cpu_gpr[a->rt], temp, zero);
     }
-    tcg_temp_free(temp);
-
     return true;
 }
 
@@ -325,9 +364,164 @@ static bool trans_CFUGED(DisasContext *ctx, arg_X *a)
     REQUIRE_64BIT(ctx);
     REQUIRE_INSNS_FLAGS2(ctx, ISA310);
 #if defined(TARGET_PPC64)
-    gen_helper_cfuged(cpu_gpr[a->ra], cpu_gpr[a->rt], cpu_gpr[a->rb]);
+    gen_helper_CFUGED(cpu_gpr[a->ra], cpu_gpr[a->rt], cpu_gpr[a->rb]);
 #else
     qemu_build_not_reached();
 #endif
     return true;
 }
+
+static void do_cntzdm(TCGv_i64 dst, TCGv_i64 src, TCGv_i64 mask, int64_t trail)
+{
+    TCGv_i64 t0, t1;
+
+    t0 = tcg_temp_new_i64();
+    t1 = tcg_temp_new_i64();
+
+    tcg_gen_and_i64(t0, src, mask);
+    if (trail) {
+        tcg_gen_ctzi_i64(t0, t0, -1);
+    } else {
+        tcg_gen_clzi_i64(t0, t0, -1);
+    }
+
+    tcg_gen_setcondi_i64(TCG_COND_NE, t1, t0, -1);
+    tcg_gen_andi_i64(t0, t0, 63);
+    tcg_gen_xori_i64(t0, t0, 63);
+    if (trail) {
+        tcg_gen_shl_i64(t0, mask, t0);
+        tcg_gen_shl_i64(t0, t0, t1);
+    } else {
+        tcg_gen_shr_i64(t0, mask, t0);
+        tcg_gen_shr_i64(t0, t0, t1);
+    }
+
+    tcg_gen_ctpop_i64(dst, t0);
+}
+
+static bool trans_CNTLZDM(DisasContext *ctx, arg_X *a)
+{
+    REQUIRE_64BIT(ctx);
+    REQUIRE_INSNS_FLAGS2(ctx, ISA310);
+#if defined(TARGET_PPC64)
+    do_cntzdm(cpu_gpr[a->ra], cpu_gpr[a->rt], cpu_gpr[a->rb], false);
+#else
+    qemu_build_not_reached();
+#endif
+    return true;
+}
+
+static bool trans_CNTTZDM(DisasContext *ctx, arg_X *a)
+{
+    REQUIRE_64BIT(ctx);
+    REQUIRE_INSNS_FLAGS2(ctx, ISA310);
+#if defined(TARGET_PPC64)
+    do_cntzdm(cpu_gpr[a->ra], cpu_gpr[a->rt], cpu_gpr[a->rb], true);
+#else
+    qemu_build_not_reached();
+#endif
+    return true;
+}
+
+static bool trans_PDEPD(DisasContext *ctx, arg_X *a)
+{
+    REQUIRE_64BIT(ctx);
+    REQUIRE_INSNS_FLAGS2(ctx, ISA310);
+#if defined(TARGET_PPC64)
+    gen_helper_PDEPD(cpu_gpr[a->ra], cpu_gpr[a->rt], cpu_gpr[a->rb]);
+#else
+    qemu_build_not_reached();
+#endif
+    return true;
+}
+
+static bool trans_PEXTD(DisasContext *ctx, arg_X *a)
+{
+    REQUIRE_64BIT(ctx);
+    REQUIRE_INSNS_FLAGS2(ctx, ISA310);
+#if defined(TARGET_PPC64)
+    gen_helper_PEXTD(cpu_gpr[a->ra], cpu_gpr[a->rt], cpu_gpr[a->rb]);
+#else
+    qemu_build_not_reached();
+#endif
+    return true;
+}
+
+static bool trans_ADDG6S(DisasContext *ctx, arg_X *a)
+{
+    const target_ulong carry_bits = (target_ulong)-1 / 0xf;
+    TCGv in1, in2, carryl, carryh, tmp;
+    TCGv zero = tcg_constant_tl(0);
+
+    REQUIRE_INSNS_FLAGS2(ctx, BCDA_ISA206);
+
+    in1 = cpu_gpr[a->ra];
+    in2 = cpu_gpr[a->rb];
+    tmp = tcg_temp_new();
+    carryl = tcg_temp_new();
+    carryh = tcg_temp_new();
+
+    /* Addition with carry. */
+    tcg_gen_add2_tl(carryl, carryh, in1, zero, in2, zero);
+    /* Addition without carry. */
+    tcg_gen_xor_tl(tmp, in1, in2);
+    /* Difference between the two is carry in to each bit. */
+    tcg_gen_xor_tl(carryl, carryl, tmp);
+
+    /*
+     * The carry-out that we're looking for is the carry-in to
+     * the next nibble.  Shift the double-word down one nibble,
+     * which puts all of the bits back into one word.
+     */
+    tcg_gen_extract2_tl(carryl, carryl, carryh, 4);
+
+    /* Invert, isolate the carry bits, and produce 6's. */
+    tcg_gen_andc_tl(carryl, tcg_constant_tl(carry_bits), carryl);
+    tcg_gen_muli_tl(cpu_gpr[a->rt], carryl, 6);
+    return true;
+}
+
+static bool trans_CDTBCD(DisasContext *ctx, arg_X_sa *a)
+{
+    REQUIRE_INSNS_FLAGS2(ctx, BCDA_ISA206);
+    gen_helper_CDTBCD(cpu_gpr[a->ra], cpu_gpr[a->rs]);
+    return true;
+}
+
+static bool trans_CBCDTD(DisasContext *ctx, arg_X_sa *a)
+{
+    REQUIRE_INSNS_FLAGS2(ctx, BCDA_ISA206);
+    gen_helper_CBCDTD(cpu_gpr[a->ra], cpu_gpr[a->rs]);
+    return true;
+}
+
+static bool do_hash(DisasContext *ctx, arg_X *a, bool priv,
+    void (*helper)(TCGv_ptr, TCGv, TCGv, TCGv))
+{
+    TCGv ea;
+
+    if (!(ctx->insns_flags2 & PPC2_ISA310)) {
+        /* if version is before v3.1, this operation is a nop */
+        return true;
+    }
+
+    if (priv) {
+        /* if instruction is privileged but the context is in user space */
+        REQUIRE_SV(ctx);
+    }
+
+    if (unlikely(a->ra == 0)) {
+        /* if RA=0, the instruction form is invalid */
+        gen_invalid(ctx);
+        return true;
+    }
+
+    ea = do_ea_calc(ctx, a->ra, tcg_constant_tl(a->rt));
+    helper(tcg_env, ea, cpu_gpr[a->ra], cpu_gpr[a->rb]);
+    return true;
+}
+
+TRANS(HASHST, do_hash, false, gen_helper_HASHST)
+TRANS(HASHCHK, do_hash, false, gen_helper_HASHCHK)
+TRANS(HASHSTP, do_hash, true, gen_helper_HASHSTP)
+TRANS(HASHCHKP, do_hash, true, gen_helper_HASHCHKP)

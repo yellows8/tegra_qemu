@@ -9,6 +9,12 @@
 #define V_IRQ_SHIFT 8
 #define V_IRQ_MASK (1 << V_IRQ_SHIFT)
 
+#define V_GIF_ENABLED_SHIFT 25
+#define V_GIF_ENABLED_MASK (1 << V_GIF_ENABLED_SHIFT)
+
+#define V_GIF_SHIFT 9
+#define V_GIF_MASK (1 << V_GIF_SHIFT)
+
 #define V_INTR_PRIO_SHIFT 16
 #define V_INTR_PRIO_MASK (0x0f << V_INTR_PRIO_SHIFT)
 
@@ -17,6 +23,8 @@
 
 #define V_INTR_MASKING_SHIFT 24
 #define V_INTR_MASKING_MASK (1 << V_INTR_MASKING_SHIFT)
+
+#define V_VMLOAD_VMSAVE_ENABLED_MASK (1 << 1)
 
 #define SVM_INTERRUPT_SHADOW_MASK 1
 
@@ -124,6 +132,7 @@
 /* only included in documentation, maybe wrong */
 #define SVM_EXIT_MONITOR	0x08a
 #define SVM_EXIT_MWAIT		0x08b
+#define SVM_EXIT_XSETBV		0x08d
 #define SVM_EXIT_NPF  		0x400
 
 #define SVM_EXIT_ERR		-1

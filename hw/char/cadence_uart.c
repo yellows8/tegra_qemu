@@ -235,8 +235,18 @@ static void uart_parameters_setup(CadenceUARTState *s)
 static int uart_can_receive(void *opaque)
 {
     CadenceUARTState *s = opaque;
-    int ret = MAX(CADENCE_UART_RX_FIFO_SIZE, CADENCE_UART_TX_FIFO_SIZE);
-    uint32_t ch_mode = s->r[R_MR] & UART_MR_CHMODE;
+    int ret;
+    uint32_t ch_mode;
+
+    /* ignore characters when unclocked or in reset */
+    if (!clock_is_enabled(s->refclk) || device_is_in_reset(DEVICE(s))) {
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: uart is unclocked or in reset\n",
+                      __func__);
+        return 0;
+    }
+
+    ret = MAX(CADENCE_UART_RX_FIFO_SIZE, CADENCE_UART_TX_FIFO_SIZE);
+    ch_mode = s->r[R_MR] & UART_MR_CHMODE;
 
     if (ch_mode == NORMAL_MODE || ch_mode == ECHO_MODE) {
         ret = MIN(ret, CADENCE_UART_RX_FIFO_SIZE - s->rx_count);
@@ -297,11 +307,11 @@ static gboolean cadence_uart_xmit(void *do_not_use, GIOCondition cond,
     /* instant drain the fifo when there's no back-end */
     if (!qemu_chr_fe_backend_connected(&s->chr)) {
         s->tx_count = 0;
-        return FALSE;
+        return G_SOURCE_REMOVE;
     }
 
     if (!s->tx_count) {
-        return FALSE;
+        return G_SOURCE_REMOVE;
     }
 
     ret = qemu_chr_fe_write(&s->chr, s->tx_fifo, s->tx_count);
@@ -316,12 +326,12 @@ static gboolean cadence_uart_xmit(void *do_not_use, GIOCondition cond,
                                         cadence_uart_xmit, s);
         if (!r) {
             s->tx_count = 0;
-            return FALSE;
+            return G_SOURCE_REMOVE;
         }
     }
 
     uart_update_status(s);
-    return FALSE;
+    return G_SOURCE_REMOVE;
 }
 
 static void uart_write_tx_fifo(CadenceUARTState *s, const uint8_t *buf,
@@ -353,11 +363,6 @@ static void uart_receive(void *opaque, const uint8_t *buf, int size)
     CadenceUARTState *s = opaque;
     uint32_t ch_mode = s->r[R_MR] & UART_MR_CHMODE;
 
-    /* ignore characters when unclocked or in reset */
-    if (!clock_is_enabled(s->refclk) || device_is_in_reset(DEVICE(s))) {
-        return;
-    }
-
     if (ch_mode == NORMAL_MODE || ch_mode == ECHO_MODE) {
         uart_write_rx_fifo(opaque, buf, size);
     }
@@ -373,6 +378,8 @@ static void uart_event(void *opaque, QEMUChrEvent event)
 
     /* ignore characters when unclocked or in reset */
     if (!clock_is_enabled(s->refclk) || device_is_in_reset(DEVICE(s))) {
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: uart is unclocked or in reset\n",
+                      __func__);
         return;
     }
 
@@ -403,15 +410,22 @@ static void uart_read_rx_fifo(CadenceUARTState *s, uint32_t *c)
     uart_update_status(s);
 }
 
-static void uart_write(void *opaque, hwaddr offset,
-                          uint64_t value, unsigned size)
+static MemTxResult uart_write(void *opaque, hwaddr offset,
+                              uint64_t value, unsigned size, MemTxAttrs attrs)
 {
     CadenceUARTState *s = opaque;
+
+    /* ignore access when unclocked or in reset */
+    if (!clock_is_enabled(s->refclk) || device_is_in_reset(DEVICE(s))) {
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: uart is unclocked or in reset\n",
+                      __func__);
+        return MEMTX_ERROR;
+    }
 
     DB_PRINT(" offset:%x data:%08x\n", (unsigned)offset, (unsigned)value);
     offset >>= 2;
     if (offset >= CADENCE_UART_R_MAX) {
-        return;
+        return MEMTX_DECODE_ERROR;
     }
     switch (offset) {
     case R_IER: /* ier (wts imr) */
@@ -436,13 +450,15 @@ static void uart_write(void *opaque, hwaddr offset,
         }
         break;
     case R_BRGR: /* Baud rate generator */
+        value &= 0xffff;
         if (value >= 0x01) {
-            s->r[offset] = value & 0xFFFF;
+            s->r[offset] = value;
         }
         break;
     case R_BDIV:    /* Baud rate divider */
+        value &= 0xff;
         if (value >= 0x04) {
-            s->r[offset] = value & 0xFF;
+            s->r[offset] = value;
         }
         break;
     default:
@@ -458,30 +474,41 @@ static void uart_write(void *opaque, hwaddr offset,
         break;
     }
     uart_update_status(s);
+
+    return MEMTX_OK;
 }
 
-static uint64_t uart_read(void *opaque, hwaddr offset,
-        unsigned size)
+static MemTxResult uart_read(void *opaque, hwaddr offset,
+                             uint64_t *value, unsigned size, MemTxAttrs attrs)
 {
     CadenceUARTState *s = opaque;
     uint32_t c = 0;
 
+    /* ignore access when unclocked or in reset */
+    if (!clock_is_enabled(s->refclk) || device_is_in_reset(DEVICE(s))) {
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: uart is unclocked or in reset\n",
+                      __func__);
+        return MEMTX_ERROR;
+    }
+
     offset >>= 2;
     if (offset >= CADENCE_UART_R_MAX) {
-        c = 0;
-    } else if (offset == R_TX_RX) {
+        return MEMTX_DECODE_ERROR;
+    }
+    if (offset == R_TX_RX) {
         uart_read_rx_fifo(s, &c);
     } else {
-       c = s->r[offset];
+        c = s->r[offset];
     }
 
     DB_PRINT(" offset:%x data:%08x\n", (unsigned)(offset << 2), (unsigned)c);
-    return c;
+    *value = c;
+    return MEMTX_OK;
 }
 
 static const MemoryRegionOps uart_ops = {
-    .read = uart_read,
-    .write = uart_write,
+    .read_with_attrs = uart_read,
+    .write_with_attrs = uart_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
@@ -548,7 +575,7 @@ static int cadence_uart_pre_load(void *opaque)
 {
     CadenceUARTState *s = opaque;
 
-    /* the frequency will be overriden if the refclk field is present */
+    /* the frequency will be overridden if the refclk field is present */
     clock_set_hz(s->refclk, UART_DEFAULT_REF_CLK);
     return 0;
 }
@@ -575,7 +602,7 @@ static const VMStateDescription vmstate_cadence_uart = {
     .minimum_version_id = 2,
     .pre_load = cadence_uart_pre_load,
     .post_load = cadence_uart_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(r, CadenceUARTState, CADENCE_UART_R_MAX),
         VMSTATE_UINT8_ARRAY(rx_fifo, CadenceUARTState,
                             CADENCE_UART_RX_FIFO_SIZE),

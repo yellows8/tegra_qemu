@@ -31,6 +31,26 @@ static void m68k_cpu_set_pc(CPUState *cs, vaddr value)
     cpu->env.pc = value;
 }
 
+static vaddr m68k_cpu_get_pc(CPUState *cs)
+{
+    M68kCPU *cpu = M68K_CPU(cs);
+
+    return cpu->env.pc;
+}
+
+static void m68k_restore_state_to_opc(CPUState *cs,
+                                      const TranslationBlock *tb,
+                                      const uint64_t *data)
+{
+    M68kCPU *cpu = M68K_CPU(cs);
+    int cc_op = data[1];
+
+    cpu->env.pc = data[0];
+    if (cc_op != CC_OP_DYNAMIC) {
+        cpu->env.cc_op = cc_op;
+    }
+}
+
 static bool m68k_cpu_has_work(CPUState *cs)
 {
     return cs->interrupt_request & CPU_INTERRUPT_HARD;
@@ -38,30 +58,32 @@ static bool m68k_cpu_has_work(CPUState *cs)
 
 static void m68k_set_feature(CPUM68KState *env, int feature)
 {
-    env->features |= (1u << feature);
+    env->features |= BIT_ULL(feature);
 }
 
 static void m68k_unset_feature(CPUM68KState *env, int feature)
 {
-    env->features &= (-1u - (1u << feature));
+    env->features &= ~BIT_ULL(feature);
 }
 
-static void m68k_cpu_reset(DeviceState *dev)
+static void m68k_cpu_reset_hold(Object *obj)
 {
-    CPUState *s = CPU(dev);
+    CPUState *s = CPU(obj);
     M68kCPU *cpu = M68K_CPU(s);
     M68kCPUClass *mcc = M68K_CPU_GET_CLASS(cpu);
     CPUM68KState *env = &cpu->env;
     floatx80 nan = floatx80_default_nan(NULL);
     int i;
 
-    mcc->parent_reset(dev);
+    if (mcc->parent_phases.hold) {
+        mcc->parent_phases.hold(obj);
+    }
 
     memset(env, 0, offsetof(CPUM68KState, end_reset_fields));
-#ifdef CONFIG_SOFTMMU
-    cpu_m68k_set_sr(env, SR_S | SR_I);
-#else
+#ifdef CONFIG_USER_ONLY
     cpu_m68k_set_sr(env, 0);
+#else
+    cpu_m68k_set_sr(env, SR_S | SR_I);
 #endif
     for (i = 0; i < 8; i++) {
         env->fregs[i].d = nan;
@@ -75,12 +97,8 @@ static void m68k_cpu_reset(DeviceState *dev)
 
 static void m68k_cpu_disas_set_info(CPUState *s, disassemble_info *info)
 {
-    M68kCPU *cpu = M68K_CPU(s);
-    CPUM68KState *env = &cpu->env;
     info->print_insn = print_insn_m68k;
-    if (m68k_feature(env, M68K_FEATURE_M68000)) {
-        info->mach = bfd_mach_m68040;
-    }
+    info->mach = 0;
 }
 
 /* CPU models */
@@ -93,10 +111,7 @@ static ObjectClass *m68k_cpu_class_by_name(const char *cpu_model)
     typename = g_strdup_printf(M68K_CPU_TYPE_NAME("%s"), cpu_model);
     oc = object_class_by_name(typename);
     g_free(typename);
-    if (oc != NULL && (object_class_dynamic_cast(oc, TYPE_M68K_CPU) == NULL ||
-                       object_class_is_abstract(oc))) {
-        return NULL;
-    }
+
     return oc;
 }
 
@@ -106,6 +121,7 @@ static void m5206_cpu_initfn(Object *obj)
     CPUM68KState *env = &cpu->env;
 
     m68k_set_feature(env, M68K_FEATURE_CF_ISA_A);
+    m68k_set_feature(env, M68K_FEATURE_MOVEFROMSR_PRIV);
 }
 
 /* Base feature set, including isns. for m68k family */
@@ -114,7 +130,7 @@ static void m68000_cpu_initfn(Object *obj)
     M68kCPU *cpu = M68K_CPU(obj);
     CPUM68KState *env = &cpu->env;
 
-    m68k_set_feature(env, M68K_FEATURE_M68000);
+    m68k_set_feature(env, M68K_FEATURE_M68K);
     m68k_set_feature(env, M68K_FEATURE_USP);
     m68k_set_feature(env, M68K_FEATURE_WORD_INDEX);
     m68k_set_feature(env, M68K_FEATURE_MOVEP);
@@ -133,6 +149,7 @@ static void m68010_cpu_initfn(Object *obj)
     m68k_set_feature(env, M68K_FEATURE_RTD);
     m68k_set_feature(env, M68K_FEATURE_BKPT);
     m68k_set_feature(env, M68K_FEATURE_MOVEC);
+    m68k_set_feature(env, M68K_FEATURE_MOVEFROMSR_PRIV);
 }
 
 /*
@@ -162,6 +179,7 @@ static void m68020_cpu_initfn(Object *obj)
     m68k_set_feature(env, M68K_FEATURE_CHK2);
     m68k_set_feature(env, M68K_FEATURE_MSP);
     m68k_set_feature(env, M68K_FEATURE_UNALIGNED_DATA);
+    m68k_set_feature(env, M68K_FEATURE_TRAPCC);
 }
 
 /*
@@ -244,6 +262,7 @@ static void m5208_cpu_initfn(Object *obj)
     m68k_set_feature(env, M68K_FEATURE_BRAL);
     m68k_set_feature(env, M68K_FEATURE_CF_EMAC);
     m68k_set_feature(env, M68K_FEATURE_USP);
+    m68k_set_feature(env, M68K_FEATURE_MOVEFROMSR_PRIV);
 }
 
 static void cfv4e_cpu_initfn(Object *obj)
@@ -257,6 +276,7 @@ static void cfv4e_cpu_initfn(Object *obj)
     m68k_set_feature(env, M68K_FEATURE_CF_FPU);
     m68k_set_feature(env, M68K_FEATURE_CF_EMAC);
     m68k_set_feature(env, M68K_FEATURE_USP);
+    m68k_set_feature(env, M68K_FEATURE_MOVEFROMSR_PRIV);
 }
 
 static void any_cpu_initfn(Object *obj)
@@ -278,6 +298,7 @@ static void any_cpu_initfn(Object *obj)
     m68k_set_feature(env, M68K_FEATURE_USP);
     m68k_set_feature(env, M68K_FEATURE_EXT_FULL);
     m68k_set_feature(env, M68K_FEATURE_WORD_INDEX);
+    m68k_set_feature(env, M68K_FEATURE_MOVEFROMSR_PRIV);
 }
 
 static void m68k_cpu_realizefn(DeviceState *dev, Error **errp)
@@ -303,14 +324,7 @@ static void m68k_cpu_realizefn(DeviceState *dev, Error **errp)
     mcc->parent_realize(dev, errp);
 }
 
-static void m68k_cpu_initfn(Object *obj)
-{
-    M68kCPU *cpu = M68K_CPU(obj);
-
-    cpu_set_cpustate_pointers(cpu);
-}
-
-#if defined(CONFIG_SOFTMMU)
+#if !defined(CONFIG_USER_ONLY)
 static bool fpu_needed(void *opaque)
 {
     M68kCPU *s = opaque;
@@ -365,7 +379,7 @@ static const VMStateDescription vmstate_freg_tmp = {
     .name = "freg_tmp",
     .post_load = freg_post_load,
     .pre_save  = freg_pre_save,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(tmp_mant, m68k_FPReg_tmp),
         VMSTATE_UINT16(tmp_exp, m68k_FPReg_tmp),
         VMSTATE_END_OF_LIST()
@@ -374,7 +388,7 @@ static const VMStateDescription vmstate_freg_tmp = {
 
 static const VMStateDescription vmstate_freg = {
     .name = "freg",
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_WITH_TMP(FPReg, m68k_FPReg_tmp, vmstate_freg_tmp),
         VMSTATE_END_OF_LIST()
     }
@@ -395,7 +409,7 @@ const VMStateDescription vmmstate_fpu = {
     .minimum_version_id = 1,
     .needed = fpu_needed,
     .post_load = fpu_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(env.fpcr, M68kCPU),
         VMSTATE_UINT32(env.fpsr, M68kCPU),
         VMSTATE_STRUCT_ARRAY(env.fregs, M68kCPU, 8, 0, vmstate_freg, FPReg),
@@ -416,7 +430,7 @@ const VMStateDescription vmstate_cf_spregs = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = cf_spregs_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64_ARRAY(env.macc, M68kCPU, 4),
         VMSTATE_UINT32(env.macsr, M68kCPU),
         VMSTATE_UINT32(env.mac_mask, M68kCPU),
@@ -438,7 +452,7 @@ const VMStateDescription vmstate_68040_mmu = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = cpu_68040_mmu_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(env.mmu.ar, M68kCPU),
         VMSTATE_UINT32(env.mmu.ssw, M68kCPU),
         VMSTATE_UINT16(env.mmu.tcr, M68kCPU),
@@ -463,7 +477,7 @@ const VMStateDescription vmstate_68040_spregs = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = cpu_68040_spregs_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(env.vbr, M68kCPU),
         VMSTATE_UINT32(env.cacr, M68kCPU),
         VMSTATE_UINT32(env.sfc, M68kCPU),
@@ -476,7 +490,7 @@ static const VMStateDescription vmstate_m68k_cpu = {
     .name = "cpu",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields      = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(env.dregs, M68kCPU, 8),
         VMSTATE_UINT32_ARRAY(env.aregs, M68kCPU, 8),
         VMSTATE_UINT32(env.pc, M68kCPU),
@@ -493,7 +507,7 @@ static const VMStateDescription vmstate_m68k_cpu = {
         VMSTATE_INT32(env.pending_level, M68kCPU),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription * []) {
+    .subsections = (const VMStateDescription * const []) {
         &vmmstate_fpu,
         &vmstate_cf_spregs,
         &vmstate_68040_mmu,
@@ -501,24 +515,23 @@ static const VMStateDescription vmstate_m68k_cpu = {
         NULL
     },
 };
-#endif
 
-#ifndef CONFIG_USER_ONLY
 #include "hw/core/sysemu-cpu-ops.h"
 
 static const struct SysemuCPUOps m68k_sysemu_ops = {
     .get_phys_page_debug = m68k_cpu_get_phys_page_debug,
 };
-#endif
+#endif /* !CONFIG_USER_ONLY */
 
 #include "hw/core/tcg-cpu-ops.h"
 
 static const struct TCGCPUOps m68k_tcg_ops = {
     .initialize = m68k_tcg_init,
-    .cpu_exec_interrupt = m68k_cpu_exec_interrupt,
-    .tlb_fill = m68k_cpu_tlb_fill,
+    .restore_state_to_opc = m68k_restore_state_to_opc,
 
 #ifndef CONFIG_USER_ONLY
+    .tlb_fill = m68k_cpu_tlb_fill,
+    .cpu_exec_interrupt = m68k_cpu_exec_interrupt,
     .do_interrupt = m68k_cpu_do_interrupt,
     .do_transaction_failed = m68k_cpu_transaction_failed,
 #endif /* !CONFIG_USER_ONLY */
@@ -529,18 +542,21 @@ static void m68k_cpu_class_init(ObjectClass *c, void *data)
     M68kCPUClass *mcc = M68K_CPU_CLASS(c);
     CPUClass *cc = CPU_CLASS(c);
     DeviceClass *dc = DEVICE_CLASS(c);
+    ResettableClass *rc = RESETTABLE_CLASS(c);
 
     device_class_set_parent_realize(dc, m68k_cpu_realizefn,
                                     &mcc->parent_realize);
-    device_class_set_parent_reset(dc, m68k_cpu_reset, &mcc->parent_reset);
+    resettable_class_set_parent_phases(rc, NULL, m68k_cpu_reset_hold, NULL,
+                                       &mcc->parent_phases);
 
     cc->class_by_name = m68k_cpu_class_by_name;
     cc->has_work = m68k_cpu_has_work;
     cc->dump_state = m68k_cpu_dump_state;
     cc->set_pc = m68k_cpu_set_pc;
+    cc->get_pc = m68k_cpu_get_pc;
     cc->gdb_read_register = m68k_cpu_gdb_read_register;
     cc->gdb_write_register = m68k_cpu_gdb_write_register;
-#if defined(CONFIG_SOFTMMU)
+#if !defined(CONFIG_USER_ONLY)
     dc->vmsd = &vmstate_m68k_cpu;
     cc->sysemu_ops = &m68k_sysemu_ops;
 #endif
@@ -585,7 +601,7 @@ static const TypeInfo m68k_cpus_type_infos[] = {
         .name = TYPE_M68K_CPU,
         .parent = TYPE_CPU,
         .instance_size = sizeof(M68kCPU),
-        .instance_init = m68k_cpu_initfn,
+        .instance_align = __alignof(M68kCPU),
         .abstract = true,
         .class_size = sizeof(M68kCPUClass),
         .class_init = m68k_cpu_class_init,

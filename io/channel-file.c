@@ -20,6 +20,7 @@
 
 #include "qemu/osdep.h"
 #include "io/channel-file.h"
+#include "io/channel-util.h"
 #include "io/channel-watch.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
@@ -86,6 +87,7 @@ static ssize_t qio_channel_file_readv(QIOChannel *ioc,
                                       size_t niov,
                                       int **fds,
                                       size_t *nfds,
+                                      int flags,
                                       Error **errp)
 {
     QIOChannelFile *fioc = QIO_CHANNEL_FILE(ioc);
@@ -114,6 +116,7 @@ static ssize_t qio_channel_file_writev(QIOChannel *ioc,
                                        size_t niov,
                                        int *fds,
                                        size_t nfds,
+                                       int flags,
                                        Error **errp)
 {
     QIOChannelFile *fioc = QIO_CHANNEL_FILE(ioc);
@@ -139,14 +142,19 @@ static int qio_channel_file_set_blocking(QIOChannel *ioc,
                                          bool enabled,
                                          Error **errp)
 {
+#ifdef WIN32
+    /* not implemented */
+    error_setg_errno(errp, errno, "Failed to set FD nonblocking");
+    return -1;
+#else
     QIOChannelFile *fioc = QIO_CHANNEL_FILE(ioc);
 
-    if (enabled) {
-        qemu_set_block(fioc->fd);
-    } else {
-        qemu_set_nonblock(fioc->fd);
+    if (!g_unix_set_fd_nonblocking(fioc->fd, !enabled, NULL)) {
+        error_setg_errno(errp, errno, "Failed to set FD nonblocking");
+        return -1;
     }
     return 0;
+#endif
 }
 
 
@@ -185,13 +193,17 @@ static int qio_channel_file_close(QIOChannel *ioc,
 
 
 static void qio_channel_file_set_aio_fd_handler(QIOChannel *ioc,
-                                                AioContext *ctx,
+                                                AioContext *read_ctx,
                                                 IOHandler *io_read,
+                                                AioContext *write_ctx,
                                                 IOHandler *io_write,
                                                 void *opaque)
 {
     QIOChannelFile *fioc = QIO_CHANNEL_FILE(ioc);
-    aio_set_fd_handler(ctx, fioc->fd, false, io_read, io_write, NULL, opaque);
+
+    qio_channel_util_set_aio_fd_handler(fioc->fd, read_ctx, io_read,
+                                        fioc->fd, write_ctx, io_write,
+                                        opaque);
 }
 
 static GSource *qio_channel_file_create_watch(QIOChannel *ioc,

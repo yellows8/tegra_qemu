@@ -2,12 +2,14 @@
 #include "cpu.h"
 #include "exec/exec-all.h"
 #include "sysemu/kvm.h"
+#include "sysemu/tcg.h"
 #include "helper_regs.h"
 #include "mmu-hash64.h"
 #include "migration/cpu.h"
 #include "qapi/error.h"
-#include "qemu/main-loop.h"
 #include "kvm_ppc.h"
+#include "power8-pmu.h"
+#include "sysemu/replay.h"
 
 static void post_load_update_msr(CPUPPCState *env)
 {
@@ -19,117 +21,6 @@ static void post_load_update_msr(CPUPPCState *env)
      */
     env->msr ^= env->msr_mask & ~((1ULL << MSR_TGPR) | MSR_HVB);
     ppc_store_msr(env, msr);
-}
-
-static int cpu_load_old(QEMUFile *f, void *opaque, int version_id)
-{
-    PowerPCCPU *cpu = opaque;
-    CPUPPCState *env = &cpu->env;
-    unsigned int i, j;
-    target_ulong sdr1;
-    uint32_t fpscr, vscr;
-#if defined(TARGET_PPC64)
-    int32_t slb_nr;
-#endif
-    target_ulong xer;
-
-    for (i = 0; i < 32; i++) {
-        qemu_get_betls(f, &env->gpr[i]);
-    }
-#if !defined(TARGET_PPC64)
-    for (i = 0; i < 32; i++) {
-        qemu_get_betls(f, &env->gprh[i]);
-    }
-#endif
-    qemu_get_betls(f, &env->lr);
-    qemu_get_betls(f, &env->ctr);
-    for (i = 0; i < 8; i++) {
-        qemu_get_be32s(f, &env->crf[i]);
-    }
-    qemu_get_betls(f, &xer);
-    cpu_write_xer(env, xer);
-    qemu_get_betls(f, &env->reserve_addr);
-    qemu_get_betls(f, &env->msr);
-    for (i = 0; i < 4; i++) {
-        qemu_get_betls(f, &env->tgpr[i]);
-    }
-    for (i = 0; i < 32; i++) {
-        union {
-            float64 d;
-            uint64_t l;
-        } u;
-        u.l = qemu_get_be64(f);
-        *cpu_fpr_ptr(env, i) = u.d;
-    }
-    qemu_get_be32s(f, &fpscr);
-    env->fpscr = fpscr;
-    qemu_get_sbe32s(f, &env->access_type);
-#if defined(TARGET_PPC64)
-    qemu_get_betls(f, &env->spr[SPR_ASR]);
-    qemu_get_sbe32s(f, &slb_nr);
-#endif
-    qemu_get_betls(f, &sdr1);
-    for (i = 0; i < 32; i++) {
-        qemu_get_betls(f, &env->sr[i]);
-    }
-    for (i = 0; i < 2; i++) {
-        for (j = 0; j < 8; j++) {
-            qemu_get_betls(f, &env->DBAT[i][j]);
-        }
-    }
-    for (i = 0; i < 2; i++) {
-        for (j = 0; j < 8; j++) {
-            qemu_get_betls(f, &env->IBAT[i][j]);
-        }
-    }
-    qemu_get_sbe32s(f, &env->nb_tlb);
-    qemu_get_sbe32s(f, &env->tlb_per_way);
-    qemu_get_sbe32s(f, &env->nb_ways);
-    qemu_get_sbe32s(f, &env->last_way);
-    qemu_get_sbe32s(f, &env->id_tlbs);
-    qemu_get_sbe32s(f, &env->nb_pids);
-    if (env->tlb.tlb6) {
-        /* XXX assumes 6xx */
-        for (i = 0; i < env->nb_tlb; i++) {
-            qemu_get_betls(f, &env->tlb.tlb6[i].pte0);
-            qemu_get_betls(f, &env->tlb.tlb6[i].pte1);
-            qemu_get_betls(f, &env->tlb.tlb6[i].EPN);
-        }
-    }
-    for (i = 0; i < 4; i++) {
-        qemu_get_betls(f, &env->pb[i]);
-    }
-    for (i = 0; i < 1024; i++) {
-        qemu_get_betls(f, &env->spr[i]);
-    }
-    if (!cpu->vhyp) {
-        ppc_store_sdr1(env, sdr1);
-    }
-    qemu_get_be32s(f, &vscr);
-    ppc_store_vscr(env, vscr);
-    qemu_get_be64s(f, &env->spe_acc);
-    qemu_get_be32s(f, &env->spe_fscr);
-    qemu_get_betls(f, &env->msr_mask);
-    qemu_get_be32s(f, &env->flags);
-    qemu_get_sbe32s(f, &env->error_code);
-    qemu_get_be32s(f, &env->pending_interrupts);
-    qemu_get_be32s(f, &env->irq_input_state);
-    for (i = 0; i < POWERPC_EXCP_NB; i++) {
-        qemu_get_betls(f, &env->excp_vectors[i]);
-    }
-    qemu_get_betls(f, &env->excp_prefix);
-    qemu_get_betls(f, &env->ivor_mask);
-    qemu_get_betls(f, &env->ivpr_mask);
-    qemu_get_betls(f, &env->hreset_vector);
-    qemu_get_betls(f, &env->nip);
-    qemu_get_sbetl(f); /* Discard unused hflags */
-    qemu_get_sbetl(f); /* Discard unused hflags_nmsr */
-    qemu_get_sbe32(f); /* Discard unused mmu_idx */
-    qemu_get_sbe32(f); /* Discard unused power_mode */
-
-    post_load_update_msr(env);
-
-    return 0;
 }
 
 static int get_avr(QEMUFile *f, void *pv, size_t size,
@@ -262,7 +153,8 @@ static int cpu_pre_save(void *opaque)
         | PPC2_ATOMIC_ISA206 | PPC2_FP_CVT_ISA206
         | PPC2_FP_TST_ISA206 | PPC2_BCTAR_ISA207
         | PPC2_LSQ_ISA207 | PPC2_ALTIVEC_207
-        | PPC2_ISA205 | PPC2_ISA207S | PPC2_FP_CVT_S64 | PPC2_TM;
+        | PPC2_ISA205 | PPC2_ISA207S | PPC2_FP_CVT_S64 | PPC2_TM
+        | PPC2_MEM_LWSYNC;
 
     env->spr[SPR_LR] = env->lr;
     env->spr[SPR_CTR] = env->ctr;
@@ -314,9 +206,16 @@ static int cpu_pre_save(void *opaque)
         }
     }
 
-    /* Retain migration compatibility for pre 6.0 for 601 machines. */
-    env->hflags_compat_nmsr = (env->flags & POWERPC_FLAG_HID0_LE
-                               ? env->hflags & MSR_LE : 0);
+    /* Used to retain migration compatibility for pre 6.0 for 601 machines. */
+    env->hflags_compat_nmsr = 0;
+
+    if (tcg_enabled()) {
+        /*
+         * TCG does not maintain the DECR spr (unlike KVM) so have to save
+         * it here.
+         */
+        env->spr[SPR_DECR] = cpu_ppc_load_decr(env);
+    }
 
     return 0;
 }
@@ -339,7 +238,7 @@ static bool pvr_match(PowerPCCPU *cpu, uint32_t pvr)
     if (pvr == pcc->pvr) {
         return true;
     }
-    return pcc->pvr_match(pcc, pvr);
+    return pcc->pvr_match(pcc, pvr, true);
 }
 
 static int cpu_post_load(void *opaque, int version_id)
@@ -422,6 +321,21 @@ static int cpu_post_load(void *opaque, int version_id)
 
     post_load_update_msr(env);
 
+    if (tcg_enabled()) {
+        /* Re-set breaks based on regs */
+#if defined(TARGET_PPC64)
+        ppc_update_ciabr(env);
+        ppc_update_daw0(env);
+#endif
+        /*
+         * TCG needs to re-start the decrementer timer and/or raise the
+         * interrupt. This works for level-triggered decrementer. Edge
+         * triggered types (including HDEC) would need to carry more state.
+         */
+        cpu_ppc_store_decr(env, env->spr[SPR_DECR]);
+        pmu_mmcr01_updated(env);
+    }
+
     return 0;
 }
 
@@ -437,7 +351,7 @@ static const VMStateDescription vmstate_fpu = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = fpu_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_FPR_ARRAY(env.vsr, PowerPCCPU, 32),
         VMSTATE_UINTTL(env.fpscr, PowerPCCPU),
         VMSTATE_END_OF_LIST()
@@ -478,7 +392,7 @@ static const VMStateDescription vmstate_altivec = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = altivec_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_AVR_ARRAY(env.vsr, PowerPCCPU, 32),
         /*
          * Save the architecture value of the vscr, not the internally
@@ -511,7 +425,7 @@ static const VMStateDescription vmstate_vsx = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = vsx_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_VSR_ARRAY(env.vsr, PowerPCCPU, 32),
         VMSTATE_END_OF_LIST()
     },
@@ -523,16 +437,15 @@ static bool tm_needed(void *opaque)
 {
     PowerPCCPU *cpu = opaque;
     CPUPPCState *env = &cpu->env;
-    return msr_ts;
+    return FIELD_EX64(env->msr, MSR, TS);
 }
 
 static const VMStateDescription vmstate_tm = {
     .name = "cpu/tm",
     .version_id = 1,
     .minimum_version_id = 1,
-    .minimum_version_id_old = 1,
     .needed = tm_needed,
-    .fields      = (VMStateField []) {
+    .fields = (const VMStateField []) {
         VMSTATE_UINTTL_ARRAY(env.tm_gpr, PowerPCCPU, 32),
         VMSTATE_AVR_ARRAY(env.tm_vsr, PowerPCCPU, 64),
         VMSTATE_UINT64(env.tm_cr, PowerPCCPU),
@@ -566,7 +479,7 @@ static const VMStateDescription vmstate_sr = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = sr_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINTTL_ARRAY(env.sr, PowerPCCPU, 32),
         VMSTATE_END_OF_LIST()
     },
@@ -640,7 +553,7 @@ static const VMStateDescription vmstate_slb = {
     .minimum_version_id = 1,
     .needed = slb_needed,
     .post_load = slb_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_INT32_TEST(mig_slb_nr, PowerPCCPU, cpu_pre_3_0_migration),
         VMSTATE_SLB_ARRAY(env.slb, PowerPCCPU, MAX_SLB_ENTRIES),
         VMSTATE_END_OF_LIST()
@@ -652,7 +565,7 @@ static const VMStateDescription vmstate_tlb6xx_entry = {
     .name = "cpu/tlb6xx_entry",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINTTL(pte0, ppc6xx_tlb_t),
         VMSTATE_UINTTL(pte1, ppc6xx_tlb_t),
         VMSTATE_UINTTL(EPN, ppc6xx_tlb_t),
@@ -673,7 +586,7 @@ static const VMStateDescription vmstate_tlb6xx = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = tlb6xx_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_INT32_EQUAL(env.nb_tlb, PowerPCCPU, NULL),
         VMSTATE_STRUCT_VARRAY_POINTER_INT32(env.tlb.tlb6, PowerPCCPU,
                                             env.nb_tlb,
@@ -688,7 +601,7 @@ static const VMStateDescription vmstate_tlbemb_entry = {
     .name = "cpu/tlbemb_entry",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(RPN, ppcemb_tlb_t),
         VMSTATE_UINTTL(EPN, ppcemb_tlb_t),
         VMSTATE_UINTTL(PID, ppcemb_tlb_t),
@@ -707,50 +620,26 @@ static bool tlbemb_needed(void *opaque)
     return env->nb_tlb && (env->tlb_type == TLB_EMB);
 }
 
-static bool pbr403_needed(void *opaque)
-{
-    PowerPCCPU *cpu = opaque;
-    uint32_t pvr = cpu->env.spr[SPR_PVR];
-
-    return (pvr & 0xffff0000) == 0x00200000;
-}
-
-static const VMStateDescription vmstate_pbr403 = {
-    .name = "cpu/pbr403",
-    .version_id = 1,
-    .minimum_version_id = 1,
-    .needed = pbr403_needed,
-    .fields = (VMStateField[]) {
-        VMSTATE_UINTTL_ARRAY(env.pb, PowerPCCPU, 4),
-        VMSTATE_END_OF_LIST()
-    },
-};
-
 static const VMStateDescription vmstate_tlbemb = {
     .name = "cpu/tlb6xx",
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = tlbemb_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_INT32_EQUAL(env.nb_tlb, PowerPCCPU, NULL),
         VMSTATE_STRUCT_VARRAY_POINTER_INT32(env.tlb.tlbe, PowerPCCPU,
                                             env.nb_tlb,
                                             vmstate_tlbemb_entry,
                                             ppcemb_tlb_t),
-        /* 403 protection registers */
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription*[]) {
-        &vmstate_pbr403,
-        NULL
-    }
 };
 
 static const VMStateDescription vmstate_tlbmas_entry = {
     .name = "cpu/tlbmas_entry",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(mas8, ppcmas_tlb_t),
         VMSTATE_UINT32(mas1, ppcmas_tlb_t),
         VMSTATE_UINT64(mas2, ppcmas_tlb_t),
@@ -772,7 +661,7 @@ static const VMStateDescription vmstate_tlbmas = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = tlbmas_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_INT32_EQUAL(env.nb_tlb, PowerPCCPU, NULL),
         VMSTATE_STRUCT_VARRAY_POINTER_INT32(env.tlb.tlbm, PowerPCCPU,
                                             env.nb_tlb,
@@ -795,8 +684,29 @@ static const VMStateDescription vmstate_compat = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = compat_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(compat_pvr, PowerPCCPU),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+static bool reservation_needed(void *opaque)
+{
+    return (replay_mode != REPLAY_MODE_NONE);
+}
+
+static const VMStateDescription vmstate_reservation = {
+    .name = "cpu/reservation",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = reservation_needed,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINTTL(env.reserve_addr, PowerPCCPU),
+        VMSTATE_UINTTL(env.reserve_length, PowerPCCPU),
+        VMSTATE_UINTTL(env.reserve_val, PowerPCCPU),
+#if defined(TARGET_PPC64)
+        VMSTATE_UINTTL(env.reserve_val2, PowerPCCPU),
+#endif
         VMSTATE_END_OF_LIST()
     }
 };
@@ -805,11 +715,9 @@ const VMStateDescription vmstate_ppc_cpu = {
     .name = "cpu",
     .version_id = 5,
     .minimum_version_id = 5,
-    .minimum_version_id_old = 4,
-    .load_state_old = cpu_load_old,
     .pre_save = cpu_pre_save,
     .post_load = cpu_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UNUSED(sizeof(target_ulong)), /* was _EQUAL(env.spr[SPR_PVR]) */
 
         /* User mode architected state */
@@ -824,8 +732,7 @@ const VMStateDescription vmstate_ppc_cpu = {
         VMSTATE_UINTTL_ARRAY(env.spr, PowerPCCPU, 1024),
         VMSTATE_UINT64(env.spe_acc, PowerPCCPU),
 
-        /* Reservation */
-        VMSTATE_UINTTL(env.reserve_addr, PowerPCCPU),
+        VMSTATE_UNUSED(sizeof(target_ulong)), /* was env.reserve_addr */
 
         /* Supervisor mode architected state */
         VMSTATE_UINTTL(env.msr, PowerPCCPU),
@@ -841,7 +748,7 @@ const VMStateDescription vmstate_ppc_cpu = {
         VMSTATE_UINT32_TEST(mig_nb_BATs, PowerPCCPU, cpu_pre_2_8_migration),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription*[]) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_fpu,
         &vmstate_altivec,
         &vmstate_vsx,
@@ -854,6 +761,7 @@ const VMStateDescription vmstate_ppc_cpu = {
         &vmstate_tlbemb,
         &vmstate_tlbmas,
         &vmstate_compat,
+        &vmstate_reservation,
         NULL
     }
 };

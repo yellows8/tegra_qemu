@@ -12,7 +12,7 @@ Supported devices
 
 The ``virt`` machine supports the following devices:
 
-* Up to 8 generic RV32GC/RV64GC cores, with optional extensions
+* Up to 512 generic RV32GC/RV64GC cores, with optional extensions
 * Core Local Interruptor (CLINT)
 * Platform-Level Interrupt Controller (PLIC)
 * CFI parallel NOR flash memory
@@ -23,9 +23,9 @@ The ``virt`` machine supports the following devices:
 * 1 generic PCIe host bridge
 * The fw_cfg device that allows a guest to obtain data from QEMU
 
-Note that the default CPU is a generic RV32GC/RV64GC. Optional extensions
-can be enabled via command line parameters, e.g.: ``-cpu rv64,x-h=true``
-enables the hypervisor extension for RV64.
+The hypervisor extension has been enabled for the default CPU, so virtual
+machines with hypervisor extension can simply be used without explicitly
+declaring.
 
 Hardware configuration information
 ----------------------------------
@@ -52,6 +52,69 @@ for loading a Linux kernel, a VxWorks kernel, an S-mode U-Boot bootloader
 with the default OpenSBI firmware image as the -bios. It also supports
 the recommended RISC-V bootflow: U-Boot SPL (M-mode) loads OpenSBI fw_dynamic
 firmware and U-Boot proper (S-mode), using the standard -bios functionality.
+
+Using flash devices
+-------------------
+
+By default, the first flash device (pflash0) is expected to contain
+S-mode firmware code. It can be configured as read-only, with the
+second flash device (pflash1) available to store configuration data.
+
+For example, booting edk2 looks like
+
+.. code-block:: bash
+
+  $ qemu-system-riscv64 \
+     -blockdev node-name=pflash0,driver=file,read-only=on,filename=<edk2_code> \
+     -blockdev node-name=pflash1,driver=file,filename=<edk2_vars> \
+     -M virt,pflash0=pflash0,pflash1=pflash1 \
+     ... other args ....
+
+For TCG guests only, it is also possible to boot M-mode firmware from
+the first flash device (pflash0) by additionally passing ``-bios
+none``, as in
+
+.. code-block:: bash
+
+  $ qemu-system-riscv64 \
+     -bios none \
+     -blockdev node-name=pflash0,driver=file,read-only=on,filename=<m_mode_code> \
+     -M virt,pflash0=pflash0 \
+     ... other args ....
+
+Firmware images used for pflash must be exactly 32 MiB in size.
+
+Machine-specific options
+------------------------
+
+The following machine-specific options are supported:
+
+- aclint=[on|off]
+
+  When this option is "on", ACLINT devices will be emulated instead of
+  SiFive CLINT. When not specified, this option is assumed to be "off".
+  This option is restricted to the TCG accelerator.
+
+- acpi=[on|off|auto]
+
+  When this option is "on" (which is the default), ACPI tables are generated and
+  exposed as firmware tables etc/acpi/rsdp and etc/acpi/tables.
+
+- aia=[none|aplic|aplic-imsic]
+
+  This option allows selecting interrupt controller defined by the AIA
+  (advanced interrupt architecture) specification. The "aia=aplic" selects
+  APLIC (advanced platform level interrupt controller) to handle wired
+  interrupts whereas the "aia=aplic-imsic" selects APLIC and IMSIC (incoming
+  message signaled interrupt controller) to handle both wired interrupts and
+  MSIs. When not specified, this option is assumed to be "none" which selects
+  SiFive PLIC to handle wired interrupts.
+
+- aia-guests=nnn
+
+  The number of per-HART VS-level AIA IMSIC pages to be emulated for a guest
+  having AIA IMSIC (i.e. "aia=aplic-imsic" selected). When not specified,
+  the default number of per-HART VS-level AIA IMSIC pages is 0.
 
 Running Linux kernel
 --------------------
@@ -136,3 +199,28 @@ The minimal QEMU commands to run U-Boot SPL are:
 To test 32-bit U-Boot images, switch to use qemu-riscv32_smode_defconfig and
 riscv32_spl_defconfig builds, and replace ``qemu-system-riscv64`` with
 ``qemu-system-riscv32`` in the command lines above to boot the 32-bit U-Boot.
+
+Enabling TPM
+------------
+
+A TPM device can be connected to the virt board by following the steps below.
+
+First launch the TPM emulator:
+
+.. code-block:: bash
+
+  $ swtpm socket --tpm2 -t -d --tpmstate dir=/tmp/tpm \
+        --ctrl type=unixio,path=swtpm-sock
+
+Then launch QEMU with some additional arguments to link a TPM device to the backend:
+
+.. code-block:: bash
+
+  $ qemu-system-riscv64 \
+    ... other args .... \
+    -chardev socket,id=chrtpm,path=swtpm-sock \
+    -tpmdev emulator,id=tpm0,chardev=chrtpm \
+    -device tpm-tis-device,tpmdev=tpm0
+
+The TPM device can be seen in the memory tree and the generated device
+tree and should be accessible from the guest software.

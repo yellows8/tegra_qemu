@@ -6,7 +6,6 @@
 #include "exec/memory.h"
 #include "sysemu/hostmem.h"
 #include "sysemu/blockdev.h"
-#include "qemu/accel.h"
 #include "qapi/qapi-types-machine.h"
 #include "qemu/module.h"
 #include "qom/object.h"
@@ -25,7 +24,14 @@ OBJECT_DECLARE_TYPE(MachineState, MachineClass, MACHINE)
 
 extern MachineState *current_machine;
 
-void machine_run_board_init(MachineState *machine);
+/**
+ * machine_class_default_cpu_type: Return the machine default CPU type.
+ * @mc: Machine class
+ */
+const char *machine_class_default_cpu_type(MachineClass *mc);
+
+void machine_add_audiodev_property(MachineClass *mc);
+void machine_run_board_init(MachineState *machine, const char *mem_path, Error **errp);
 bool machine_usb(MachineState *machine);
 int machine_phandle_start(MachineState *machine);
 bool machine_dump_guest_core(MachineState *machine);
@@ -34,6 +40,11 @@ HotpluggableCPUList *machine_query_hotpluggable_cpus(MachineState *machine);
 void machine_set_cpu_numa_node(MachineState *machine,
                                const CpuInstanceProperties *props,
                                Error **errp);
+void machine_parse_smp_config(MachineState *ms,
+                              const SMPConfiguration *config, Error **errp);
+unsigned int machine_topo_get_cores_per_socket(const MachineState *ms);
+unsigned int machine_topo_get_threads_per_socket(const MachineState *ms);
+void machine_memory_devices_init(MachineState *ms, hwaddr base, uint64_t size);
 
 /**
  * machine_class_allow_dynamic_sysbus_dev: Add type to list of valid devices
@@ -50,6 +61,21 @@ void machine_set_cpu_numa_node(MachineState *machine,
  * to the list of specifically permitted devices.
  */
 void machine_class_allow_dynamic_sysbus_dev(MachineClass *mc, const char *type);
+
+/**
+ * device_type_is_dynamic_sysbus: Check if type is an allowed sysbus device
+ * type for the machine class.
+ * @mc: Machine class
+ * @type: type to check (should be a subtype of TYPE_SYS_BUS_DEVICE)
+ *
+ * Returns: true if @type is a type in the machine's list of
+ * dynamically pluggable sysbus devices; otherwise false.
+ *
+ * Check if the QOM type @type is in the list of allowed sysbus device
+ * types (see machine_class_allowed_dynamic_sysbus_dev()).
+ * Note that if @type has a parent type in the list, it is allowed too.
+ */
+bool device_type_is_dynamic_sysbus(MachineClass *mc, const char *type);
 
 /**
  * device_is_dynamic_sysbus: test whether device is a dynamic sysbus device
@@ -109,6 +135,25 @@ typedef struct {
 } CPUArchIdList;
 
 /**
+ * SMPCompatProps:
+ * @prefer_sockets - whether sockets are preferred over cores in smp parsing
+ * @dies_supported - whether dies are supported by the machine
+ * @clusters_supported - whether clusters are supported by the machine
+ * @has_clusters - whether clusters are explicitly specified in the user
+ *                 provided SMP configuration
+ * @books_supported - whether books are supported by the machine
+ * @drawers_supported - whether drawers are supported by the machine
+ */
+typedef struct {
+    bool prefer_sockets;
+    bool dies_supported;
+    bool clusters_supported;
+    bool has_clusters;
+    bool books_supported;
+    bool drawers_supported;
+} SMPCompatProps;
+
+/**
  * MachineClass:
  * @deprecation_reason: If set, the machine is marked as deprecated. The
  *    string should provide some clear information about what to use instead.
@@ -124,7 +169,7 @@ typedef struct {
  *    any actions to be performed by hotplug handler.
  * @cpu_index_to_instance_props:
  *    used to provide @cpu_index to socket/core/thread number mapping, allowing
- *    legacy code to perform maping from cpu_index to topology properties
+ *    legacy code to perform mapping from cpu_index to topology properties
  *    Returns: tuple of socket/core/thread ids given cpu_index belongs to.
  *    used to provide @cpu_index to socket number mapping, allowing
  *    a machine to group CPU threads belonging to the same socket/package
@@ -169,10 +214,6 @@ typedef struct {
  *    kvm-type may be NULL if it is not needed.
  * @numa_mem_supported:
  *    true if '--numa node.mem' option is supported and false otherwise
- * @smp_parse:
- *    The function pointer to hook different machine specific functions for
- *    parsing "smp-opts" from QemuOpts to MachineState::CpuTopology and more
- *    machine specific topology fields, such as smp_dies for PCMachine.
  * @hotplug_allowed:
  *    If the hook is provided, then it'll be called for each device
  *    hotplug to check whether the device hotplug is allowed.  Return
@@ -181,10 +222,10 @@ typedef struct {
  *    the rejection.  If the hook is not provided, all hotplug will be
  *    allowed.
  * @default_ram_id:
- *    Specifies inital RAM MemoryRegion name to be used for default backend
+ *    Specifies initial RAM MemoryRegion name to be used for default backend
  *    creation if user explicitly hasn't specified backend with "memory-backend"
  *    property.
- *    It also will be used as a way to optin into "-m" option support.
+ *    It also will be used as a way to option into "-m" option support.
  *    If it's not set by board, '-m' will be ignored and generic code will
  *    not create default RAM MemoryRegion.
  * @fixup_ram_size:
@@ -206,10 +247,9 @@ struct MachineClass {
     const char *deprecation_reason;
 
     void (*init)(MachineState *state);
-    void (*reset)(MachineState *state);
+    void (*reset)(MachineState *state, ShutdownCause reason);
     void (*wakeup)(MachineState *state);
     int (*kvm_type)(MachineState *machine, const char *arg);
-    void (*smp_parse)(MachineState *ms, SMPConfiguration *config, Error **errp);
 
     BlockInterfaceType block_default_type;
     int units_per_default_bus;
@@ -227,6 +267,7 @@ struct MachineClass {
     const char *default_machine_opts;
     const char *default_boot_order;
     const char *default_display;
+    const char *default_nic;
     GPtrArray *compat_props;
     const char *hw_version;
     ram_addr_t default_ram_size;
@@ -238,7 +279,7 @@ struct MachineClass {
     bool has_hotpluggable_cpus;
     bool ignore_memory_transaction_failures;
     int numa_mem_align_shift;
-    const char **valid_cpu_types;
+    const char * const *valid_cpu_types;
     strList *allowed_dynamic_sysbus_devices;
     bool auto_enable_numa_with_memhp;
     bool auto_enable_numa_with_memdev;
@@ -247,6 +288,8 @@ struct MachineClass {
     bool nvdimm_supported;
     bool numa_mem_supported;
     bool auto_enable_numa;
+    bool cpu_cluster_has_numa_boundary;
+    SMPCompatProps smp_props;
     const char *default_ram_id;
 
     HotplugHandler *(*get_hotplug_handler)(MachineState *machine,
@@ -264,27 +307,50 @@ struct MachineClass {
  * DeviceMemoryState:
  * @base: address in guest physical address space where the memory
  * address space for memory devices starts
- * @mr: address space container for memory devices
+ * @mr: memory region container for memory devices
+ * @as: address space for memory devices
+ * @listener: memory listener used to track used memslots in the address space
+ * @dimm_size: the sum of plugged DIMMs' sizes
+ * @used_region_size: the part of @mr already used by memory devices
+ * @required_memslots: the number of memslots required by memory devices
+ * @used_memslots: the number of memslots currently used by memory devices
+ * @memslot_auto_decision_active: whether any plugged memory device
+ *                                automatically decided to use more than
+ *                                one memslot
  */
 typedef struct DeviceMemoryState {
     hwaddr base;
     MemoryRegion mr;
+    AddressSpace as;
+    MemoryListener listener;
+    uint64_t dimm_size;
+    uint64_t used_region_size;
+    unsigned int required_memslots;
+    unsigned int used_memslots;
+    unsigned int memslot_auto_decision_active;
 } DeviceMemoryState;
 
 /**
  * CpuTopology:
  * @cpus: the number of present logical processors on the machine
- * @cores: the number of cores in one package
+ * @drawers: the number of drawers on the machine
+ * @books: the number of books in one drawer
+ * @sockets: the number of sockets in one book
+ * @dies: the number of dies in one socket
+ * @clusters: the number of clusters in one die
+ * @cores: the number of cores in one cluster
  * @threads: the number of threads in one core
- * @sockets: the number of sockets on the machine
  * @max_cpus: the maximum number of logical processors on the machine
  */
 typedef struct CpuTopology {
     unsigned int cpus;
+    unsigned int drawers;
+    unsigned int books;
+    unsigned int sockets;
     unsigned int dies;
+    unsigned int clusters;
     unsigned int cores;
     unsigned int threads;
-    unsigned int sockets;
     unsigned int max_cpus;
 } CpuTopology;
 
@@ -294,7 +360,6 @@ typedef struct CpuTopology {
 struct MachineState {
     /*< private >*/
     Object parent_obj;
-    Notifier sysbus_notifier;
 
     /*< public >*/
 
@@ -314,7 +379,7 @@ struct MachineState {
     bool suppress_vmdesc;
     bool enable_graphics;
     ConfidentialGuestSupport *cgs;
-    char *ram_memdev_id;
+    HostMemoryBackend *memdev;
     /*
      * convenience alias to ram_memdev_id backend memory region
      * or to numa container memory region
@@ -322,11 +387,18 @@ struct MachineState {
     MemoryRegion *ram;
     DeviceMemoryState *device_memory;
 
+    /*
+     * Included in MachineState for simplicity, but not supported
+     * unless machine_add_audiodev_property is called.  Boards
+     * that have embedded audio devices can call it from the
+     * machine init function and forward the property to the device.
+     */
+    char *audiodev;
+
     ram_addr_t ram_size;
     ram_addr_t maxram_size;
     uint64_t   ram_slots;
-    const char *boot_order;
-    const char *boot_once;
+    BootConfiguration boot_config;
     char *kernel_filename;
     char *kernel_cmdline;
     char *initrd_filename;
@@ -354,6 +426,30 @@ struct MachineState {
         type_register_static(&machine_initfn##_typeinfo); \
     } \
     type_init(machine_initfn##_register_types)
+
+extern GlobalProperty hw_compat_8_2[];
+extern const size_t hw_compat_8_2_len;
+
+extern GlobalProperty hw_compat_8_1[];
+extern const size_t hw_compat_8_1_len;
+
+extern GlobalProperty hw_compat_8_0[];
+extern const size_t hw_compat_8_0_len;
+
+extern GlobalProperty hw_compat_7_2[];
+extern const size_t hw_compat_7_2_len;
+
+extern GlobalProperty hw_compat_7_1[];
+extern const size_t hw_compat_7_1_len;
+
+extern GlobalProperty hw_compat_7_0[];
+extern const size_t hw_compat_7_0_len;
+
+extern GlobalProperty hw_compat_6_2[];
+extern const size_t hw_compat_6_2_len;
+
+extern GlobalProperty hw_compat_6_1[];
+extern const size_t hw_compat_6_1_len;
 
 extern GlobalProperty hw_compat_6_0[];
 extern const size_t hw_compat_6_0_len;

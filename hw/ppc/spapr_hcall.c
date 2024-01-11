@@ -3,20 +3,24 @@
 #include "qapi/error.h"
 #include "sysemu/hw_accel.h"
 #include "sysemu/runstate.h"
+#include "sysemu/tcg.h"
 #include "qemu/log.h"
 #include "qemu/main-loop.h"
 #include "qemu/module.h"
 #include "qemu/error-report.h"
-#include "exec/exec-all.h"
+#include "exec/tb-flush.h"
 #include "helper_regs.h"
+#include "hw/ppc/ppc.h"
 #include "hw/ppc/spapr.h"
 #include "hw/ppc/spapr_cpu_core.h"
+#include "hw/ppc/spapr_nested.h"
 #include "mmu-hash64.h"
 #include "cpu-models.h"
 #include "trace.h"
 #include "kvm_ppc.h"
 #include "hw/ppc/fdt.h"
 #include "hw/ppc/spapr_ovec.h"
+#include "hw/ppc/spapr_numa.h"
 #include "mmu-book3s-v3.h"
 #include "hw/mem/memory-device.h"
 
@@ -28,7 +32,7 @@ bool is_ram_address(SpaprMachineState *spapr, hwaddr addr)
     if (addr < machine->ram_size) {
         return true;
     }
-    if ((addr >= dms->base)
+    if (dms && (addr >= dms->base)
         && ((addr - dms->base) < memory_region_size(&dms->mr))) {
         return true;
     }
@@ -488,6 +492,7 @@ static target_ulong h_cede(PowerPCCPU *cpu, SpaprMachineState *spapr,
 
     env->msr |= (1ULL << MSR_EE);
     hreg_compute_hflags(env);
+    ppc_maybe_interrupt(env);
 
     if (spapr_cpu->prod) {
         spapr_cpu->prod = false;
@@ -498,6 +503,7 @@ static target_ulong h_cede(PowerPCCPU *cpu, SpaprMachineState *spapr,
         cs->halted = 1;
         cs->exception_index = EXCP_HLT;
         cs->exit_request = 1;
+        ppc_maybe_interrupt(env);
     }
 
     return H_SUCCESS;
@@ -519,6 +525,7 @@ static target_ulong h_confer_self(PowerPCCPU *cpu)
     cs->halted = 1;
     cs->exception_index = EXCP_HALTED;
     cs->exit_request = 1;
+    ppc_maybe_interrupt(&cpu->env);
 
     return H_SUCCESS;
 }
@@ -631,6 +638,7 @@ static target_ulong h_prod(PowerPCCPU *cpu, SpaprMachineState *spapr,
     spapr_cpu = spapr_cpu_state(tcpu);
     spapr_cpu->prod = true;
     cs->halted = 0;
+    ppc_maybe_interrupt(&cpu->env);
     qemu_cpu_kick(cs);
 
     return H_SUCCESS;
@@ -781,6 +789,54 @@ static target_ulong h_logical_dcbf(PowerPCCPU *cpu, SpaprMachineState *spapr,
     return H_SUCCESS;
 }
 
+static target_ulong h_set_mode_resource_set_ciabr(PowerPCCPU *cpu,
+                                                  SpaprMachineState *spapr,
+                                                  target_ulong mflags,
+                                                  target_ulong value1,
+                                                  target_ulong value2)
+{
+    CPUPPCState *env = &cpu->env;
+
+    assert(tcg_enabled()); /* KVM will have handled this */
+
+    if (mflags) {
+        return H_UNSUPPORTED_FLAG;
+    }
+    if (value2) {
+        return H_P4;
+    }
+    if ((value1 & PPC_BITMASK(62, 63)) == 0x3) {
+        return H_P3;
+    }
+
+    ppc_store_ciabr(env, value1);
+
+    return H_SUCCESS;
+}
+
+static target_ulong h_set_mode_resource_set_dawr0(PowerPCCPU *cpu,
+                                                  SpaprMachineState *spapr,
+                                                  target_ulong mflags,
+                                                  target_ulong value1,
+                                                  target_ulong value2)
+{
+    CPUPPCState *env = &cpu->env;
+
+    assert(tcg_enabled()); /* KVM will have handled this */
+
+    if (mflags) {
+        return H_UNSUPPORTED_FLAG;
+    }
+    if (value2 & PPC_BIT(61)) {
+        return H_P4;
+    }
+
+    ppc_store_dawr0(env, value1);
+    ppc_store_dawrx0(env, value2);
+
+    return H_SUCCESS;
+}
+
 static target_ulong h_set_mode_resource_le(PowerPCCPU *cpu,
                                            SpaprMachineState *spapr,
                                            target_ulong mflags,
@@ -810,30 +866,32 @@ static target_ulong h_set_mode_resource_le(PowerPCCPU *cpu,
 }
 
 static target_ulong h_set_mode_resource_addr_trans_mode(PowerPCCPU *cpu,
+                                                        SpaprMachineState *spapr,
                                                         target_ulong mflags,
                                                         target_ulong value1,
                                                         target_ulong value2)
 {
-    PowerPCCPUClass *pcc = POWERPC_CPU_GET_CLASS(cpu);
-
-    if (!(pcc->insns_flags2 & PPC2_ISA207S)) {
-        return H_P2;
-    }
     if (value1) {
         return H_P3;
     }
+
     if (value2) {
         return H_P4;
     }
 
-    if (mflags == 1) {
-        /* AIL=1 is reserved in POWER8/POWER9/POWER10 */
+    /*
+     * AIL-1 is not architected, and AIL-2 is not supported by QEMU spapr.
+     * It is supported for faithful emulation of bare metal systems, but for
+     * compatibility concerns we leave it out of the pseries machine.
+     */
+    if (mflags != 0 && mflags != 3) {
         return H_UNSUPPORTED_FLAG;
     }
 
-    if (mflags == 2 && (pcc->insns_flags2 & PPC2_ISA310)) {
-        /* AIL=2 is reserved in POWER10 (ISA v3.1) */
-        return H_UNSUPPORTED_FLAG;
+    if (mflags == 3) {
+        if (!spapr_get_cap(spapr, SPAPR_CAP_AIL_MODE_3)) {
+            return H_UNSUPPORTED_FLAG;
+        }
     }
 
     spapr_set_all_lpcrs(mflags << LPCR_AIL_SHIFT, LPCR_AIL);
@@ -848,11 +906,19 @@ static target_ulong h_set_mode(PowerPCCPU *cpu, SpaprMachineState *spapr,
     target_ulong ret = H_P2;
 
     switch (resource) {
+    case H_SET_MODE_RESOURCE_SET_CIABR:
+        ret = h_set_mode_resource_set_ciabr(cpu, spapr, args[0], args[2],
+                                            args[3]);
+        break;
+    case H_SET_MODE_RESOURCE_SET_DAWR0:
+        ret = h_set_mode_resource_set_dawr0(cpu, spapr, args[0], args[2],
+                                            args[3]);
+        break;
     case H_SET_MODE_RESOURCE_LE:
         ret = h_set_mode_resource_le(cpu, spapr, args[0], args[2], args[3]);
         break;
     case H_SET_MODE_RESOURCE_ADDR_TRANS_MODE:
-        ret = h_set_mode_resource_addr_trans_mode(cpu, args[0],
+        ret = h_set_mode_resource_addr_trans_mode(cpu, spapr, args[0],
                                                   args[2], args[3]);
         break;
     }
@@ -918,6 +984,7 @@ static target_ulong h_register_process_table(PowerPCCPU *cpu,
     target_ulong page_size = args[2];
     target_ulong table_size = args[3];
     target_ulong update_lpcr = 0;
+    target_ulong table_byte_size;
     uint64_t cproc;
 
     if (flags & ~FLAGS_MASK) { /* Check no reserved bits are set */
@@ -925,6 +992,14 @@ static target_ulong h_register_process_table(PowerPCCPU *cpu,
     }
     if (flags & FLAG_MODIFY) {
         if (flags & FLAG_REGISTER) {
+            /* Check process table alignment */
+            table_byte_size = 1ULL << (table_size + 12);
+            if (proc_tbl & (table_byte_size - 1)) {
+                qemu_log_mask(LOG_GUEST_ERROR,
+                    "%s: process table not properly aligned: proc_tbl 0x"
+                    TARGET_FMT_lx" proc_tbl_size 0x"TARGET_FMT_lx"\n",
+                    __func__, proc_tbl, table_byte_size);
+            }
             if (flags & FLAG_RADIX) { /* Register new RADIX process table */
                 if (proc_tbl & 0xfff || proc_tbl >> 60) {
                     return H_P2;
@@ -1198,6 +1273,12 @@ target_ulong do_client_architecture_support(PowerPCCPU *cpu,
     spapr_ovec_cleanup(ov1_guest);
 
     /*
+     * Check for NUMA affinity conditions now that we know which NUMA
+     * affinity the guest will use.
+     */
+    spapr_numa_associativity_check(spapr);
+
+    /*
      * Ensure the guest asks for an interrupt mode we support;
      * otherwise terminate the boot.
      */
@@ -1238,6 +1319,14 @@ target_ulong do_client_architecture_support(PowerPCCPU *cpu,
     spapr->fdt_size = fdt_totalsize(fdt);
     spapr->fdt_initial_size = spapr->fdt_size;
     spapr->fdt_blob = fdt;
+
+    /*
+     * Set the machine->fdt pointer again since we just freed
+     * it above (by freeing spapr->fdt_blob). We set this
+     * pointer to enable support for the 'dumpdtb' QMP/HMP
+     * command.
+     */
+    MACHINE(spapr)->fdt = fdt;
 
     return H_SUCCESS;
 }
@@ -1465,7 +1554,12 @@ target_ulong spapr_hypercall(PowerPCCPU *cpu, target_ulong opcode,
     return H_FUNCTION;
 }
 
-#ifndef CONFIG_TCG
+#ifdef CONFIG_TCG
+static void hypercall_register_softmmu(void)
+{
+    /* DO NOTHING */
+}
+#else
 static target_ulong h_softmmu(PowerPCCPU *cpu, SpaprMachineState *spapr,
                             target_ulong opcode, target_ulong *args)
 {
@@ -1482,11 +1576,6 @@ static void hypercall_register_softmmu(void)
 
     /* hcall-bulk */
     spapr_register_hypercall(H_BULK_REMOVE, h_softmmu);
-}
-#else
-static void hypercall_register_softmmu(void)
-{
-    /* DO NOTHING */
 }
 #endif
 
@@ -1525,7 +1614,7 @@ static void hypercall_register_types(void)
     spapr_register_hypercall(H_GET_CPU_CHARACTERISTICS,
                              h_get_cpu_characteristics);
 
-    /* "debugger" hcalls (also used by SLOF). Note: We do -not- differenciate
+    /* "debugger" hcalls (also used by SLOF). Note: We do -not- differentiate
      * here between the "CI" and the "CACHE" variants, they will use whatever
      * mapping attributes qemu is using. When using KVM, the kernel will
      * enforce the attributes more strongly
@@ -1545,6 +1634,8 @@ static void hypercall_register_types(void)
     spapr_register_hypercall(KVMPPC_H_CAS, h_client_architecture_support);
 
     spapr_register_hypercall(KVMPPC_H_UPDATE_DT, h_update_dt);
+
+    spapr_register_nested();
 }
 
 type_init(hypercall_register_types)

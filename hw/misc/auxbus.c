@@ -65,7 +65,7 @@ AUXBus *aux_bus_init(DeviceState *parent, const char *name)
     AUXBus *bus;
     Object *auxtoi2c;
 
-    bus = AUX_BUS(qbus_create(TYPE_AUX_BUS, parent, name));
+    bus = AUX_BUS(qbus_new(TYPE_AUX_BUS, parent, name));
     auxtoi2c = object_new_with_props(TYPE_AUXTOI2C, OBJECT(bus), "i2c",
                                      &error_abort, NULL);
 
@@ -299,7 +299,7 @@ static void aux_slave_dev_print(Monitor *mon, DeviceState *dev, int indent)
 
     s = AUX_SLAVE(dev);
 
-    monitor_printf(mon, "%*smemory " TARGET_FMT_plx "/" TARGET_FMT_plx "\n",
+    monitor_printf(mon, "%*smemory " HWADDR_FMT_plx "/" HWADDR_FMT_plx "\n",
                    indent, "",
                    object_property_get_uint(OBJECT(s->mmio), "addr", NULL),
                    memory_region_size(s->mmio));

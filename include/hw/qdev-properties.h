@@ -17,6 +17,7 @@ struct Property {
     const PropertyInfo *info;
     ptrdiff_t    offset;
     uint8_t      bitnr;
+    uint64_t     bitmask;
     bool         set_default;
     union {
         int64_t i;
@@ -32,6 +33,7 @@ struct PropertyInfo {
     const char *name;
     const char *description;
     const QEnumLookup *enum_table;
+    bool realized_set_allowed; /* allow setting property on realized device */
     int (*print)(Object *obj, Property *prop, char *dest, size_t len);
     void (*set_default_value)(ObjectProperty *op, const Property *prop);
     ObjectProperty *(*create)(ObjectClass *oc, const char *name,
@@ -53,12 +55,13 @@ extern const PropertyInfo qdev_prop_uint16;
 extern const PropertyInfo qdev_prop_uint32;
 extern const PropertyInfo qdev_prop_int32;
 extern const PropertyInfo qdev_prop_uint64;
+extern const PropertyInfo qdev_prop_uint64_checkmask;
 extern const PropertyInfo qdev_prop_int64;
 extern const PropertyInfo qdev_prop_size;
 extern const PropertyInfo qdev_prop_string;
 extern const PropertyInfo qdev_prop_on_off_auto;
 extern const PropertyInfo qdev_prop_size32;
-extern const PropertyInfo qdev_prop_arraylen;
+extern const PropertyInfo qdev_prop_array;
 extern const PropertyInfo qdev_prop_link;
 
 #define DEFINE_PROP(_name, _state, _field, _prop, _type, ...) {  \
@@ -102,7 +105,15 @@ extern const PropertyInfo qdev_prop_link;
                 .set_default = true,                         \
                 .defval.u    = (bool)_defval)
 
-#define PROP_ARRAY_LEN_PREFIX "len-"
+/**
+ * The DEFINE_PROP_UINT64_CHECKMASK macro checks a user-supplied value
+ * against corresponding bitmask, rejects the value if it violates.
+ * The default value is set in instance_init().
+ */
+#define DEFINE_PROP_UINT64_CHECKMASK(_name, _state, _field, _bitmask)   \
+    DEFINE_PROP(_name, _state, _field, qdev_prop_uint64_checkmask, uint64_t, \
+                .bitmask    = (_bitmask),                     \
+                .set_default = false)
 
 /**
  * DEFINE_PROP_ARRAY:
@@ -114,28 +125,25 @@ extern const PropertyInfo qdev_prop_link;
  * @_arrayprop: PropertyInfo defining what property the array elements have
  * @_arraytype: C type of the array elements
  *
- * Define device properties for a variable-length array _name.  A
- * static property "len-arrayname" is defined. When the device creator
- * sets this property to the desired length of array, further dynamic
- * properties "arrayname[0]", "arrayname[1]", ...  are defined so the
- * device creator can set the array element values. Setting the
- * "len-arrayname" property more than once is an error.
+ * Define device properties for a variable-length array _name.  The array is
+ * represented as a list in the visitor interface.
  *
- * When the array length is set, the @_field member of the device
+ * @_arraytype is required to be movable with memcpy().
+ *
+ * When the array property is set, the @_field member of the device
  * struct is set to the array length, and @_arrayfield is set to point
- * to (zero-initialised) memory allocated for the array.  For a zero
- * length array, @_field will be set to 0 and @_arrayfield to NULL.
+ * to the memory allocated for the array.
+ *
  * It is the responsibility of the device deinit code to free the
  * @_arrayfield memory.
  */
-#define DEFINE_PROP_ARRAY(_name, _state, _field,               \
-                          _arrayfield, _arrayprop, _arraytype) \
-    DEFINE_PROP((PROP_ARRAY_LEN_PREFIX _name),                 \
-                _state, _field, qdev_prop_arraylen, uint32_t,  \
-                .set_default = true,                           \
-                .defval.u = 0,                                 \
-                .arrayinfo = &(_arrayprop),                    \
-                .arrayfieldsize = sizeof(_arraytype),          \
+#define DEFINE_PROP_ARRAY(_name, _state, _field,                        \
+                          _arrayfield, _arrayprop, _arraytype)          \
+    DEFINE_PROP(_name, _state, _field, qdev_prop_array, uint32_t,       \
+                .set_default = true,                                    \
+                .defval.u = 0,                                          \
+                .arrayinfo = &(_arrayprop),                             \
+                .arrayfieldsize = sizeof(_arraytype),                   \
                 .arrayoffset = offsetof(_state, _arrayfield))
 
 #define DEFINE_PROP_LINK(_name, _state, _field, _type, _ptr_type)     \
@@ -193,6 +201,9 @@ void qdev_prop_set_macaddr(DeviceState *dev, const char *name,
                            const uint8_t *value);
 void qdev_prop_set_enum(DeviceState *dev, const char *name, int value);
 
+/* Takes ownership of @values */
+void qdev_prop_set_array(DeviceState *dev, const char *name, QList *values);
+
 void *object_field_prop_ptr(Object *obj, Property *prop);
 
 void qdev_prop_register_global(GlobalProperty *prop);
@@ -219,8 +230,8 @@ void qdev_property_add_static(DeviceState *dev, Property *prop);
  * @target: Device which has properties to be aliased
  * @source: Object to add alias properties to
  *
- * Add alias properties to the @source object for all qdev properties on
- * the @target DeviceState.
+ * Add alias properties to the @source object for all properties on the @target
+ * DeviceState.
  *
  * This is useful when @target is an internal implementation object
  * owned by @source, and you want to expose all the properties of that

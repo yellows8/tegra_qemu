@@ -16,7 +16,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
+#include "exec/address-spaces.h"
 #include "migration/vmstate.h"
 #include "hw/sysbus.h"
 #include "hw/irq.h"
@@ -30,14 +30,13 @@
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
 #include "sysemu/block-backend.h"
+#include "sysemu/rtc.h"
 #include "trace.h"
 #include "qemu/log.h"
 
 /*
- * VIAs: There are two in every machine,
+ * VIAs: There are two in every machine
  */
-
-#define VIA_SIZE (0x2000)
 
 /*
  * Not all of these are true post MacII I think.
@@ -116,6 +115,9 @@
 #define VIA1A_CPUID1    0x04    /* CPU id bit 0 on RBV, others */
 #define VIA1A_CPUID2    0x10    /* CPU id bit 0 on RBV, others */
 #define VIA1A_CPUID3    0x40    /* CPU id bit 0 on RBV, others */
+#define VIA1A_CPUID_MASK (VIA1A_CPUID0 | VIA1A_CPUID1 | \
+                          VIA1A_CPUID2 | VIA1A_CPUID3)
+#define VIA1A_CPUID_Q800 (VIA1A_CPUID0 | VIA1A_CPUID2)
 
 /*
  * Info on VIA1B is from Macintosh Family Hardware & MkLinux.
@@ -132,6 +134,10 @@
                                 * On SE/30, vertical sync interrupt enable.
                                 * 0=enabled. This vSync interrupt shows up
                                 * as a slot $E interrupt.
+                                * On Quadra 800 this bit toggles A/UX mode which
+                                * configures the glue logic to deliver some IRQs
+                                * at different levels compared to a classic
+                                * Mac.
                                 */
 #define VIA1B_vADBS2   0x20    /* ADB state input bit 1 (unused on IIfx) */
 #define VIA1B_vADBS1   0x10    /* ADB state input bit 0 (unused on IIfx) */
@@ -244,7 +250,7 @@
 #define vT2CL    0x1000  /* [VIA only] Timer two counter low. */
 #define vT2CH    0x1200  /* [VIA only] Timer two counter high. */
 #define vSR      0x1400  /* [VIA only] Shift register. */
-#define vACR     0x1600  /* [VIA only] Auxilary control register. */
+#define vACR     0x1600  /* [VIA only] Auxiliary control register. */
 #define vPCR     0x1800  /* [VIA only] Peripheral control register. */
                          /*
                           *           CHRP sez never ever to *write* this.
@@ -323,10 +329,11 @@ static void via1_sixty_hz(void *opaque)
 {
     MOS6522Q800VIA1State *v1s = opaque;
     MOS6522State *s = MOS6522(v1s);
-    MOS6522DeviceClass *mdc = MOS6522_GET_CLASS(s);
+    qemu_irq irq = qdev_get_gpio_in(DEVICE(s), VIA1_IRQ_60HZ_BIT);
 
-    s->ifr |= VIA1_IRQ_60HZ;
-    mdc->update_irq(s);
+    /* Negative edge trigger */
+    qemu_irq_lower(irq);
+    qemu_irq_raise(irq);
 
     via1_sixty_hz_update(v1s);
 }
@@ -335,50 +342,20 @@ static void via1_one_second(void *opaque)
 {
     MOS6522Q800VIA1State *v1s = opaque;
     MOS6522State *s = MOS6522(v1s);
-    MOS6522DeviceClass *mdc = MOS6522_GET_CLASS(s);
+    qemu_irq irq = qdev_get_gpio_in(DEVICE(s), VIA1_IRQ_ONE_SECOND_BIT);
 
-    s->ifr |= VIA1_IRQ_ONE_SECOND;
-    mdc->update_irq(s);
+    /* Negative edge trigger */
+    qemu_irq_lower(irq);
+    qemu_irq_raise(irq);
 
     via1_one_second_update(v1s);
 }
 
-static void via1_irq_request(void *opaque, int irq, int level)
+
+static void pram_update(MOS6522Q800VIA1State *v1s)
 {
-    MOS6522Q800VIA1State *v1s = opaque;
-    MOS6522State *s = MOS6522(v1s);
-    MOS6522DeviceClass *mdc = MOS6522_GET_CLASS(s);
-
-    if (level) {
-        s->ifr |= 1 << irq;
-    } else {
-        s->ifr &= ~(1 << irq);
-    }
-
-    mdc->update_irq(s);
-}
-
-static void via2_irq_request(void *opaque, int irq, int level)
-{
-    MOS6522Q800VIA2State *v2s = opaque;
-    MOS6522State *s = MOS6522(v2s);
-    MOS6522DeviceClass *mdc = MOS6522_GET_CLASS(s);
-
-    if (level) {
-        s->ifr |= 1 << irq;
-    } else {
-        s->ifr &= ~(1 << irq);
-    }
-
-    mdc->update_irq(s);
-}
-
-
-static void pram_update(MacVIAState *m)
-{
-    if (m->blk) {
-        if (blk_pwrite(m->blk, 0, m->mos6522_via1.PRAM,
-                       sizeof(m->mos6522_via1.PRAM), 0) < 0) {
+    if (v1s->blk) {
+        if (blk_pwrite(v1s->blk, 0, sizeof(v1s->PRAM), v1s->PRAM, 0) < 0) {
             qemu_log("pram_update: cannot write to file\n");
         }
     }
@@ -389,10 +366,10 @@ static void pram_update(MacVIAState *m)
  *
  * Command byte    Register addressed by the command
  *
- * z0000001        Seconds register 0 (lowest-order byte)
- * z0000101        Seconds register 1
- * z0001001        Seconds register 2
- * z0001101        Seconds register 3 (highest-order byte)
+ * z00x0001        Seconds register 0 (lowest-order byte)
+ * z00x0101        Seconds register 1
+ * z00x1001        Seconds register 2
+ * z00x1101        Seconds register 3 (highest-order byte)
  * 00110001        Test register (write-only)
  * 00110101        Write-Protect Register (write-only)
  * z010aa01        RAM address 100aa ($10-$13) (first 20 bytes only)
@@ -400,6 +377,7 @@ static void pram_update(MacVIAState *m)
  * z0111aaa        Extended memory designator and sector number
  *
  * For a read request, z=1, for a write z=0
+ * The letter x indicates don't care
  * The letter a indicates bits whose value depend on what parameter
  * RAM byte you want to address
  */
@@ -416,7 +394,7 @@ static int via1_rtc_compact_cmd(uint8_t value)
     }
     if ((value & 0x03) == 0x01) {
         value >>= 2;
-        if ((value & 0x1c) == 0) {
+        if ((value & 0x18) == 0) {
             /* seconds registers */
             return read | (REG_0 + (value & 0x03));
         } else if ((value == 0x0c) && !read) {
@@ -426,7 +404,7 @@ static int via1_rtc_compact_cmd(uint8_t value)
         } else if ((value & 0x1c) == 0x08) {
             /* RAM address 0x10 to 0x13 */
             return read | (REG_PRAM_ADDR + 0x10 + (value & 0x03));
-        } else if ((value & 0x43) == 0x41) {
+        } else if ((value & 0x10) == 0x10) {
             /* RAM address 0x00 to 0x0f */
             return read | (REG_PRAM_ADDR + (value & 0x0f));
         }
@@ -434,9 +412,8 @@ static int via1_rtc_compact_cmd(uint8_t value)
     return REG_INVALID;
 }
 
-static void via1_rtc_update(MacVIAState *m)
+static void via1_rtc_update(MOS6522Q800VIA1State *v1s)
 {
-    MOS6522Q800VIA1State *v1s = &m->mos6522_via1;
     MOS6522State *s = MOS6522(v1s);
     int cmd, sector, addr;
     uint32_t time;
@@ -448,40 +425,40 @@ static void via1_rtc_update(MacVIAState *m)
     if (s->dirb & VIA1B_vRTCData) {
         /* send bits to the RTC */
         if (!(v1s->last_b & VIA1B_vRTCClk) && (s->b & VIA1B_vRTCClk)) {
-            m->data_out <<= 1;
-            m->data_out |= s->b & VIA1B_vRTCData;
-            m->data_out_cnt++;
+            v1s->data_out <<= 1;
+            v1s->data_out |= s->b & VIA1B_vRTCData;
+            v1s->data_out_cnt++;
         }
-        trace_via1_rtc_update_data_out(m->data_out_cnt, m->data_out);
+        trace_via1_rtc_update_data_out(v1s->data_out_cnt, v1s->data_out);
     } else {
-        trace_via1_rtc_update_data_in(m->data_in_cnt, m->data_in);
+        trace_via1_rtc_update_data_in(v1s->data_in_cnt, v1s->data_in);
         /* receive bits from the RTC */
         if ((v1s->last_b & VIA1B_vRTCClk) &&
             !(s->b & VIA1B_vRTCClk) &&
-            m->data_in_cnt) {
+            v1s->data_in_cnt) {
             s->b = (s->b & ~VIA1B_vRTCData) |
-                   ((m->data_in >> 7) & VIA1B_vRTCData);
-            m->data_in <<= 1;
-            m->data_in_cnt--;
+                   ((v1s->data_in >> 7) & VIA1B_vRTCData);
+            v1s->data_in <<= 1;
+            v1s->data_in_cnt--;
         }
         return;
     }
 
-    if (m->data_out_cnt != 8) {
+    if (v1s->data_out_cnt != 8) {
         return;
     }
 
-    m->data_out_cnt = 0;
+    v1s->data_out_cnt = 0;
 
-    trace_via1_rtc_internal_status(m->cmd, m->alt, m->data_out);
+    trace_via1_rtc_internal_status(v1s->cmd, v1s->alt, v1s->data_out);
     /* first byte: it's a command */
-    if (m->cmd == REG_EMPTY) {
+    if (v1s->cmd == REG_EMPTY) {
 
-        cmd = via1_rtc_compact_cmd(m->data_out);
+        cmd = via1_rtc_compact_cmd(v1s->data_out);
         trace_via1_rtc_internal_cmd(cmd);
 
         if (cmd == REG_INVALID) {
-            trace_via1_rtc_cmd_invalid(m->data_out);
+            trace_via1_rtc_cmd_invalid(v1s->data_out);
             return;
         }
 
@@ -493,20 +470,20 @@ static void via1_rtc_update(MacVIAState *m)
                  * register 3 is highest-order byte
                  */
 
-                time = m->tick_offset + (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)
+                time = v1s->tick_offset + (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)
                        / NANOSECONDS_PER_SECOND);
                 trace_via1_rtc_internal_time(time);
-                m->data_in = (time >> ((cmd & 0x03) << 3)) & 0xff;
-                m->data_in_cnt = 8;
+                v1s->data_in = (time >> ((cmd & 0x03) << 3)) & 0xff;
+                v1s->data_in_cnt = 8;
                 trace_via1_rtc_cmd_seconds_read((cmd & 0x7f) - REG_0,
-                                                m->data_in);
+                                                v1s->data_in);
                 break;
             case REG_PRAM_ADDR...REG_PRAM_ADDR_LAST:
                 /* PRAM address 0x00 -> 0x13 */
-                m->data_in = v1s->PRAM[(cmd & 0x7f) - REG_PRAM_ADDR];
-                m->data_in_cnt = 8;
+                v1s->data_in = v1s->PRAM[(cmd & 0x7f) - REG_PRAM_ADDR];
+                v1s->data_in_cnt = 8;
                 trace_via1_rtc_cmd_pram_read((cmd & 0x7f) - REG_PRAM_ADDR,
-                                             m->data_in);
+                                             v1s->data_in);
                 break;
             case REG_PRAM_SECT...REG_PRAM_SECT_LAST:
                 /*
@@ -514,7 +491,7 @@ static void via1_rtc_update(MacVIAState *m)
                  * the only two-byte read command
                  */
                 trace_via1_rtc_internal_set_cmd(cmd);
-                m->cmd = cmd;
+                v1s->cmd = cmd;
                 break;
             default:
                 g_assert_not_reached();
@@ -524,9 +501,9 @@ static void via1_rtc_update(MacVIAState *m)
         }
 
         /* this is a write command, needs a parameter */
-        if (cmd == REG_WPROTECT || !m->wprotect) {
+        if (cmd == REG_WPROTECT || !v1s->wprotect) {
             trace_via1_rtc_internal_set_cmd(cmd);
-            m->cmd = cmd;
+            v1s->cmd = cmd;
         } else {
             trace_via1_rtc_internal_ignore_cmd(cmd);
         }
@@ -534,46 +511,47 @@ static void via1_rtc_update(MacVIAState *m)
     }
 
     /* second byte: it's a parameter */
-    if (m->alt == REG_EMPTY) {
-        switch (m->cmd & 0x7f) {
+    if (v1s->alt == REG_EMPTY) {
+        switch (v1s->cmd & 0x7f) {
         case REG_0...REG_3: /* seconds register */
             /* FIXME */
-            trace_via1_rtc_cmd_seconds_write(m->cmd - REG_0, m->data_out);
-            m->cmd = REG_EMPTY;
+            trace_via1_rtc_cmd_seconds_write(v1s->cmd - REG_0, v1s->data_out);
+            v1s->cmd = REG_EMPTY;
             break;
         case REG_TEST:
             /* device control: nothing to do */
-            trace_via1_rtc_cmd_test_write(m->data_out);
-            m->cmd = REG_EMPTY;
+            trace_via1_rtc_cmd_test_write(v1s->data_out);
+            v1s->cmd = REG_EMPTY;
             break;
         case REG_WPROTECT:
             /* Write Protect register */
-            trace_via1_rtc_cmd_wprotect_write(m->data_out);
-            m->wprotect = !!(m->data_out & 0x80);
-            m->cmd = REG_EMPTY;
+            trace_via1_rtc_cmd_wprotect_write(v1s->data_out);
+            v1s->wprotect = !!(v1s->data_out & 0x80);
+            v1s->cmd = REG_EMPTY;
             break;
         case REG_PRAM_ADDR...REG_PRAM_ADDR_LAST:
             /* PRAM address 0x00 -> 0x13 */
-            trace_via1_rtc_cmd_pram_write(m->cmd - REG_PRAM_ADDR, m->data_out);
-            v1s->PRAM[m->cmd - REG_PRAM_ADDR] = m->data_out;
-            pram_update(m);
-            m->cmd = REG_EMPTY;
+            trace_via1_rtc_cmd_pram_write(v1s->cmd - REG_PRAM_ADDR,
+                                          v1s->data_out);
+            v1s->PRAM[v1s->cmd - REG_PRAM_ADDR] = v1s->data_out;
+            pram_update(v1s);
+            v1s->cmd = REG_EMPTY;
             break;
         case REG_PRAM_SECT...REG_PRAM_SECT_LAST:
-            addr = (m->data_out >> 2) & 0x1f;
-            sector = (m->cmd & 0x7f) - REG_PRAM_SECT;
-            if (m->cmd & 0x80) {
+            addr = (v1s->data_out >> 2) & 0x1f;
+            sector = (v1s->cmd & 0x7f) - REG_PRAM_SECT;
+            if (v1s->cmd & 0x80) {
                 /* it's a read */
-                m->data_in = v1s->PRAM[sector * 32 + addr];
-                m->data_in_cnt = 8;
+                v1s->data_in = v1s->PRAM[sector * 32 + addr];
+                v1s->data_in_cnt = 8;
                 trace_via1_rtc_cmd_pram_sect_read(sector, addr,
                                                   sector * 32 + addr,
-                                                  m->data_in);
-                m->cmd = REG_EMPTY;
+                                                  v1s->data_in);
+                v1s->cmd = REG_EMPTY;
             } else {
                 /* it's a write, we need one more parameter */
                 trace_via1_rtc_internal_set_alt(addr, sector, addr);
-                m->alt = addr;
+                v1s->alt = addr;
             }
             break;
         default:
@@ -584,22 +562,21 @@ static void via1_rtc_update(MacVIAState *m)
     }
 
     /* third byte: it's the data of a REG_PRAM_SECT write */
-    g_assert(REG_PRAM_SECT <= m->cmd && m->cmd <= REG_PRAM_SECT_LAST);
-    sector = m->cmd - REG_PRAM_SECT;
-    v1s->PRAM[sector * 32 + m->alt] = m->data_out;
-    pram_update(m);
-    trace_via1_rtc_cmd_pram_sect_write(sector, m->alt, sector * 32 + m->alt,
-                                       m->data_out);
-    m->alt = REG_EMPTY;
-    m->cmd = REG_EMPTY;
+    g_assert(REG_PRAM_SECT <= v1s->cmd && v1s->cmd <= REG_PRAM_SECT_LAST);
+    sector = v1s->cmd - REG_PRAM_SECT;
+    v1s->PRAM[sector * 32 + v1s->alt] = v1s->data_out;
+    pram_update(v1s);
+    trace_via1_rtc_cmd_pram_sect_write(sector, v1s->alt, sector * 32 + v1s->alt,
+                                       v1s->data_out);
+    v1s->alt = REG_EMPTY;
+    v1s->cmd = REG_EMPTY;
 }
 
 static void adb_via_poll(void *opaque)
 {
-    MacVIAState *m = opaque;
-    MOS6522Q800VIA1State *v1s = MOS6522_Q800_VIA1(&m->mos6522_via1);
+    MOS6522Q800VIA1State *v1s = MOS6522_Q800_VIA1(opaque);
     MOS6522State *s = MOS6522(v1s);
-    ADBBusState *adb_bus = &m->adb_bus;
+    ADBBusState *adb_bus = &v1s->adb_bus;
     uint8_t obuf[9];
     uint8_t *data = &s->sr;
     int olen;
@@ -611,50 +588,50 @@ static void adb_via_poll(void *opaque)
      */
     adb_autopoll_block(adb_bus);
 
-    if (m->adb_data_in_size > 0 && m->adb_data_in_index == 0) {
+    if (v1s->adb_data_in_size > 0 && v1s->adb_data_in_index == 0) {
         /*
          * For older Linux kernels that switch to IDLE mode after sending the
          * ADB command, detect if there is an existing response and return that
-         * as a a "fake" autopoll reply or bus timeout accordingly
+         * as a "fake" autopoll reply or bus timeout accordingly
          */
-        *data = m->adb_data_out[0];
-        olen = m->adb_data_in_size;
+        *data = v1s->adb_data_out[0];
+        olen = v1s->adb_data_in_size;
 
         s->b &= ~VIA1B_vADBInt;
-        qemu_irq_raise(m->adb_data_ready);
+        qemu_irq_raise(v1s->adb_data_ready);
     } else {
         /*
          * Otherwise poll as normal
          */
-        m->adb_data_in_index = 0;
-        m->adb_data_out_index = 0;
+        v1s->adb_data_in_index = 0;
+        v1s->adb_data_out_index = 0;
         olen = adb_poll(adb_bus, obuf, adb_bus->autopoll_mask);
 
         if (olen > 0) {
             /* Autopoll response */
             *data = obuf[0];
             olen--;
-            memcpy(m->adb_data_in, &obuf[1], olen);
-            m->adb_data_in_size = olen;
+            memcpy(v1s->adb_data_in, &obuf[1], olen);
+            v1s->adb_data_in_size = olen;
 
             s->b &= ~VIA1B_vADBInt;
-            qemu_irq_raise(m->adb_data_ready);
+            qemu_irq_raise(v1s->adb_data_ready);
         } else {
-            *data = m->adb_autopoll_cmd;
+            *data = v1s->adb_autopoll_cmd;
             obuf[0] = 0xff;
             obuf[1] = 0xff;
             olen = 2;
 
-            memcpy(m->adb_data_in, obuf, olen);
-            m->adb_data_in_size = olen;
+            memcpy(v1s->adb_data_in, obuf, olen);
+            v1s->adb_data_in_size = olen;
 
             s->b &= ~VIA1B_vADBInt;
-            qemu_irq_raise(m->adb_data_ready);
+            qemu_irq_raise(v1s->adb_data_ready);
         }
     }
 
     trace_via1_adb_poll(*data, (s->b & VIA1B_vADBInt) ? "+" : "-",
-                        adb_bus->status, m->adb_data_in_index, olen);
+                        adb_bus->status, v1s->adb_data_in_index, olen);
 }
 
 static int adb_via_send_len(uint8_t data)
@@ -687,11 +664,10 @@ static int adb_via_send_len(uint8_t data)
     }
 }
 
-static void adb_via_send(MacVIAState *s, int state, uint8_t data)
+static void adb_via_send(MOS6522Q800VIA1State *v1s, int state, uint8_t data)
 {
-    MOS6522Q800VIA1State *v1s = MOS6522_Q800_VIA1(&s->mos6522_via1);
     MOS6522State *ms = MOS6522(v1s);
-    ADBBusState *adb_bus = &s->adb_bus;
+    ADBBusState *adb_bus = &v1s->adb_bus;
     uint16_t autopoll_mask;
 
     switch (state) {
@@ -707,63 +683,68 @@ static void adb_via_send(MacVIAState *s, int state, uint8_t data)
             ms->b &= ~VIA1B_vADBInt;
         } else {
             ms->b |= VIA1B_vADBInt;
-            s->adb_data_out_index = 0;
-            s->adb_data_out[s->adb_data_out_index++] = data;
+            v1s->adb_data_out_index = 0;
+            v1s->adb_data_out[v1s->adb_data_out_index++] = data;
         }
 
         trace_via1_adb_send(" NEW", data, (ms->b & VIA1B_vADBInt) ? "+" : "-");
-        qemu_irq_raise(s->adb_data_ready);
+        qemu_irq_raise(v1s->adb_data_ready);
         break;
 
     case ADB_STATE_EVEN:
     case ADB_STATE_ODD:
         ms->b |= VIA1B_vADBInt;
-        s->adb_data_out[s->adb_data_out_index++] = data;
+        v1s->adb_data_out[v1s->adb_data_out_index++] = data;
 
         trace_via1_adb_send(state == ADB_STATE_EVEN ? "EVEN" : " ODD",
                             data, (ms->b & VIA1B_vADBInt) ? "+" : "-");
-        qemu_irq_raise(s->adb_data_ready);
+        qemu_irq_raise(v1s->adb_data_ready);
         break;
 
     case ADB_STATE_IDLE:
+        ms->b |= VIA1B_vADBInt;
+        adb_autopoll_unblock(adb_bus);
+
+        trace_via1_adb_send("IDLE", data,
+                            (ms->b & VIA1B_vADBInt) ? "+" : "-");
+
         return;
     }
 
     /* If the command is complete, execute it */
-    if (s->adb_data_out_index == adb_via_send_len(s->adb_data_out[0])) {
-        s->adb_data_in_size = adb_request(adb_bus, s->adb_data_in,
-                                          s->adb_data_out,
-                                          s->adb_data_out_index);
-        s->adb_data_in_index = 0;
+    if (v1s->adb_data_out_index == adb_via_send_len(v1s->adb_data_out[0])) {
+        v1s->adb_data_in_size = adb_request(adb_bus, v1s->adb_data_in,
+                                            v1s->adb_data_out,
+                                            v1s->adb_data_out_index);
+        v1s->adb_data_in_index = 0;
 
         if (adb_bus->status & ADB_STATUS_BUSTIMEOUT) {
             /*
              * Bus timeout (but allow first EVEN and ODD byte to indicate
              * timeout via vADBInt and SRQ status)
              */
-            s->adb_data_in[0] = 0xff;
-            s->adb_data_in[1] = 0xff;
-            s->adb_data_in_size = 2;
+            v1s->adb_data_in[0] = 0xff;
+            v1s->adb_data_in[1] = 0xff;
+            v1s->adb_data_in_size = 2;
         }
 
         /*
          * If last command is TALK, store it for use by autopoll and adjust
          * the autopoll mask accordingly
          */
-        if ((s->adb_data_out[0] & 0xc) == 0xc) {
-            s->adb_autopoll_cmd = s->adb_data_out[0];
+        if ((v1s->adb_data_out[0] & 0xc) == 0xc) {
+            v1s->adb_autopoll_cmd = v1s->adb_data_out[0];
 
-            autopoll_mask = 1 << (s->adb_autopoll_cmd >> 4);
+            autopoll_mask = 1 << (v1s->adb_autopoll_cmd >> 4);
             adb_set_autopoll_mask(adb_bus, autopoll_mask);
         }
     }
 }
 
-static void adb_via_receive(MacVIAState *s, int state, uint8_t *data)
+static void adb_via_receive(MOS6522Q800VIA1State *v1s, int state, uint8_t *data)
 {
-    MOS6522Q800VIA1State *v1s = MOS6522_Q800_VIA1(&s->mos6522_via1);
     MOS6522State *ms = MOS6522(v1s);
-    ADBBusState *adb_bus = &s->adb_bus;
+    ADBBusState *adb_bus = &v1s->adb_bus;
     uint16_t pending;
 
     switch (state) {
@@ -777,16 +758,16 @@ static void adb_via_receive(MacVIAState *s, int state, uint8_t *data)
 
         trace_via1_adb_receive("IDLE", *data,
                         (ms->b & VIA1B_vADBInt) ? "+" : "-", adb_bus->status,
-                        s->adb_data_in_index, s->adb_data_in_size);
+                        v1s->adb_data_in_index, v1s->adb_data_in_size);
 
         break;
 
     case ADB_STATE_EVEN:
     case ADB_STATE_ODD:
-        switch (s->adb_data_in_index) {
+        switch (v1s->adb_data_in_index) {
         case 0:
             /* First EVEN byte: vADBInt indicates bus timeout */
-            *data = s->adb_data_in[s->adb_data_in_index];
+            *data = v1s->adb_data_in[v1s->adb_data_in_index];
             if (adb_bus->status & ADB_STATUS_BUSTIMEOUT) {
                 ms->b &= ~VIA1B_vADBInt;
             } else {
@@ -795,16 +776,16 @@ static void adb_via_receive(MacVIAState *s, int state, uint8_t *data)
 
             trace_via1_adb_receive(state == ADB_STATE_EVEN ? "EVEN" : " ODD",
                                    *data, (ms->b & VIA1B_vADBInt) ? "+" : "-",
-                                   adb_bus->status, s->adb_data_in_index,
-                                   s->adb_data_in_size);
+                                   adb_bus->status, v1s->adb_data_in_index,
+                                   v1s->adb_data_in_size);
 
-            s->adb_data_in_index++;
+            v1s->adb_data_in_index++;
             break;
 
         case 1:
             /* First ODD byte: vADBInt indicates SRQ */
-            *data = s->adb_data_in[s->adb_data_in_index];
-            pending = adb_bus->pending & ~(1 << (s->adb_autopoll_cmd >> 4));
+            *data = v1s->adb_data_in[v1s->adb_data_in_index];
+            pending = adb_bus->pending & ~(1 << (v1s->adb_autopoll_cmd >> 4));
             if (pending) {
                 ms->b &= ~VIA1B_vADBInt;
             } else {
@@ -813,10 +794,10 @@ static void adb_via_receive(MacVIAState *s, int state, uint8_t *data)
 
             trace_via1_adb_receive(state == ADB_STATE_EVEN ? "EVEN" : " ODD",
                                    *data, (ms->b & VIA1B_vADBInt) ? "+" : "-",
-                                   adb_bus->status, s->adb_data_in_index,
-                                   s->adb_data_in_size);
+                                   adb_bus->status, v1s->adb_data_in_index,
+                                   v1s->adb_data_in_size);
 
-            s->adb_data_in_index++;
+            v1s->adb_data_in_index++;
             break;
 
         default:
@@ -826,11 +807,11 @@ static void adb_via_receive(MacVIAState *s, int state, uint8_t *data)
              * end of the poll reply, so provide these extra bytes below to
              * keep it happy
              */
-            if (s->adb_data_in_index < s->adb_data_in_size) {
+            if (v1s->adb_data_in_index < v1s->adb_data_in_size) {
                 /* Next data byte */
-                *data = s->adb_data_in[s->adb_data_in_index];
+                *data = v1s->adb_data_in[v1s->adb_data_in_index];
                 ms->b |= VIA1B_vADBInt;
-            } else if (s->adb_data_in_index == s->adb_data_in_size) {
+            } else if (v1s->adb_data_in_index == v1s->adb_data_in_size) {
                 if (adb_bus->status & ADB_STATUS_BUSTIMEOUT) {
                     /* Bus timeout (no more data) */
                     *data = 0xff;
@@ -849,23 +830,22 @@ static void adb_via_receive(MacVIAState *s, int state, uint8_t *data)
 
             trace_via1_adb_receive(state == ADB_STATE_EVEN ? "EVEN" : " ODD",
                                    *data, (ms->b & VIA1B_vADBInt) ? "+" : "-",
-                                   adb_bus->status, s->adb_data_in_index,
-                                   s->adb_data_in_size);
+                                   adb_bus->status, v1s->adb_data_in_index,
+                                   v1s->adb_data_in_size);
 
-            if (s->adb_data_in_index <= s->adb_data_in_size) {
-                s->adb_data_in_index++;
+            if (v1s->adb_data_in_index <= v1s->adb_data_in_size) {
+                v1s->adb_data_in_index++;
             }
             break;
         }
 
-        qemu_irq_raise(s->adb_data_ready);
+        qemu_irq_raise(v1s->adb_data_ready);
         break;
     }
 }
 
-static void via1_adb_update(MacVIAState *m)
+static void via1_adb_update(MOS6522Q800VIA1State *v1s)
 {
-    MOS6522Q800VIA1State *v1s = MOS6522_Q800_VIA1(&m->mos6522_via1);
     MOS6522State *s = MOS6522(v1s);
     int oldstate, state;
 
@@ -875,11 +855,179 @@ static void via1_adb_update(MacVIAState *m)
     if (state != oldstate) {
         if (s->acr & VIA1ACR_vShiftOut) {
             /* output mode */
-            adb_via_send(m, state, s->sr);
+            adb_via_send(v1s, state, s->sr);
         } else {
             /* input mode */
-            adb_via_receive(m, state, &s->sr);
+            adb_via_receive(v1s, state, &s->sr);
         }
+    }
+}
+
+static void via1_auxmode_update(MOS6522Q800VIA1State *v1s)
+{
+    MOS6522State *s = MOS6522(v1s);
+    int oldirq, irq;
+
+    oldirq = (v1s->last_b & VIA1B_vMystery) ? 1 : 0;
+    irq = (s->b & VIA1B_vMystery) ? 1 : 0;
+
+    /* Check to see if the A/UX mode bit has changed */
+    if (irq != oldirq) {
+        trace_via1_auxmode(irq);
+        qemu_set_irq(v1s->auxmode_irq, irq);
+
+        /*
+         * Clear the ADB interrupt. MacOS can leave VIA1B_vADBInt asserted
+         * (low) if a poll sequence doesn't complete before NetBSD disables
+         * interrupts upon boot. Fortunately NetBSD switches to the so-called
+         * "A/UX" interrupt mode after it initialises, so we can use this as
+         * a convenient place to clear the ADB interrupt for now.
+         */
+        s->b |= VIA1B_vADBInt;
+    }
+}
+
+/*
+ * Addresses and real values for TimeDBRA/TimeSCCB to allow timer calibration
+ * to succeed (NOTE: both values have been multiplied by 3 to cope with the
+ * speed of QEMU execution on a modern host
+ */
+#define MACOS_TIMEDBRA        0xd00
+#define MACOS_TIMESCCB        0xd02
+
+#define MACOS_TIMEDBRA_VALUE  (0x2a00 * 3)
+#define MACOS_TIMESCCB_VALUE  (0x079d * 3)
+
+static bool via1_is_toolbox_timer_calibrated(void)
+{
+    /*
+     * Indicate whether the MacOS toolbox has been calibrated by checking
+     * for the value of our magic constants
+     */
+    uint16_t timedbra = lduw_be_phys(&address_space_memory, MACOS_TIMEDBRA);
+    uint16_t timesccdb = lduw_be_phys(&address_space_memory, MACOS_TIMESCCB);
+
+    return (timedbra == MACOS_TIMEDBRA_VALUE &&
+            timesccdb == MACOS_TIMESCCB_VALUE);
+}
+
+static void via1_timer_calibration_hack(MOS6522Q800VIA1State *v1s, int addr,
+                                        uint64_t val, int size)
+{
+    /*
+     * Work around timer calibration to ensure we that we have non-zero and
+     * known good values for TIMEDRBA and TIMESCCDB.
+     *
+     * This works by attempting to detect the reset and calibration sequence
+     * of writes to VIA1
+     */
+    int old_timer_hack_state = v1s->timer_hack_state;
+
+    switch (v1s->timer_hack_state) {
+    case 0:
+        if (addr == VIA_REG_PCR && val == 0x22) {
+            /* VIA_REG_PCR: configure VIA1 edge triggering */
+            v1s->timer_hack_state = 1;
+        }
+        break;
+    case 1:
+        if (addr == VIA_REG_T2CL && val == 0xc) {
+            /* VIA_REG_T2CL: low byte of 1ms counter */
+            if (!via1_is_toolbox_timer_calibrated()) {
+                v1s->timer_hack_state = 2;
+            } else {
+                v1s->timer_hack_state = 0;
+            }
+        }
+        break;
+    case 2:
+        if (addr == VIA_REG_T2CH && val == 0x3) {
+            /*
+             * VIA_REG_T2CH: high byte of 1ms counter (very likely at the
+             * start of SETUPTIMEK)
+             */
+            if (!via1_is_toolbox_timer_calibrated()) {
+                v1s->timer_hack_state = 3;
+            } else {
+                v1s->timer_hack_state = 0;
+            }
+        }
+        break;
+    case 3:
+        if (addr == VIA_REG_IER && val == 0x20) {
+            /*
+             * VIA_REG_IER: update at end of SETUPTIMEK
+             *
+             * Timer calibration has finished: unfortunately the values in
+             * TIMEDBRA (0xd00) and TIMESCCDB (0xd02) are so far out they
+             * cause divide by zero errors.
+             *
+             * Update them with values obtained from a real Q800 but with
+             * a x3 scaling factor which seems to work well
+             */
+            stw_be_phys(&address_space_memory, MACOS_TIMEDBRA,
+                        MACOS_TIMEDBRA_VALUE);
+            stw_be_phys(&address_space_memory, MACOS_TIMESCCB,
+                        MACOS_TIMESCCB_VALUE);
+
+            v1s->timer_hack_state = 4;
+        }
+        break;
+    case 4:
+        /*
+         * This is the normal post-calibration timer state: we should
+         * generally remain here unless we detect the A/UX calibration
+         * loop, or a write to VIA_REG_PCR suggesting a reset
+         */
+        if (addr == VIA_REG_PCR && val == 0x22) {
+            /* Looks like there has been a reset? */
+            v1s->timer_hack_state = 1;
+        }
+
+        if (addr == VIA_REG_T2CL && val == 0xf0) {
+            /* VIA_REG_T2CL: low byte of counter (A/UX) */
+            v1s->timer_hack_state = 5;
+        }
+        break;
+    case 5:
+        if (addr == VIA_REG_T2CH && val == 0x3c) {
+            /*
+             * VIA_REG_T2CH: high byte of counter (A/UX). We are now extremely
+             * likely to be in the A/UX timer calibration routine, so move to
+             * the next state where we enable the calibration hack.
+             */
+            v1s->timer_hack_state = 6;
+        } else if ((addr == VIA_REG_IER && val == 0x20) ||
+                   addr == VIA_REG_T2CH) {
+            /* We're doing something else with the timer, not calibration */
+            v1s->timer_hack_state = 0;
+        }
+        break;
+    case 6:
+        if ((addr == VIA_REG_IER && val == 0x20) || addr == VIA_REG_T2CH) {
+            /* End of A/UX timer calibration routine, or another write */
+            v1s->timer_hack_state = 7;
+        } else {
+            v1s->timer_hack_state = 0;
+        }
+        break;
+    case 7:
+        /*
+         * This is the normal post-calibration timer state once both the
+         * MacOS toolbox and A/UX have been calibrated, until we see a write
+         * to VIA_REG_PCR to suggest a reset
+         */
+        if (addr == VIA_REG_PCR && val == 0x22) {
+            /* Looks like there has been a reset? */
+            v1s->timer_hack_state = 1;
+        }
+        break;
+    default:
+        g_assert_not_reached();
+    }
+
+    if (old_timer_hack_state != v1s->timer_hack_state) {
+        trace_via1_timer_hack_state(v1s->timer_hack_state);
     }
 }
 
@@ -887,27 +1035,91 @@ static uint64_t mos6522_q800_via1_read(void *opaque, hwaddr addr, unsigned size)
 {
     MOS6522Q800VIA1State *s = MOS6522_Q800_VIA1(opaque);
     MOS6522State *ms = MOS6522(s);
+    uint64_t ret;
+    int64_t now;
 
     addr = (addr >> 9) & 0xf;
-    return mos6522_read(ms, addr, size);
+    ret = mos6522_read(ms, addr, size);
+    switch (addr) {
+    case VIA_REG_A:
+    case VIA_REG_ANH:
+        /* Quadra 800 Id */
+        ret = (ret & ~VIA1A_CPUID_MASK) | VIA1A_CPUID_Q800;
+        break;
+    case VIA_REG_T2CH:
+        if (s->timer_hack_state == 6) {
+            /*
+             * The A/UX timer calibration loop runs continuously until 2
+             * consecutive iterations differ by at least 0x492 timer ticks.
+             * Modern hosts execute the timer calibration loop so fast that
+             * this situation never occurs causing a hang on boot. Use a
+             * similar method to Shoebill which is to randomly add 0x500 to
+             * the T2 counter value during calibration to enable it to
+             * eventually succeed.
+             */
+            now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+            if (now & 1) {
+                ret += 0x5;
+            }
+        }
+        break;
+    }
+    return ret;
 }
 
 static void mos6522_q800_via1_write(void *opaque, hwaddr addr, uint64_t val,
                                     unsigned size)
 {
     MOS6522Q800VIA1State *v1s = MOS6522_Q800_VIA1(opaque);
-    MacVIAState *m = container_of(v1s, MacVIAState, mos6522_via1);
     MOS6522State *ms = MOS6522(v1s);
+    int oldstate, state;
+    int oldsr = ms->sr;
 
     addr = (addr >> 9) & 0xf;
+
+    via1_timer_calibration_hack(v1s, addr, val, size);
+
     mos6522_write(ms, addr, val, size);
 
     switch (addr) {
     case VIA_REG_B:
-        via1_rtc_update(m);
-        via1_adb_update(m);
+        via1_rtc_update(v1s);
+        via1_adb_update(v1s);
+        via1_auxmode_update(v1s);
 
         v1s->last_b = ms->b;
+        break;
+
+    case VIA_REG_SR:
+        {
+            /*
+             * NetBSD assumes it can send its first ADB command after sending
+             * the ADB_BUSRESET command in ADB_STATE_NEW without changing the
+             * state back to ADB_STATE_IDLE first as detailed in the ADB
+             * protocol.
+             *
+             * Add a workaround to detect this condition at the start of ADB
+             * enumeration and send the next command written to SR after a
+             * ADB_BUSRESET onto the bus regardless, even if we don't detect a
+             * state transition to ADB_STATE_NEW.
+             *
+             * Note that in my tests the NetBSD state machine takes one ADB
+             * operation to recover which means the probe for an ADB device at
+             * address 1 always fails. However since the first device is at
+             * address 2 then this will work fine, without having to come up
+             * with a more complicated and invasive solution.
+             */
+            oldstate = (v1s->last_b & VIA1B_vADB_StateMask) >>
+                       VIA1B_vADB_StateShift;
+            state = (ms->b & VIA1B_vADB_StateMask) >> VIA1B_vADB_StateShift;
+
+            if (oldstate == ADB_STATE_NEW && state == ADB_STATE_NEW &&
+                    (ms->acr & VIA1ACR_vShiftOut) &&
+                    oldsr == 0 /* ADB_BUSRESET */) {
+                trace_via1_adb_netbsd_enum_hack();
+                adb_via_send(v1s, state, ms->sr);
+            }
+        }
         break;
     }
 }
@@ -926,9 +1138,26 @@ static uint64_t mos6522_q800_via2_read(void *opaque, hwaddr addr, unsigned size)
 {
     MOS6522Q800VIA2State *s = MOS6522_Q800_VIA2(opaque);
     MOS6522State *ms = MOS6522(s);
+    uint64_t val;
 
     addr = (addr >> 9) & 0xf;
-    return mos6522_read(ms, addr, size);
+    val = mos6522_read(ms, addr, size);
+
+    switch (addr) {
+    case VIA_REG_IFR:
+        /*
+         * On a Q800 an emulated VIA2 is integrated into the onboard logic. The
+         * expectation of most OSs is that the DRQ bit is live, rather than
+         * latched as it would be on a real VIA so do the same here.
+         *
+         * Note: DRQ is negative edge triggered
+         */
+        val &= ~VIA2_IRQ_SCSI_DATA;
+        val |= (~ms->last_irq_levels & VIA2_IRQ_SCSI_DATA);
+        break;
+    }
+
+    return val;
 }
 
 static void mos6522_q800_via2_write(void *opaque, hwaddr addr, uint64_t val,
@@ -951,216 +1180,166 @@ static const MemoryRegionOps mos6522_q800_via2_ops = {
     },
 };
 
-static void mac_via_reset(DeviceState *dev)
+static void via1_postload_update_cb(void *opaque, bool running, RunState state)
 {
-    MacVIAState *m = MAC_VIA(dev);
-    ADBBusState *adb_bus = &m->adb_bus;
+    MOS6522Q800VIA1State *v1s = MOS6522_Q800_VIA1(opaque);
 
-    adb_set_autopoll_enabled(adb_bus, true);
+    qemu_del_vm_change_state_handler(v1s->vmstate);
+    v1s->vmstate = NULL;
 
-    m->cmd = REG_EMPTY;
-    m->alt = REG_EMPTY;
+    pram_update(v1s);
 }
 
-static void mac_via_realize(DeviceState *dev, Error **errp)
+static int via1_post_load(void *opaque, int version_id)
 {
-    MacVIAState *m = MAC_VIA(dev);
-    MOS6522State *ms;
-    ADBBusState *adb_bus = &m->adb_bus;
+    MOS6522Q800VIA1State *v1s = MOS6522_Q800_VIA1(opaque);
+
+    if (v1s->blk) {
+        v1s->vmstate = qemu_add_vm_change_state_handler(
+                           via1_postload_update_cb, v1s);
+    }
+
+    return 0;
+}
+
+/* VIA 1 */
+static void mos6522_q800_via1_reset_hold(Object *obj)
+{
+    MOS6522Q800VIA1State *v1s = MOS6522_Q800_VIA1(obj);
+    MOS6522State *ms = MOS6522(v1s);
+    MOS6522DeviceClass *mdc = MOS6522_GET_CLASS(ms);
+    ADBBusState *adb_bus = &v1s->adb_bus;
+
+    if (mdc->parent_phases.hold) {
+        mdc->parent_phases.hold(obj);
+    }
+
+    ms->timers[0].frequency = VIA_TIMER_FREQ;
+    ms->timers[1].frequency = VIA_TIMER_FREQ;
+
+    ms->b = VIA1B_vADB_StateMask | VIA1B_vADBInt | VIA1B_vRTCEnb;
+
+    /* ADB/RTC */
+    adb_set_autopoll_enabled(adb_bus, true);
+    v1s->cmd = REG_EMPTY;
+    v1s->alt = REG_EMPTY;
+
+    /* Timer calibration hack */
+    v1s->timer_hack_state = 0;
+}
+
+static void mos6522_q800_via1_realize(DeviceState *dev, Error **errp)
+{
+    MOS6522Q800VIA1State *v1s = MOS6522_Q800_VIA1(dev);
+    ADBBusState *adb_bus = &v1s->adb_bus;
     struct tm tm;
     int ret;
 
-    /* Init VIAs 1 and 2 */
-    object_initialize_child(OBJECT(dev), "via1", &m->mos6522_via1,
-                            TYPE_MOS6522_Q800_VIA1);
-
-    object_initialize_child(OBJECT(dev), "via2", &m->mos6522_via2,
-                            TYPE_MOS6522_Q800_VIA2);
-
-    /* Pass through mos6522 output IRQs */
-    ms = MOS6522(&m->mos6522_via1);
-    object_property_add_alias(OBJECT(dev), "irq[0]", OBJECT(ms),
-                              SYSBUS_DEVICE_GPIO_IRQ "[0]");
-    ms = MOS6522(&m->mos6522_via2);
-    object_property_add_alias(OBJECT(dev), "irq[1]", OBJECT(ms),
-                              SYSBUS_DEVICE_GPIO_IRQ "[0]");
-
-    sysbus_realize(SYS_BUS_DEVICE(&m->mos6522_via1), &error_abort);
-    sysbus_realize(SYS_BUS_DEVICE(&m->mos6522_via2), &error_abort);
-
-    /* Pass through mos6522 input IRQs */
-    qdev_pass_gpios(DEVICE(&m->mos6522_via1), dev, "via1-irq");
-    qdev_pass_gpios(DEVICE(&m->mos6522_via2), dev, "via2-irq");
-
-    /* VIA 1 */
-    m->mos6522_via1.one_second_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL,
-                                                     via1_one_second,
-                                                     &m->mos6522_via1);
-    via1_one_second_update(&m->mos6522_via1);
-    m->mos6522_via1.sixty_hz_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
-                                                  via1_sixty_hz,
-                                                  &m->mos6522_via1);
-    via1_sixty_hz_update(&m->mos6522_via1);
+    v1s->one_second_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL, via1_one_second,
+                                         v1s);
+    via1_one_second_update(v1s);
+    v1s->sixty_hz_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, via1_sixty_hz,
+                                       v1s);
+    via1_sixty_hz_update(v1s);
 
     qemu_get_timedate(&tm, 0);
-    m->tick_offset = (uint32_t)mktimegm(&tm) + RTC_OFFSET;
+    v1s->tick_offset = (uint32_t)mktimegm(&tm) + RTC_OFFSET;
 
-    adb_register_autopoll_callback(adb_bus, adb_via_poll, m);
-    m->adb_data_ready = qdev_get_gpio_in_named(dev, "via1-irq",
-                                               VIA1_IRQ_ADB_READY_BIT);
+    adb_register_autopoll_callback(adb_bus, adb_via_poll, v1s);
+    v1s->adb_data_ready = qdev_get_gpio_in(dev, VIA1_IRQ_ADB_READY_BIT);
 
-    if (m->blk) {
-        int64_t len = blk_getlength(m->blk);
+    if (v1s->blk) {
+        int64_t len = blk_getlength(v1s->blk);
         if (len < 0) {
             error_setg_errno(errp, -len,
                              "could not get length of backing image");
             return;
         }
-        ret = blk_set_perm(m->blk,
+        ret = blk_set_perm(v1s->blk,
                            BLK_PERM_CONSISTENT_READ | BLK_PERM_WRITE,
                            BLK_PERM_ALL, errp);
         if (ret < 0) {
             return;
         }
 
-        len = blk_pread(m->blk, 0, m->mos6522_via1.PRAM,
-                        sizeof(m->mos6522_via1.PRAM));
-        if (len != sizeof(m->mos6522_via1.PRAM)) {
+        ret = blk_pread(v1s->blk, 0, sizeof(v1s->PRAM), v1s->PRAM, 0);
+        if (ret < 0) {
             error_setg(errp, "can't read PRAM contents");
             return;
         }
     }
 }
 
-static void mac_via_init(Object *obj)
+static void mos6522_q800_via1_init(Object *obj)
 {
-    SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
-    MacVIAState *m = MAC_VIA(obj);
+    MOS6522Q800VIA1State *v1s = MOS6522_Q800_VIA1(obj);
+    SysBusDevice *sbd = SYS_BUS_DEVICE(v1s);
 
-    /* MMIO */
-    memory_region_init(&m->mmio, obj, "mac-via", 2 * VIA_SIZE);
-    sysbus_init_mmio(sbd, &m->mmio);
-
-    memory_region_init_io(&m->via1mem, obj, &mos6522_q800_via1_ops,
-                          &m->mos6522_via1, "via1", VIA_SIZE);
-    memory_region_add_subregion(&m->mmio, 0x0, &m->via1mem);
-
-    memory_region_init_io(&m->via2mem, obj, &mos6522_q800_via2_ops,
-                          &m->mos6522_via2, "via2", VIA_SIZE);
-    memory_region_add_subregion(&m->mmio, VIA_SIZE, &m->via2mem);
+    memory_region_init_io(&v1s->via_mem, obj, &mos6522_q800_via1_ops, v1s,
+                          "via1", VIA_SIZE);
+    sysbus_init_mmio(sbd, &v1s->via_mem);
 
     /* ADB */
-    qbus_create_inplace((BusState *)&m->adb_bus, sizeof(m->adb_bus),
-                        TYPE_ADB_BUS, DEVICE(obj), "adb.0");
+    qbus_init((BusState *)&v1s->adb_bus, sizeof(v1s->adb_bus),
+              TYPE_ADB_BUS, DEVICE(v1s), "adb.0");
+
+    /* A/UX mode */
+    qdev_init_gpio_out(DEVICE(obj), &v1s->auxmode_irq, 1);
 }
 
-static void postload_update_cb(void *opaque, bool running, RunState state)
-{
-    MacVIAState *m = MAC_VIA(opaque);
-
-    qemu_del_vm_change_state_handler(m->vmstate);
-    m->vmstate = NULL;
-
-    pram_update(m);
-}
-
-static int mac_via_post_load(void *opaque, int version_id)
-{
-    MacVIAState *m = MAC_VIA(opaque);
-
-    if (m->blk) {
-        m->vmstate = qemu_add_vm_change_state_handler(postload_update_cb,
-                                                      m);
-    }
-
-    return 0;
-}
-
-static const VMStateDescription vmstate_mac_via = {
-    .name = "mac-via",
-    .version_id = 2,
-    .minimum_version_id = 2,
-    .post_load = mac_via_post_load,
-    .fields = (VMStateField[]) {
-        /* VIAs */
-        VMSTATE_STRUCT(mos6522_via1.parent_obj, MacVIAState, 0, vmstate_mos6522,
+static const VMStateDescription vmstate_q800_via1 = {
+    .name = "q800-via1",
+    .version_id = 0,
+    .minimum_version_id = 0,
+    .post_load = via1_post_load,
+    .fields = (const VMStateField[]) {
+        VMSTATE_STRUCT(parent_obj, MOS6522Q800VIA1State, 0, vmstate_mos6522,
                        MOS6522State),
-        VMSTATE_UINT8(mos6522_via1.last_b, MacVIAState),
-        VMSTATE_BUFFER(mos6522_via1.PRAM, MacVIAState),
-        VMSTATE_TIMER_PTR(mos6522_via1.one_second_timer, MacVIAState),
-        VMSTATE_INT64(mos6522_via1.next_second, MacVIAState),
-        VMSTATE_TIMER_PTR(mos6522_via1.sixty_hz_timer, MacVIAState),
-        VMSTATE_INT64(mos6522_via1.next_sixty_hz, MacVIAState),
-        VMSTATE_STRUCT(mos6522_via2.parent_obj, MacVIAState, 0, vmstate_mos6522,
-                       MOS6522State),
+        VMSTATE_UINT8(last_b, MOS6522Q800VIA1State),
         /* RTC */
-        VMSTATE_UINT32(tick_offset, MacVIAState),
-        VMSTATE_UINT8(data_out, MacVIAState),
-        VMSTATE_INT32(data_out_cnt, MacVIAState),
-        VMSTATE_UINT8(data_in, MacVIAState),
-        VMSTATE_UINT8(data_in_cnt, MacVIAState),
-        VMSTATE_UINT8(cmd, MacVIAState),
-        VMSTATE_INT32(wprotect, MacVIAState),
-        VMSTATE_INT32(alt, MacVIAState),
+        VMSTATE_BUFFER(PRAM, MOS6522Q800VIA1State),
+        VMSTATE_UINT32(tick_offset, MOS6522Q800VIA1State),
+        VMSTATE_UINT8(data_out, MOS6522Q800VIA1State),
+        VMSTATE_INT32(data_out_cnt, MOS6522Q800VIA1State),
+        VMSTATE_UINT8(data_in, MOS6522Q800VIA1State),
+        VMSTATE_UINT8(data_in_cnt, MOS6522Q800VIA1State),
+        VMSTATE_UINT8(cmd, MOS6522Q800VIA1State),
+        VMSTATE_INT32(wprotect, MOS6522Q800VIA1State),
+        VMSTATE_INT32(alt, MOS6522Q800VIA1State),
         /* ADB */
-        VMSTATE_INT32(adb_data_in_size, MacVIAState),
-        VMSTATE_INT32(adb_data_in_index, MacVIAState),
-        VMSTATE_INT32(adb_data_out_index, MacVIAState),
-        VMSTATE_BUFFER(adb_data_in, MacVIAState),
-        VMSTATE_BUFFER(adb_data_out, MacVIAState),
-        VMSTATE_UINT8(adb_autopoll_cmd, MacVIAState),
+        VMSTATE_INT32(adb_data_in_size, MOS6522Q800VIA1State),
+        VMSTATE_INT32(adb_data_in_index, MOS6522Q800VIA1State),
+        VMSTATE_INT32(adb_data_out_index, MOS6522Q800VIA1State),
+        VMSTATE_BUFFER(adb_data_in, MOS6522Q800VIA1State),
+        VMSTATE_BUFFER(adb_data_out, MOS6522Q800VIA1State),
+        VMSTATE_UINT8(adb_autopoll_cmd, MOS6522Q800VIA1State),
+        /* Timers */
+        VMSTATE_TIMER_PTR(one_second_timer, MOS6522Q800VIA1State),
+        VMSTATE_INT64(next_second, MOS6522Q800VIA1State),
+        VMSTATE_TIMER_PTR(sixty_hz_timer, MOS6522Q800VIA1State),
+        VMSTATE_INT64(next_sixty_hz, MOS6522Q800VIA1State),
+        /* Timer hack */
+        VMSTATE_INT32(timer_hack_state, MOS6522Q800VIA1State),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static Property mac_via_properties[] = {
-    DEFINE_PROP_DRIVE("drive", MacVIAState, blk),
+static Property mos6522_q800_via1_properties[] = {
+    DEFINE_PROP_DRIVE("drive", MOS6522Q800VIA1State, blk),
     DEFINE_PROP_END_OF_LIST(),
 };
-
-static void mac_via_class_init(ObjectClass *oc, void *data)
-{
-    DeviceClass *dc = DEVICE_CLASS(oc);
-
-    dc->realize = mac_via_realize;
-    dc->reset = mac_via_reset;
-    dc->vmsd = &vmstate_mac_via;
-    device_class_set_props(dc, mac_via_properties);
-}
-
-static TypeInfo mac_via_info = {
-    .name = TYPE_MAC_VIA,
-    .parent = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(MacVIAState),
-    .instance_init = mac_via_init,
-    .class_init = mac_via_class_init,
-};
-
-/* VIA 1 */
-static void mos6522_q800_via1_reset(DeviceState *dev)
-{
-    MOS6522State *ms = MOS6522(dev);
-    MOS6522DeviceClass *mdc = MOS6522_GET_CLASS(ms);
-
-    mdc->parent_reset(dev);
-
-    ms->timers[0].frequency = VIA_TIMER_FREQ;
-    ms->timers[1].frequency = VIA_TIMER_FREQ;
-
-    ms->b = VIA1B_vADB_StateMask | VIA1B_vADBInt | VIA1B_vRTCEnb;
-}
-
-static void mos6522_q800_via1_init(Object *obj)
-{
-    qdev_init_gpio_in_named(DEVICE(obj), via1_irq_request, "via1-irq",
-                            VIA1_IRQ_NB);
-}
 
 static void mos6522_q800_via1_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
+    ResettableClass *rc = RESETTABLE_CLASS(oc);
+    MOS6522DeviceClass *mdc = MOS6522_CLASS(oc);
 
-    dc->reset = mos6522_q800_via1_reset;
+    dc->realize = mos6522_q800_via1_realize;
+    resettable_class_set_parent_phases(rc, NULL, mos6522_q800_via1_reset_hold,
+                                       NULL, &mdc->parent_phases);
+    dc->vmsd = &vmstate_q800_via1;
+    device_class_set_props(dc, mos6522_q800_via1_properties);
 }
 
 static const TypeInfo mos6522_q800_via1_type_info = {
@@ -1180,32 +1359,74 @@ static void mos6522_q800_via2_portB_write(MOS6522State *s)
     }
 }
 
-static void mos6522_q800_via2_reset(DeviceState *dev)
+static void mos6522_q800_via2_reset_hold(Object *obj)
 {
-    MOS6522State *ms = MOS6522(dev);
+    MOS6522State *ms = MOS6522(obj);
     MOS6522DeviceClass *mdc = MOS6522_GET_CLASS(ms);
 
-    mdc->parent_reset(dev);
+    if (mdc->parent_phases.hold) {
+        mdc->parent_phases.hold(obj);
+    }
 
     ms->timers[0].frequency = VIA_TIMER_FREQ;
     ms->timers[1].frequency = VIA_TIMER_FREQ;
 
     ms->dirb = 0;
     ms->b = 0;
+    ms->dira = 0;
+    ms->a = 0x7f;
+}
+
+static void via2_nubus_irq_request(void *opaque, int n, int level)
+{
+    MOS6522Q800VIA2State *v2s = opaque;
+    MOS6522State *s = MOS6522(v2s);
+    qemu_irq irq = qdev_get_gpio_in(DEVICE(s), VIA2_IRQ_NUBUS_BIT);
+
+    if (level) {
+        /* Port A nubus IRQ inputs are active LOW */
+        s->a &= ~(1 << n);
+    } else {
+        s->a |= (1 << n);
+    }
+
+    /* Negative edge trigger */
+    qemu_set_irq(irq, !level);
 }
 
 static void mos6522_q800_via2_init(Object *obj)
 {
-    qdev_init_gpio_in_named(DEVICE(obj), via2_irq_request, "via2-irq",
-                            VIA2_IRQ_NB);
+    MOS6522Q800VIA2State *v2s = MOS6522_Q800_VIA2(obj);
+    SysBusDevice *sbd = SYS_BUS_DEVICE(v2s);
+
+    memory_region_init_io(&v2s->via_mem, obj, &mos6522_q800_via2_ops, v2s,
+                          "via2", VIA_SIZE);
+    sysbus_init_mmio(sbd, &v2s->via_mem);
+
+    qdev_init_gpio_in_named(DEVICE(obj), via2_nubus_irq_request, "nubus-irq",
+                            VIA2_NUBUS_IRQ_NB);
 }
+
+static const VMStateDescription vmstate_q800_via2 = {
+    .name = "q800-via2",
+    .version_id = 0,
+    .minimum_version_id = 0,
+    .fields = (const VMStateField[]) {
+        VMSTATE_STRUCT(parent_obj, MOS6522Q800VIA2State, 0, vmstate_mos6522,
+                       MOS6522State),
+        VMSTATE_END_OF_LIST()
+    }
+};
 
 static void mos6522_q800_via2_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
+    ResettableClass *rc = RESETTABLE_CLASS(oc);
     MOS6522DeviceClass *mdc = MOS6522_CLASS(oc);
 
-    dc->reset = mos6522_q800_via2_reset;
+    resettable_class_set_parent_phases(rc, NULL, mos6522_q800_via2_reset_hold,
+                                       NULL, &mdc->parent_phases);
+    dc->vmsd = &vmstate_q800_via2;
     mdc->portB_write = mos6522_q800_via2_portB_write;
 }
 
@@ -1221,7 +1442,6 @@ static void mac_via_register_types(void)
 {
     type_register_static(&mos6522_q800_via1_type_info);
     type_register_static(&mos6522_q800_via2_type_info);
-    type_register_static(&mac_via_info);
 }
 
 type_init(mac_via_register_types);

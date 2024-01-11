@@ -20,12 +20,14 @@
  * specification.
  *
  * TPM TIS for TPM 2 implementation following TCG PC Client Platform
- * TPM Profile (PTP) Specification, Familiy 2.0, Revision 00.43
+ * TPM Profile (PTP) Specification, Family 2.0, Revision 00.43
  */
 #include "qemu/osdep.h"
 #include "hw/irq.h"
 #include "hw/isa/isa.h"
 #include "qapi/error.h"
+#include "qemu/bswap.h"
+#include "qemu/crc-ccitt.h"
 #include "qemu/module.h"
 
 #include "hw/acpi/tpm.h"
@@ -50,7 +52,12 @@ static uint64_t tpm_tis_mmio_read(void *opaque, hwaddr addr,
 
 static uint8_t tpm_tis_locality_from_addr(hwaddr addr)
 {
-    return (uint8_t)((addr >> TPM_TIS_LOCALITY_SHIFT) & 0x7);
+    uint8_t locty;
+
+    locty = (uint8_t)((addr >> TPM_TIS_LOCALITY_SHIFT) & 0x7);
+    assert(TPM_TIS_IS_VALID_LOCTY(locty));
+
+    return locty;
 }
 
 
@@ -443,6 +450,23 @@ static uint64_t tpm_tis_mmio_read(void *opaque, hwaddr addr,
 }
 
 /*
+ * A wrapper read function so that it can be directly called without
+ * mmio.
+ */
+uint32_t tpm_tis_read_data(TPMState *s, hwaddr addr, unsigned size)
+{
+    return tpm_tis_mmio_read(s, addr, size);
+}
+
+/*
+ * Calculate current data buffer checksum
+ */
+uint16_t tpm_tis_get_checksum(TPMState *s)
+{
+    return bswap16(crc_ccitt(0, s->buffer, s->rw_offset));
+}
+
+/*
  * Write a value to a register of the TIS interface
  * See specs pages 33-63 for description of the registers
  */
@@ -583,10 +607,6 @@ static void tpm_tis_mmio_write(void *opaque, hwaddr addr,
 
         break;
     case TPM_TIS_REG_INT_ENABLE:
-        if (s->active_locty != locty) {
-            break;
-        }
-
         s->loc[locty].inte &= mask;
         s->loc[locty].inte |= (val & (TPM_TIS_INT_ENABLED |
                                         TPM_TIS_INT_POLARITY_MASK |
@@ -596,10 +616,6 @@ static void tpm_tis_mmio_write(void *opaque, hwaddr addr,
         /* hard wired -- ignore */
         break;
     case TPM_TIS_REG_INT_STATUS:
-        if (s->active_locty != locty) {
-            break;
-        }
-
         /* clearing of interrupt flags */
         if (((val & TPM_TIS_INTERRUPTS_SUPPORTED)) &&
             (s->loc[locty].ints & TPM_TIS_INTERRUPTS_SUPPORTED)) {
@@ -762,6 +778,15 @@ static void tpm_tis_mmio_write(void *opaque, hwaddr addr,
     }
 }
 
+/*
+ * A wrapper write function so that it can be directly called without
+ * mmio.
+ */
+void tpm_tis_write_data(TPMState *s, hwaddr addr, uint64_t val, uint32_t size)
+{
+    tpm_tis_mmio_write(s, addr, val, size);
+}
+
 const MemoryRegionOps tpm_tis_memory_ops = {
     .read = tpm_tis_mmio_read,
     .write = tpm_tis_mmio_write,
@@ -854,7 +879,7 @@ int tpm_tis_pre_save(TPMState *s)
 const VMStateDescription vmstate_locty = {
     .name = "tpm-tis/locty",
     .version_id = 0,
-    .fields      = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(state, TPMLocality),
         VMSTATE_UINT32(inte, TPMLocality),
         VMSTATE_UINT32(ints, TPMLocality),

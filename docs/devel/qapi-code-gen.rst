@@ -41,8 +41,8 @@ used internally.
 
 There are several kinds of types: simple types (a number of built-in
 types, such as ``int`` and ``str``; as well as enumerations), arrays,
-complex types (structs and two flavors of unions), and alternate types
-(a choice between other types).
+complex types (structs and unions), and alternate types (a choice
+between other types).
 
 
 Schema syntax
@@ -200,7 +200,9 @@ Syntax::
              '*if': COND,
              '*features': FEATURES }
     ENUM-VALUE = STRING
-               | { 'name': STRING, '*if': COND }
+               | { 'name': STRING,
+                   '*if': COND,
+                   '*features': FEATURES }
 
 Member 'enum' names the enum type.
 
@@ -319,13 +321,9 @@ Union types
 Syntax::
 
     UNION = { 'union': STRING,
-              'data': BRANCHES,
-              '*if': COND,
-              '*features': FEATURES }
-          | { 'union': STRING,
-              'data': BRANCHES,
               'base': ( MEMBERS | STRING ),
               'discriminator': STRING,
+              'data': BRANCHES,
               '*if': COND,
               '*features': FEATURES }
     BRANCHES = { BRANCH, ... }
@@ -334,63 +332,30 @@ Syntax::
 
 Member 'union' names the union type.
 
-There are two flavors of union types: simple (no discriminator or
-base), and flat (both discriminator and base).
-
-Each BRANCH of the 'data' object defines a branch of the union.  A
-union must have at least one branch.
-
-The BRANCH's STRING name is the branch name.
-
-The BRANCH's value defines the branch's properties, in particular its
-type.  The form TYPE-REF_ is shorthand for :code:`{ 'type': TYPE-REF }`.
-
-A simple union type defines a mapping from automatic discriminator
-values to data types like in this example::
-
- { 'struct': 'BlockdevOptionsFile', 'data': { 'filename': 'str' } }
- { 'struct': 'BlockdevOptionsQcow2',
-   'data': { 'backing': 'str', '*lazy-refcounts': 'bool' } }
-
- { 'union': 'BlockdevOptionsSimple',
-   'data': { 'file': 'BlockdevOptionsFile',
-             'qcow2': 'BlockdevOptionsQcow2' } }
-
-In the Client JSON Protocol, a simple union is represented by an
-object that contains the 'type' member as a discriminator, and a
-'data' member that is of the specified data type corresponding to the
-discriminator value, as in these examples::
-
- { "type": "file", "data": { "filename": "/some/place/my-image" } }
- { "type": "qcow2", "data": { "backing": "/some/place/my-image",
-                              "lazy-refcounts": true } }
-
-The generated C code uses a struct containing a union.  Additionally,
-an implicit C enum 'NameKind' is created, corresponding to the union
-'Name', for accessing the various branches of the union.  The value
-for each branch can be of any type.
-
-Flat unions permit arbitrary common members that occur in all variants
-of the union, not just a discriminator.  Their discriminators need not
-be named 'type'.  They also avoid nesting on the wire.
-
 The 'base' member defines the common members.  If it is a MEMBERS_
 object, it defines common members just like a struct type's 'data'
 member defines struct type members.  If it is a STRING, it names a
 struct type whose members are the common members.
 
-All flat union branches must be `Struct types`_.
+Member 'discriminator' must name a non-optional enum-typed member of
+the base struct.  That member's value selects a branch by its name.
+If no such branch exists, an empty branch is assumed.
 
-In the Client JSON Protocol, a flat union is represented by an object
-with the common members (from the base type) and the selected branch's
-members.  The two sets of member names must be disjoint.  Member
-'discriminator' must name a non-optional enum-typed member of the base
-struct.
+Each BRANCH of the 'data' object defines a branch of the union.  A
+union must have at least one branch.
 
-The following example enhances the above simple union example by
-adding an optional common member 'read-only', renaming the
-discriminator to something more applicable than the simple union's
-default of 'type', and reducing the number of ``{}`` required on the wire::
+The BRANCH's STRING name is the branch name.  It must be a value of
+the discriminator enum type.
+
+The BRANCH's value defines the branch's properties, in particular its
+type.  The type must a struct type.  The form TYPE-REF_ is shorthand
+for :code:`{ 'type': TYPE-REF }`.
+
+In the Client JSON Protocol, a union is represented by an object with
+the common members (from the base type) and the selected branch's
+members.  The two sets of member names must be disjoint.
+
+Example::
 
  { 'enum': 'BlockdevDriver', 'data': [ 'file', 'qcow2' ] }
  { 'union': 'BlockdevOptions',
@@ -406,30 +371,11 @@ Resulting in these JSON objects::
  { "driver": "qcow2", "read-only": false,
    "backing": "/some/place/my-image", "lazy-refcounts": true }
 
-Notice that in a flat union, the discriminator name is controlled by
-the user, but because it must map to a base member with enum type, the
-code generator ensures that branches match the existing values of the
-enum.  The order of branches need not match the order of the enum
-values.  The branches need not cover all possible enum values.
-Omitted enum values are still valid branches that add no additional
-members to the data type.  In the resulting generated C data types, a
-flat union is represented as a struct with the base members in QAPI
-schema order, and then a union of structures for each branch of the
-struct.
-
-A simple union can always be re-written as a flat union where the base
-class has a single member named 'type', and where each branch of the
-union has a struct with a single member named 'data'.  That is, ::
-
- { 'union': 'Simple', 'data': { 'one': 'str', 'two': 'int' } }
-
-is identical on the wire to::
-
- { 'enum': 'Enum', 'data': ['one', 'two'] }
- { 'struct': 'Branch1', 'data': { 'data': 'str' } }
- { 'struct': 'Branch2', 'data': { 'data': 'int' } }
- { 'union': 'Flat', 'base': { 'type': 'Enum' }, 'discriminator': 'type',
-   'data': { 'one': 'Branch1', 'two': 'Branch2' } }
+The order of branches need not match the order of the enum values.
+The branches need not cover all possible enum values.  In the
+resulting generated C data types, a union is represented as a struct
+with the base members in QAPI schema order, and then a union of
+structures for each branch of the struct.
 
 The optional 'if' member specifies a conditional.  See `Configuring
 the schema`_ below for more on this.
@@ -599,7 +545,8 @@ Member 'allow-oob' declares whether the command supports out-of-band
  { 'command': 'migrate_recover',
    'data': { 'uri': 'str' }, 'allow-oob': true }
 
-See qmp-spec.txt for out-of-band execution syntax and semantics.
+See the :doc:`/interop/qmp-spec` for out-of-band execution syntax
+and semantics.
 
 Commands supporting out-of-band execution can still be executed
 in-band.
@@ -647,7 +594,7 @@ blocking the guest and other background operations.
 Coroutine safety can be hard to prove, similar to thread safety.  Common
 pitfalls are:
 
-- The global mutex isn't held across ``qemu_coroutine_yield()``, so
+- The BQL isn't held across ``qemu_coroutine_yield()``, so
   operations that used to assume that they execute atomically may have
   to be more careful to protect against changes in the global state.
 
@@ -739,9 +686,10 @@ change in the QMP syntax (usually by allowing values or operations
 that previously resulted in an error).  QMP clients may still need to
 know whether the extension is available.
 
-For this purpose, a list of features can be specified for a command or
-struct type.  Each list member can either be ``{ 'name': STRING, '*if':
-COND }``, or STRING, which is shorthand for ``{ 'name': STRING }``.
+For this purpose, a list of features can be specified for definitions,
+enumeration values, and struct members.  Each feature list member can
+either be ``{ 'name': STRING, '*if': COND }``, or STRING, which is
+shorthand for ``{ 'name': STRING }``.
 
 The optional 'if' member specifies a conditional.  See `Configuring
 the schema`_ below for more on this.
@@ -762,8 +710,14 @@ QEMU shows a certain behaviour.
 Special features
 ~~~~~~~~~~~~~~~~
 
-Feature "deprecated" marks a command, event, or struct member as
-deprecated.  It is not supported elsewhere so far.
+Feature "deprecated" marks a command, event, enum value, or struct
+member as deprecated.  It is not supported elsewhere so far.
+Interfaces so marked may be withdrawn in future releases in accordance
+with QEMU's deprecation policy.
+
+Feature "unstable" marks a command, event, enum value, or struct
+member as unstable.  It is not supported elsewhere so far.  Interfaces
+so marked may be withdrawn or changed incompatibly in future releases.
 
 
 Naming rules and reserved names
@@ -787,10 +741,11 @@ Type names ending with ``Kind`` or ``List`` are reserved for the
 generator, which uses them for implicit union enums and array types,
 respectively.
 
-Command names, and member names within a type, should be all lower
-case with words separated by a hyphen.  However, some existing older
-commands and complex types use underscore; when extending them,
-consistency is preferred over blindly avoiding underscore.
+Command names, member names within a type, and feature names should be
+all lower case with words separated by a hyphen.  However, some
+existing older commands and complex types use underscore; when
+extending them, consistency is preferred over blindly avoiding
+underscore.
 
 Event names should be ALL_CAPS with words separated by underscore.
 
@@ -798,9 +753,8 @@ Member name ``u`` and names starting with ``has-`` or ``has_`` are reserved
 for the generator, which uses them for unions and for tracking
 optional members.
 
-Any name (command, event, type, member, or enum value) beginning with
-``x-`` is marked experimental, and may be withdrawn or changed
-incompatibly in a future release.
+Names beginning with ``x-`` used to signify "experimental".  This
+convention has been replaced by special feature "unstable".
 
 Pragmas ``command-name-exceptions`` and ``member-name-exceptions`` let
 you violate naming rules.  Use for new code is strongly discouraged. See
@@ -826,48 +780,53 @@ Configuring the schema
 Syntax::
 
     COND = STRING
-         | [ STRING, ... ]
+         | { 'all: [ COND, ... ] }
+         | { 'any: [ COND, ... ] }
+         | { 'not': COND }
 
 All definitions take an optional 'if' member.  Its value must be a
-string or a list of strings.  A string is shorthand for a list
-containing just that string.  The code generated for the definition
-will then be guarded by #if STRING for each STRING in the COND list.
+string, or an object with a single member 'all', 'any' or 'not'.
+
+The C code generated for the definition will then be guarded by an #if
+preprocessing directive with an operand generated from that condition:
+
+ * STRING will generate defined(STRING)
+ * { 'all': [COND, ...] } will generate (COND && ...)
+ * { 'any': [COND, ...] } will generate (COND || ...)
+ * { 'not': COND } will generate !COND
 
 Example: a conditional struct ::
 
  { 'struct': 'IfStruct', 'data': { 'foo': 'int' },
-   'if': ['defined(CONFIG_FOO)', 'defined(HAVE_BAR)'] }
+   'if': { 'all': [ 'CONFIG_FOO', 'HAVE_BAR' ] } }
 
 gets its generated code guarded like this::
 
- #if defined(CONFIG_FOO)
- #if defined(HAVE_BAR)
+ #if defined(CONFIG_FOO) && defined(HAVE_BAR)
  ... generated code ...
- #endif /* defined(HAVE_BAR) */
- #endif /* defined(CONFIG_FOO) */
+ #endif /* defined(HAVE_BAR) && defined(CONFIG_FOO) */
 
-Individual members of complex types, commands arguments, and
-event-specific data can also be made conditional.  This requires the
-longhand form of MEMBER.
+Individual members of complex types can also be made conditional.
+This requires the longhand form of MEMBER.
 
 Example: a struct type with unconditional member 'foo' and conditional
 member 'bar' ::
 
- { 'struct': 'IfStruct', 'data':
-   { 'foo': 'int',
-     'bar': { 'type': 'int', 'if': 'defined(IFCOND)'} } }
+ { 'struct': 'IfStruct',
+   'data': { 'foo': 'int',
+             'bar': { 'type': 'int', 'if': 'IFCOND'} } }
 
 A union's discriminator may not be conditional.
 
-Likewise, individual enumeration values be conditional.  This requires
-the longhand form of ENUM-VALUE_.
+Likewise, individual enumeration values may be conditional.  This
+requires the longhand form of ENUM-VALUE_.
 
 Example: an enum type with unconditional value 'foo' and conditional
 value 'bar' ::
 
- { 'enum': 'IfEnum', 'data':
-   [ 'foo',
-     { 'name' : 'bar', 'if': 'defined(IFCOND)' } ] }
+ { 'enum': 'IfEnum',
+   'data': [ 'foo',
+             { 'name' : 'bar', 'if': 'IFCOND' } ] }
 
 Likewise, features can be conditional.  This requires the longhand
 form of FEATURE_.
@@ -877,7 +836,7 @@ Example: a struct with conditional feature 'allow-negative-numbers' ::
  { 'struct': 'TestType',
    'data': { 'number': 'int' },
    'features': [ { 'name': 'allow-negative-numbers',
-                   'if': 'defined(IFCOND)' } ] }
+                   'if': 'IFCOND' } ] }
 
 Please note that you are responsible to ensure that the C code will
 compile with an arbitrary combination of conditions, since the
@@ -966,14 +925,17 @@ first character of the first line.
 
 The usual ****strong****, *\*emphasized\** and ````literal```` markup
 should be used.  If you need a single literal ``*``, you will need to
-backslash-escape it.  As an extension beyond the usual rST syntax, you
-can also use ``@foo`` to reference a name in the schema; this is rendered
-the same way as ````foo````.
+backslash-escape it.
+
+Use ``@foo`` to reference a name in the schema.  This is an rST
+extension.  It is rendered the same way as ````foo````, but carries
+additional meaning.
 
 Example::
 
  ##
  # Some text foo with **bold** and *emphasis*
+ #
  # 1. with a list
  # 2. like that
  #
@@ -985,6 +947,11 @@ Example::
  #   -> do this
  #   <- get that
  ##
+
+For legibility, wrap text paragraphs so every line is at most 70
+characters long.
+
+Separate sentences with two spaces.
 
 
 Definition documentation
@@ -999,59 +966,49 @@ definition must have documentation.
 Definition documentation starts with a line naming the definition,
 followed by an optional overview, a description of each argument (for
 commands and events), member (for structs and unions), branch (for
-alternates), or value (for enums), and finally optional tagged
-sections.
+alternates), or value (for enums), a description of each feature (if
+any), and finally optional tagged sections.
 
-Descriptions of arguments can span multiple lines.  The description
-text can start on the line following the '\@argname:', in which case it
-must not be indented at all.  It can also start on the same line as
-the '\@argname:'.  In this case if it spans multiple lines then second
-and subsequent lines must be indented to line up with the first
-character of the first line of the description::
+Descriptions start with '\@name:'.  The description text should be
+indented like this::
 
- # @argone:
- # This is a two line description
- # in the first style.
- #
- # @argtwo: This is a two line description
- #          in the second style.
+ # @name: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed
+ #     do eiusmod tempor incididunt ut labore et dolore magna aliqua.
 
-The number of spaces between the ':' and the text is not significant.
+.. FIXME The parser accepts these things in almost any order.
 
-.. admonition:: FIXME
-
-   The parser accepts these things in almost any order.
-
-.. admonition:: FIXME
-
-   union branches should be described, too.
+.. FIXME union branches should be described, too.
 
 Extensions added after the definition was first released carry a
-'(since x.y.z)' comment.
+"(since x.y.z)" comment.
+
+The feature descriptions must be preceded by a line "Features:", like
+this::
+
+  # Features:
+  #
+  # @feature: Description text
 
 A tagged section starts with one of the following words:
 "Note:"/"Notes:", "Since:", "Example"/"Examples", "Returns:", "TODO:".
 The section ends with the start of a new section.
 
-The text of a section can start on a new line, in
-which case it must not be indented at all.  It can also start
-on the same line as the 'Note:', 'Returns:', etc tag.  In this
-case if it spans multiple lines then second and subsequent
-lines must be indented to match the first, in the same way as
-multiline argument descriptions.
+The second and subsequent lines of sections other than
+"Example"/"Examples" should be indented like this::
 
-A 'Since: x.y.z' tagged section lists the release that introduced the
+ # Note: Ut enim ad minim veniam, quis nostrud exercitation ullamco
+ #     laboris nisi ut aliquip ex ea commodo consequat.
+ #
+ #     Duis aute irure dolor in reprehenderit in voluptate velit esse
+ #     cillum dolore eu fugiat nulla pariatur.
+
+A "Since: x.y.z" tagged section lists the release that introduced the
 definition.
 
-The text of a section can start on a new line, in
-which case it must not be indented at all.  It can also start
-on the same line as the 'Note:', 'Returns:', etc tag.  In this
-case if it spans multiple lines then second and subsequent
-lines must be indented to match the first.
-
-An 'Example' or 'Examples' section is automatically rendered
-entirely as literal fixed-width text.  In other sections,
-the text is formatted, and rST markup can be used.
+An "Example" or "Examples" section is rendered entirely
+as literal fixed-width text.  "TODO" sections are not rendered at all
+(they are for developers, not users of QMP).  In other sections, the
+text is formatted, and rST markup can be used.
 
 For example::
 
@@ -1061,7 +1018,7 @@ For example::
  # Statistics of a virtual block device or a block backing device.
  #
  # @device: If the stats are for a virtual block device, the name
- #          corresponding to the virtual block device.
+ #     corresponding to the virtual block device.
  #
  # @node-name: The node name of the device. (since 2.3)
  #
@@ -1078,8 +1035,8 @@ For example::
  #
  # Query the @BlockStats for all virtual block devices.
  #
- # @query-nodes: If true, the command will query all the
- #               block nodes ... explain, explain ...  (since 2.3)
+ # @query-nodes: If true, the command will query all the block nodes
+ #     ... explain, explain ...  (since 2.3)
  #
  # Returns: A list of @BlockStats for each virtual block devices.
  #
@@ -1096,6 +1053,63 @@ For example::
  { 'command': 'query-blockstats',
    'data': { '*query-nodes': 'bool' },
    'returns': ['BlockStats'] }
+
+
+Markup pitfalls
+~~~~~~~~~~~~~~~
+
+A blank line is required between list items and paragraphs.  Without
+it, the list may not be recognized, resulting in garbled output.  Good
+example::
+
+ # An event's state is modified if:
+ #
+ # - its name matches the @name pattern, and
+ # - if @vcpu is given, the event has the "vcpu" property.
+
+Without the blank line this would be a single paragraph.
+
+Indentation matters.  Bad example::
+
+ # @none: None (no memory side cache in this proximity domain,
+ #              or cache associativity unknown)
+ #     (since 5.0)
+
+The last line's de-indent is wrong.  The second and subsequent lines
+need to line up with each other, like this::
+
+ # @none: None (no memory side cache in this proximity domain,
+ #     or cache associativity unknown)
+ #     (since 5.0)
+
+Section tags are case-sensitive and end with a colon.  Good example::
+
+ # Since: 7.1
+
+Bad examples (all ordinary paragraphs)::
+
+ # since: 7.1
+
+ # Since 7.1
+
+ # Since : 7.1
+
+Likewise, member descriptions require a colon.  Good example::
+
+ # @interface-id: Interface ID
+
+Bad examples (all ordinary paragraphs)::
+
+ # @interface-id   Interface ID
+
+ # @interface-id : Interface ID
+
+Undocumented members are not flagged, yet.  Instead, the generated
+documentation describes them as "Not documented".  Think twice before
+adding more undocumented members.
+
+When you change documentation comments, please check the generated
+documentation comes out as intended!
 
 
 Client JSON Protocol introspection
@@ -1198,16 +1212,16 @@ Example: the SchemaInfo for EVENT_C from section Events_ ::
     Type "q_obj-EVENT_C-arg" is an implicitly defined object type with
     the two members from the event's definition.
 
-The SchemaInfo for struct and union types has meta-type "object".
-
-The SchemaInfo for a struct type has variant member "members".
+The SchemaInfo for struct and union types has meta-type "object" and
+variant member "members".
 
 The SchemaInfo for a union type additionally has variant members "tag"
 and "variants".
 
 "members" is a JSON array describing the object's common members, if
 any.  Each element is a JSON object with members "name" (the member's
-name), "type" (the name of its type), and optionally "default".  The
+name), "type" (the name of its type), "features" (a JSON array of
+feature strings), and "default".  The latter two are optional.  The
 member is optional if "default" is present.  Currently, "default" can
 only have value null.  Other values are reserved for future
 extensions.  The "members" array is in no particular order; clients
@@ -1240,7 +1254,7 @@ that provides the variant members for this type tag value).  The
 "variants" array is in no particular order, and is not guaranteed to
 list cases in the same order as the corresponding "tag" enum type.
 
-Example: the SchemaInfo for flat union BlockdevOptions from section
+Example: the SchemaInfo for union BlockdevOptions from section
 `Union types`_ ::
 
     { "name": "BlockdevOptions", "meta-type": "object",
@@ -1254,27 +1268,6 @@ Example: the SchemaInfo for flat union BlockdevOptions from section
 
 Note that base types are "flattened": its members are included in the
 "members" array.
-
-A simple union implicitly defines an enumeration type for its implicit
-discriminator (called "type" on the wire, see section `Union types`_).
-
-A simple union implicitly defines an object type for each of its
-variants.
-
-Example: the SchemaInfo for simple union BlockdevOptionsSimple from section
-`Union types`_ ::
-
-    { "name": "BlockdevOptionsSimple", "meta-type": "object",
-      "members": [
-          { "name": "type", "type": "BlockdevOptionsSimpleKind" } ],
-      "tag": "type",
-      "variants": [
-          { "case": "file", "type": "q_obj-BlockdevOptionsFile-wrapper" },
-          { "case": "qcow2", "type": "q_obj-BlockdevOptionsQcow2-wrapper" } ] }
-
-    Enumeration type "BlockdevOptionsSimpleKind" and the object types
-    "q_obj-BlockdevOptionsFile-wrapper", "q_obj-BlockdevOptionsQcow2-wrapper"
-    are implicitly defined.
 
 The SchemaInfo for an alternate type has meta-type "alternate", and
 variant member "members".  "members" is a JSON array.  Each element is
@@ -1302,14 +1295,22 @@ Example: the SchemaInfo for ['str'] ::
       "element-type": "str" }
 
 The SchemaInfo for an enumeration type has meta-type "enum" and
-variant member "values".  The values are listed in no particular
-order; clients must search the entire enum when learning whether a
-particular value is supported.
+variant member "members".
+
+"members" is a JSON array describing the enumeration values.  Each
+element is a JSON object with member "name" (the member's name), and
+optionally "features" (a JSON array of feature strings).  The
+"members" array is in no particular order; clients must search the
+entire array when learning whether a particular value is supported.
 
 Example: the SchemaInfo for MyEnum from section `Enumeration types`_ ::
 
     { "name": "MyEnum", "meta-type": "enum",
-      "values": [ "value1", "value2", "value3" ] }
+      "members": [
+        { "name": "value1" },
+        { "name": "value2" },
+        { "name": "value3" }
+      ] }
 
 The SchemaInfo for a built-in type has the same name as the type in
 the QAPI schema (see section `Built-in Types`_), with one exception
@@ -1410,7 +1411,7 @@ qmp_my_command(); everything else is produced by the generator. ::
 
     $ cat example-schema.json
     { 'struct': 'UserDefOne',
-      'data': { 'integer': 'int', '*string': 'str' } }
+      'data': { 'integer': 'int', '*string': 'str', '*flag': 'bool' } }
 
     { 'command': 'my-command',
       'data': { 'arg1': ['UserDefOne'] },
@@ -1463,8 +1464,9 @@ Example::
 
     struct UserDefOne {
         int64_t integer;
-        bool has_string;
         char *string;
+        bool has_flag;
+        bool flag;
     };
 
     void qapi_free_UserDefOne(UserDefOne *obj);
@@ -1576,11 +1578,18 @@ Example::
 
     bool visit_type_UserDefOne_members(Visitor *v, UserDefOne *obj, Error **errp)
     {
+        bool has_string = !!obj->string;
+
         if (!visit_type_int(v, "integer", &obj->integer, errp)) {
             return false;
         }
-        if (visit_optional(v, "string", &obj->has_string)) {
+        if (visit_optional(v, "string", &has_string)) {
             if (!visit_type_str(v, "string", &obj->string, errp)) {
+                return false;
+            }
+        }
+        if (visit_optional(v, "flag", &obj->has_flag)) {
+            if (!visit_type_bool(v, "flag", &obj->flag, errp)) {
                 return false;
             }
         }
@@ -1684,6 +1693,9 @@ The following files are generated:
  ``$(prefix)qapi-commands.h``
      Function prototypes for the QMP commands specified in the schema
 
+ ``$(prefix)qapi-commands.trace-events``
+     Trace event declarations, see :ref:`tracing`.
+
  ``$(prefix)qapi-init-commands.h``
      Command initialization prototype
 
@@ -1704,9 +1716,15 @@ Example::
     void qmp_marshal_my_command(QDict *args, QObject **ret, Error **errp);
 
     #endif /* EXAMPLE_QAPI_COMMANDS_H */
+
+    $ cat qapi-generated/example-qapi-commands.trace-events
+    # AUTOMATICALLY GENERATED, DO NOT MODIFY
+
+    qmp_enter_my_command(const char *json) "%s"
+    qmp_exit_my_command(const char *result, bool succeeded) "%s %d"
+
     $ cat qapi-generated/example-qapi-commands.c
     [Uninteresting stuff omitted...]
-
 
     static void qmp_marshal_output_UserDefOne(UserDefOne *ret_in,
                                     QObject **ret_out, Error **errp)
@@ -1743,13 +1761,26 @@ Example::
             goto out;
         }
 
+        if (trace_event_get_state_backends(TRACE_QMP_ENTER_MY_COMMAND)) {
+            g_autoptr(GString) req_json = qobject_to_json(QOBJECT(args));
+
+            trace_qmp_enter_my_command(req_json->str);
+        }
+
         retval = qmp_my_command(arg.arg1, &err);
-        error_propagate(errp, err);
         if (err) {
+            trace_qmp_exit_my_command(error_get_pretty(err), false);
+            error_propagate(errp, err);
             goto out;
         }
 
         qmp_marshal_output_UserDefOne(retval, ret, errp);
+
+        if (trace_event_get_state_backends(TRACE_QMP_EXIT_MY_COMMAND)) {
+            g_autoptr(GString) ret_json = qobject_to_json(*ret);
+
+            trace_qmp_exit_my_command(ret_json->str, true);
+        }
 
     out:
         visit_free(v);
@@ -1778,7 +1809,7 @@ Example::
         QTAILQ_INIT(cmds);
 
         qmp_register_command(cmds, "my-command",
-                             qmp_marshal_my_command, QCO_NO_OPTIONS);
+                             qmp_marshal_my_command, 0, 0);
     }
     [Uninteresting stuff omitted...]
 
@@ -1947,6 +1978,12 @@ Example::
                     { "type", QLIT_QSTR("str"), },
                     {}
                 })),
+                QLIT_QDICT(((QLitDictEntry[]) {
+                    { "default", QLIT_QNULL, },
+                    { "name", QLIT_QSTR("flag"), },
+                    { "type", QLIT_QSTR("bool"), },
+                    {}
+                })),
                 {}
             })), },
             { "meta-type", QLIT_QSTR("object"), },
@@ -1978,6 +2015,12 @@ Example::
             { "json-type", QLIT_QSTR("string"), },
             { "meta-type", QLIT_QSTR("builtin"), },
             { "name", QLIT_QSTR("str"), },
+            {}
+        })),
+        QLIT_QDICT(((QLitDictEntry[]) {
+            { "json-type", QLIT_QSTR("boolean"), },
+            { "meta-type", QLIT_QSTR("builtin"), },
+            { "name", QLIT_QSTR("bool"), },
             {}
         })),
         {}

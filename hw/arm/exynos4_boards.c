@@ -67,7 +67,6 @@ static unsigned long exynos4_board_ram_size[EXYNOS4_NUM_OF_BOARDS] = {
 static struct arm_boot_info exynos4_board_binfo = {
     .loader_start     = EXYNOS4210_BASE_BOOT_ADDR,
     .smp_loader_start = EXYNOS4210_SMP_BOOT_ADDR,
-    .nb_cpus          = EXYNOS4210_NCPUS,
     .write_secondary_boot = exynos4210_write_secondary,
 };
 
@@ -135,9 +134,10 @@ exynos4_boards_init_common(MachineState *machine,
 
 static void nuri_init(MachineState *machine)
 {
-    exynos4_boards_init_common(machine, EXYNOS4_BOARD_NURI);
+    Exynos4BoardState *s = exynos4_boards_init_common(machine,
+                                                      EXYNOS4_BOARD_NURI);
 
-    arm_load_kernel(ARM_CPU(first_cpu), machine, &exynos4_board_binfo);
+    arm_load_kernel(s->soc.cpu[0], machine, &exynos4_board_binfo);
 }
 
 static void smdkc210_init(MachineState *machine)
@@ -147,7 +147,7 @@ static void smdkc210_init(MachineState *machine)
 
     lan9215_init(SMDK_LAN9118_BASE_ADDR,
             qemu_irq_invert(s->soc.irq_table[exynos4210_get_irq(37, 1)]));
-    arm_load_kernel(ARM_CPU(first_cpu), machine, &exynos4_board_binfo);
+    arm_load_kernel(s->soc.cpu[0], machine, &exynos4_board_binfo);
 }
 
 static void nuri_class_init(ObjectClass *oc, void *data)

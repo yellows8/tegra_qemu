@@ -1,3 +1,5 @@
+.. _coding-style:
+
 =================
 QEMU Coding Style
 =================
@@ -9,6 +11,10 @@ patches before submitting.
 
 Formatting and style
 ********************
+
+The repository includes a ``.editorconfig`` file which can help with
+getting the right settings for your preferred $EDITOR. See
+`<https://editorconfig.org/>`_ for details.
 
 Whitespace
 ==========
@@ -149,6 +155,12 @@ If there are two versions of a function to be called with or without a
 lock held, the function that expects the lock to be already held
 usually uses the suffix ``_locked``.
 
+If a function is a shim designed to deal with compatibility
+workarounds we use the suffix ``_compat``. These are generally not
+called directly and aliased to the plain function name via the
+pre-processor. Another common suffix is ``_impl``; it is used for the
+concrete implementation of a function that will not be called
+directly, but rather through a macro or an inline function.
 
 Block structure
 ===============
@@ -192,7 +204,14 @@ Declarations
 
 Mixed declarations (interleaving statements and declarations within
 blocks) are generally not allowed; declarations should be at the beginning
-of blocks.
+of blocks. To avoid accidental re-use it is permissible to declare
+loop variables inside for loops:
+
+.. code-block:: c
+
+    for (int i = 0; i < ARRAY_SIZE(thing); i++) {
+        /* do something loopy */
+    }
 
 Every now and then, an exception is made for declarations inside a
 #ifdef or #ifndef block: if the code looks nicer, such declarations can
@@ -280,6 +299,27 @@ that QEMU depends on.
 
 Do not include "qemu/osdep.h" from header files since the .c file will have
 already included it.
+
+Headers should normally include everything they need beyond osdep.h.
+If exceptions are needed for some reason, they must be documented in
+the header.  If all that's needed from a header is typedefs, consider
+putting those into qemu/typedefs.h instead of including the header.
+
+Cyclic inclusion is forbidden.
+
+Generative Includes
+-------------------
+
+QEMU makes fairly extensive use of the macro pre-processor to
+instantiate multiple similar functions. While such abuse of the macro
+processor isn't discouraged it can make debugging and code navigation
+harder. You should consider carefully if the same effect can be
+achieved by making it easy for the compiler to constant fold or using
+python scripting to generate grep friendly code.
+
+If you do use template header files they should be named with the
+``.c.inc`` or ``.h.inc`` suffix to make it clear they are being
+included for expansion.
 
 C types
 =======
@@ -481,11 +521,11 @@ of arguments.
 C standard, implementation defined and undefined behaviors
 ==========================================================
 
-C code in QEMU should be written to the C99 language specification. A copy
-of the final version of the C99 standard with corrigenda TC1, TC2, and TC3
-included, formatted as a draft, can be downloaded from:
+C code in QEMU should be written to the C11 language specification. A
+copy of the final version of the C11 standard formatted as a draft,
+can be downloaded from:
 
-    `<http://www.open-std.org/jtc1/sc22/WG14/www/docs/n1256.pdf>`_
+    `<http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1548.pdf>`_
 
 The C language specification defines regions of undefined behavior and
 implementation defined behavior (to give compiler authors enough leeway to
@@ -510,7 +550,7 @@ documented in the GNU Compiler Collection manual starting at version 4.0.
 Automatic memory deallocation
 =============================
 
-QEMU has a mandatory dependency either the GCC or CLang compiler. As
+QEMU has a mandatory dependency on either the GCC or the Clang compiler. As
 such it has the freedom to make use of a C language extension for
 automatically running a cleanup function when a stack variable goes
 out of scope. This can be used to simplify function cleanup paths,
@@ -534,7 +574,8 @@ For example, instead of
 
 .. code-block:: c
 
-    int somefunc(void) {
+    int somefunc(void)
+    {
         int ret = -1;
         char *foo = g_strdup_printf("foo%", "wibble");
         GList *bar = .....
@@ -555,7 +596,8 @@ Using g_autofree/g_autoptr enables the code to be written as:
 
 .. code-block:: c
 
-    int somefunc(void) {
+    int somefunc(void)
+    {
         g_autofree char *foo = g_strdup_printf("foo%", "wibble");
         g_autoptr (GList) bar = .....
 
@@ -580,7 +622,8 @@ are still some caveats to beware of
 
 .. code-block:: c
 
-    char *somefunc(void) {
+    char *somefunc(void)
+    {
         g_autofree char *foo = g_strdup_printf("foo%", "wibble");
         g_autoptr (GList) bar = .....
 
@@ -594,6 +637,97 @@ are still some caveats to beware of
 
 QEMU Specific Idioms
 ********************
+
+QEMU Object Model Declarations
+==============================
+
+The QEMU Object Model (QOM) provides a framework for handling objects
+in the base C language. The first declaration of a storage or class
+structure should always be the parent and leave a visual space between
+that declaration and the new code. It is also useful to separate
+backing for properties (options driven by the user) and internal state
+to make navigation easier.
+
+For a storage structure the first declaration should always be called
+"parent_obj" and for a class structure the first member should always
+be called "parent_class" as below:
+
+.. code-block:: c
+
+    struct MyDeviceState {
+        DeviceState parent_obj;
+
+        /* Properties */
+        int prop_a;
+        char *prop_b;
+        /* Other stuff */
+        int internal_state;
+    };
+
+    struct MyDeviceClass {
+        DeviceClass parent_class;
+
+        void (*new_fn1)(void);
+        bool (*new_fn2)(CPUState *);
+    };
+
+Note that there is no need to provide typedefs for QOM structures
+since these are generated automatically by the QOM declaration macros.
+See :ref:`qom` for more details.
+
+QEMU GUARD macros
+=================
+
+QEMU provides a number of ``_GUARD`` macros intended to make the
+handling of multiple exit paths easier. For example using
+``QEMU_LOCK_GUARD`` to take a lock will ensure the lock is released on
+exit from the function.
+
+.. code-block:: c
+
+    static int my_critical_function(SomeState *s, void *data)
+    {
+        QEMU_LOCK_GUARD(&s->lock);
+        do_thing1(data);
+        if (check_state2(data)) {
+            return -1;
+        }
+        do_thing3(data);
+        return 0;
+    }
+
+will ensure s->lock is released however the function is exited. The
+equivalent code without _GUARD macro makes us to carefully put
+qemu_mutex_unlock() on all exit points:
+
+.. code-block:: c
+
+    static int my_critical_function(SomeState *s, void *data)
+    {
+        qemu_mutex_lock(&s->lock);
+        do_thing1(data);
+        if (check_state2(data)) {
+            qemu_mutex_unlock(&s->lock);
+            return -1;
+        }
+        do_thing3(data);
+        qemu_mutex_unlock(&s->lock);
+        return 0;
+    }
+
+There are often ``WITH_`` forms of macros which more easily wrap
+around a block inside a function.
+
+.. code-block:: c
+
+    WITH_RCU_READ_LOCK_GUARD() {
+        QTAILQ_FOREACH_RCU(kid, &bus->children, sibling) {
+            err = do_the_thing(kid->child);
+            if (err < 0) {
+                return err;
+            }
+        }
+    }
 
 Error handling and reporting
 ============================
@@ -686,7 +820,7 @@ Rationale: hex numbers are hard to read in logs when there is no 0x prefix,
 especially when (occasionally) the representation doesn't contain any letters
 and especially in one line with other decimal numbers. Number groups are allowed
 to not use '0x' because for some things notations like %x.%x.%x are used not
-only in Qemu. Also dumping raw data bytes with '0x' is less readable.
+only in QEMU. Also dumping raw data bytes with '0x' is less readable.
 
 '#' printf flag
 ---------------

@@ -28,6 +28,42 @@
 #include "helper-tcg.h"
 #include "seg_helper.h"
 
+int get_pg_mode(CPUX86State *env)
+{
+    int pg_mode = 0;
+    if (!(env->cr[0] & CR0_PG_MASK)) {
+        return 0;
+    }
+    if (env->cr[0] & CR0_WP_MASK) {
+        pg_mode |= PG_MODE_WP;
+    }
+    if (env->cr[4] & CR4_PAE_MASK) {
+        pg_mode |= PG_MODE_PAE;
+        if (env->efer & MSR_EFER_NXE) {
+            pg_mode |= PG_MODE_NXE;
+        }
+    }
+    if (env->cr[4] & CR4_PSE_MASK) {
+        pg_mode |= PG_MODE_PSE;
+    }
+    if (env->cr[4] & CR4_SMEP_MASK) {
+        pg_mode |= PG_MODE_SMEP;
+    }
+    if (env->hflags & HF_LMA_MASK) {
+        pg_mode |= PG_MODE_LMA;
+        if (env->cr[4] & CR4_PKE_MASK) {
+            pg_mode |= PG_MODE_PKE;
+        }
+        if (env->cr[4] & CR4_PKS_MASK) {
+            pg_mode |= PG_MODE_PKS;
+        }
+        if (env->cr[4] & CR4_LA57_MASK) {
+            pg_mode |= PG_MODE_LA57;
+        }
+    }
+    return pg_mode;
+}
+
 /* return non zero if error */
 static inline int load_segment_ra(CPUX86State *env, uint32_t *e1_ptr,
                                uint32_t *e2_ptr, int selector,
@@ -190,14 +226,29 @@ static void tss_load_seg(CPUX86State *env, X86Seg seg_reg, int selector,
     }
 }
 
+static void tss_set_busy(CPUX86State *env, int tss_selector, bool value,
+                         uintptr_t retaddr)
+{
+    target_ulong ptr = env->gdt.base + (tss_selector & ~7);
+    uint32_t e2 = cpu_ldl_kernel_ra(env, ptr + 4, retaddr);
+
+    if (value) {
+        e2 |= DESC_TSS_BUSY_MASK;
+    } else {
+        e2 &= ~DESC_TSS_BUSY_MASK;
+    }
+
+    cpu_stl_kernel_ra(env, ptr + 4, e2, retaddr);
+}
+
 #define SWITCH_TSS_JMP  0
 #define SWITCH_TSS_IRET 1
 #define SWITCH_TSS_CALL 2
 
-/* XXX: restore CPU state in registers (PowerPC case) */
-static void switch_tss_ra(CPUX86State *env, int tss_selector,
-                          uint32_t e1, uint32_t e2, int source,
-                          uint32_t next_eip, uintptr_t retaddr)
+/* return 0 if switching to a 16-bit selector */
+static int switch_tss_ra(CPUX86State *env, int tss_selector,
+                         uint32_t e1, uint32_t e2, int source,
+                         uint32_t next_eip, uintptr_t retaddr)
 {
     int tss_limit, tss_limit_max, type, old_tss_limit_max, old_type, v1, v2, i;
     target_ulong tss_base;
@@ -305,13 +356,7 @@ static void switch_tss_ra(CPUX86State *env, int tss_selector,
 
     /* clear busy bit (it is restartable) */
     if (source == SWITCH_TSS_JMP || source == SWITCH_TSS_IRET) {
-        target_ulong ptr;
-        uint32_t e2;
-
-        ptr = env->gdt.base + (env->tr.selector & ~7);
-        e2 = cpu_ldl_kernel_ra(env, ptr + 4, retaddr);
-        e2 &= ~DESC_TSS_BUSY_MASK;
-        cpu_stl_kernel_ra(env, ptr + 4, e2, retaddr);
+        tss_set_busy(env, env->tr.selector, 0, retaddr);
     }
     old_eflags = cpu_compute_eflags(env);
     if (source == SWITCH_TSS_IRET) {
@@ -363,13 +408,7 @@ static void switch_tss_ra(CPUX86State *env, int tss_selector,
 
     /* set busy bit */
     if (source == SWITCH_TSS_JMP || source == SWITCH_TSS_CALL) {
-        target_ulong ptr;
-        uint32_t e2;
-
-        ptr = env->gdt.base + (tss_selector & ~7);
-        e2 = cpu_ldl_kernel_ra(env, ptr + 4, retaddr);
-        e2 |= DESC_TSS_BUSY_MASK;
-        cpu_stl_kernel_ra(env, ptr + 4, e2, retaddr);
+        tss_set_busy(env, tss_selector, 1, retaddr);
     }
 
     /* set the new CPU state */
@@ -463,13 +502,14 @@ static void switch_tss_ra(CPUX86State *env, int tss_selector,
         cpu_x86_update_dr7(env, env->dr[7] & ~DR7_LOCAL_BP_MASK);
     }
 #endif
+    return type >> 3;
 }
 
-static void switch_tss(CPUX86State *env, int tss_selector,
-                       uint32_t e1, uint32_t e2, int source,
-                        uint32_t next_eip)
+static int switch_tss(CPUX86State *env, int tss_selector,
+                      uint32_t e1, uint32_t e2, int source,
+                      uint32_t next_eip)
 {
-    switch_tss_ra(env, tss_selector, e1, e2, source, next_eip, 0);
+    return switch_tss_ra(env, tss_selector, e1, e2, source, next_eip, 0);
 }
 
 static inline unsigned int get_sp_mask(unsigned int e2)
@@ -611,14 +651,11 @@ static void do_interrupt_protected(CPUX86State *env, int intno, int is_int,
         if (!(e2 & DESC_P_MASK)) {
             raise_exception_err(env, EXCP0B_NOSEG, intno * 8 + 2);
         }
-        switch_tss(env, intno * 8, e1, e2, SWITCH_TSS_CALL, old_eip);
+        shift = switch_tss(env, intno * 8, e1, e2, SWITCH_TSS_CALL, old_eip);
         if (has_error_code) {
-            int type;
             uint32_t mask;
 
             /* push the error code */
-            type = (env->tr.flags >> DESC_TYPE_SHIFT) & 0xf;
-            shift = type >> 3;
             if (env->segs[R_SS].flags & DESC_B_MASK) {
                 mask = 0xffffffff;
             } else {
@@ -794,7 +831,9 @@ static void do_interrupt_protected(CPUX86State *env, int intno, int is_int,
 static inline target_ulong get_rsp_from_tss(CPUX86State *env, int level)
 {
     X86CPU *cpu = env_archcpu(env);
-    int index;
+    int index, pg_mode;
+    target_ulong rsp;
+    int32_t sext;
 
 #if 0
     printf("TR: base=" TARGET_FMT_lx " limit=%x\n",
@@ -808,7 +847,17 @@ static inline target_ulong get_rsp_from_tss(CPUX86State *env, int level)
     if ((index + 7) > env->tr.limit) {
         raise_exception_err(env, EXCP0A_TSS, env->tr.selector & 0xfffc);
     }
-    return cpu_ldq_kernel(env, env->tr.base + index);
+
+    rsp = cpu_ldq_kernel(env, env->tr.base + index);
+
+    /* test virtual address sign extension */
+    pg_mode = get_pg_mode(env);
+    sext = (int64_t)rsp >> (pg_mode & PG_MODE_LA57 ? 56 : 47);
+    if (sext != 0 && sext != -1) {
+        raise_exception_err(env, EXCP0C_STACK, 0);
+    }
+
+    return rsp;
 }
 
 /* 64 bit interrupt */
@@ -834,7 +883,7 @@ static void do_interrupt64(CPUX86State *env, int intno, int is_int,
 
     dt = &env->idt;
     if (intno * 16 + 15 > dt->limit) {
-        raise_exception_err(env, EXCP0D_GPF, intno * 16 + 2);
+        raise_exception_err(env, EXCP0D_GPF, intno * 8 + 2);
     }
     ptr = dt->base + intno * 16;
     e1 = cpu_ldl_kernel(env, ptr);
@@ -847,18 +896,18 @@ static void do_interrupt64(CPUX86State *env, int intno, int is_int,
     case 15: /* 386 trap gate */
         break;
     default:
-        raise_exception_err(env, EXCP0D_GPF, intno * 16 + 2);
+        raise_exception_err(env, EXCP0D_GPF, intno * 8 + 2);
         break;
     }
     dpl = (e2 >> DESC_DPL_SHIFT) & 3;
     cpl = env->hflags & HF_CPL_MASK;
     /* check privilege if software int */
     if (is_int && dpl < cpl) {
-        raise_exception_err(env, EXCP0D_GPF, intno * 16 + 2);
+        raise_exception_err(env, EXCP0D_GPF, intno * 8 + 2);
     }
     /* check valid bit */
     if (!(e2 & DESC_P_MASK)) {
-        raise_exception_err(env, EXCP0B_NOSEG, intno * 16 + 2);
+        raise_exception_err(env, EXCP0B_NOSEG, intno * 8 + 2);
     }
     selector = e1 >> 16;
     offset = ((target_ulong)e3 << 32) | (e2 & 0xffff0000) | (e1 & 0x0000ffff);
@@ -929,9 +978,8 @@ static void do_interrupt64(CPUX86State *env, int intno, int is_int,
                    e2);
     env->eip = offset;
 }
-#endif
+#endif /* TARGET_X86_64 */
 
-#ifdef TARGET_X86_64
 void helper_sysret(CPUX86State *env, int dflag)
 {
     int cpl, selector;
@@ -944,6 +992,7 @@ void helper_sysret(CPUX86State *env, int dflag)
         raise_exception_err_ra(env, EXCP0D_GPF, 0, GETPC());
     }
     selector = (env->star >> 48) & 0xffff;
+#ifdef TARGET_X86_64
     if (env->hflags & HF_LMA_MASK) {
         cpu_load_eflags(env, (uint32_t)(env->regs[11]), TF_MASK | AC_MASK
                         | ID_MASK | IF_MASK | IOPL_MASK | VM_MASK | RF_MASK |
@@ -969,7 +1018,9 @@ void helper_sysret(CPUX86State *env, int dflag)
                                DESC_G_MASK | DESC_B_MASK | DESC_P_MASK |
                                DESC_S_MASK | (3 << DESC_DPL_SHIFT) |
                                DESC_W_MASK | DESC_A_MASK);
-    } else {
+    } else
+#endif
+    {
         env->eflags |= IF_MASK;
         cpu_x86_load_seg_cache(env, R_CS, selector | 3,
                                0, 0xffffffff,
@@ -984,7 +1035,6 @@ void helper_sysret(CPUX86State *env, int dflag)
                                DESC_W_MASK | DESC_A_MASK);
     }
 }
-#endif
 
 /* real mode interrupt */
 static void do_interrupt_real(CPUX86State *env, int intno, int is_int,
@@ -1110,76 +1160,6 @@ void do_interrupt_all(X86CPU *cpu, int intno, int is_int,
 void do_interrupt_x86_hardirq(CPUX86State *env, int intno, int is_hw)
 {
     do_interrupt_all(env_archcpu(env), intno, 0, 0, 0, is_hw);
-}
-
-bool x86_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
-{
-    X86CPU *cpu = X86_CPU(cs);
-    CPUX86State *env = &cpu->env;
-    int intno;
-
-    interrupt_request = x86_cpu_pending_interrupt(cs, interrupt_request);
-    if (!interrupt_request) {
-        return false;
-    }
-
-    /* Don't process multiple interrupt requests in a single call.
-     * This is required to make icount-driven execution deterministic.
-     */
-    switch (interrupt_request) {
-#if !defined(CONFIG_USER_ONLY)
-    case CPU_INTERRUPT_POLL:
-        cs->interrupt_request &= ~CPU_INTERRUPT_POLL;
-        apic_poll_irq(cpu->apic_state);
-        break;
-#endif
-    case CPU_INTERRUPT_SIPI:
-        do_cpu_sipi(cpu);
-        break;
-    case CPU_INTERRUPT_SMI:
-        cpu_svm_check_intercept_param(env, SVM_EXIT_SMI, 0, 0);
-        cs->interrupt_request &= ~CPU_INTERRUPT_SMI;
-#ifdef CONFIG_USER_ONLY
-        cpu_abort(CPU(cpu), "SMI interrupt: cannot enter SMM in user-mode");
-#else
-        do_smm_enter(cpu);
-#endif /* CONFIG_USER_ONLY */
-        break;
-    case CPU_INTERRUPT_NMI:
-        cpu_svm_check_intercept_param(env, SVM_EXIT_NMI, 0, 0);
-        cs->interrupt_request &= ~CPU_INTERRUPT_NMI;
-        env->hflags2 |= HF2_NMI_MASK;
-        do_interrupt_x86_hardirq(env, EXCP02_NMI, 1);
-        break;
-    case CPU_INTERRUPT_MCE:
-        cs->interrupt_request &= ~CPU_INTERRUPT_MCE;
-        do_interrupt_x86_hardirq(env, EXCP12_MCHK, 0);
-        break;
-    case CPU_INTERRUPT_HARD:
-        cpu_svm_check_intercept_param(env, SVM_EXIT_INTR, 0, 0);
-        cs->interrupt_request &= ~(CPU_INTERRUPT_HARD |
-                                   CPU_INTERRUPT_VIRQ);
-        intno = cpu_get_pic_interrupt(env);
-        qemu_log_mask(CPU_LOG_TB_IN_ASM,
-                      "Servicing hardware INT=0x%02x\n", intno);
-        do_interrupt_x86_hardirq(env, intno, 1);
-        break;
-#if !defined(CONFIG_USER_ONLY)
-    case CPU_INTERRUPT_VIRQ:
-        /* FIXME: this should respect TPR */
-        cpu_svm_check_intercept_param(env, SVM_EXIT_VINTR, 0, 0);
-        intno = x86_ldl_phys(cs, env->vm_vmcb
-                             + offsetof(struct vmcb, control.int_vector));
-        qemu_log_mask(CPU_LOG_TB_IN_ASM,
-                      "Servicing virtual hardware INT=0x%02x\n", intno);
-        do_interrupt_x86_hardirq(env, intno, 1);
-        cs->interrupt_request &= ~CPU_INTERRUPT_VIRQ;
-        break;
-#endif
-    }
-
-    /* Ensure that no TB jump will be modified as the program flow was changed.  */
-    return true;
 }
 
 void helper_lldt(CPUX86State *env, int selector)
@@ -1528,14 +1508,12 @@ void helper_ljmp_protected(CPUX86State *env, int new_cs, target_ulong new_eip,
 }
 
 /* real mode call */
-void helper_lcall_real(CPUX86State *env, int new_cs, target_ulong new_eip1,
-                       int shift, int next_eip)
+void helper_lcall_real(CPUX86State *env, uint32_t new_cs, uint32_t new_eip,
+                       int shift, uint32_t next_eip)
 {
-    int new_eip;
     uint32_t esp, esp_mask;
     target_ulong ssp;
 
-    new_eip = new_eip1;
     esp = env->regs[R_ESP];
     esp_mask = get_sp_mask(env->segs[R_SS].flags);
     ssp = env->segs[R_SS].base;
@@ -2252,7 +2230,7 @@ target_ulong helper_lsl(CPUX86State *env, target_ulong selector1)
     int rpl, dpl, cpl, type;
 
     selector = selector1 & 0xffff;
-    eflags = cpu_cc_compute_all(env, CC_OP);
+    eflags = cpu_cc_compute_all(env);
     if ((selector & 0xfffc) == 0) {
         goto fail;
     }
@@ -2299,7 +2277,7 @@ target_ulong helper_lar(CPUX86State *env, target_ulong selector1)
     int rpl, dpl, cpl, type;
 
     selector = selector1 & 0xffff;
-    eflags = cpu_cc_compute_all(env, CC_OP);
+    eflags = cpu_cc_compute_all(env);
     if ((selector & 0xfffc) == 0) {
         goto fail;
     }
@@ -2348,7 +2326,7 @@ void helper_verr(CPUX86State *env, target_ulong selector1)
     int rpl, dpl, cpl;
 
     selector = selector1 & 0xffff;
-    eflags = cpu_cc_compute_all(env, CC_OP);
+    eflags = cpu_cc_compute_all(env);
     if ((selector & 0xfffc) == 0) {
         goto fail;
     }
@@ -2386,7 +2364,7 @@ void helper_verw(CPUX86State *env, target_ulong selector1)
     int rpl, dpl, cpl;
 
     selector = selector1 & 0xffff;
-    eflags = cpu_cc_compute_all(env, CC_OP);
+    eflags = cpu_cc_compute_all(env);
     if ((selector & 0xfffc) == 0) {
         goto fail;
     }

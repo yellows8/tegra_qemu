@@ -24,7 +24,7 @@
  * callback that does the memory operations.
 
  * This device allows the user to monkey patch memory. To be able to do
- * this it needs a backend to manage the datas, the same as other
+ * this it needs a backend to manage the data, the same as other
  * memory-related devices. In this case as the backend is so trivial we
  * have merged it with the frontend instead of creating and maintaining a
  * separate backend.
@@ -56,8 +56,9 @@ static void generic_loader_reset(void *opaque)
     }
 
     if (s->data_len) {
-        assert(s->data_len < sizeof(s->data));
-        dma_memory_write(s->cpu->as, s->addr, &s->data, s->data_len);
+        assert(s->data_len <= sizeof(s->data));
+        dma_memory_write(s->cpu->as, s->addr, &s->data, s->data_len,
+                         MEMTXATTRS_UNSPECIFIED);
     }
 }
 
@@ -66,7 +67,7 @@ static void generic_loader_realize(DeviceState *dev, Error **errp)
     GenericLoaderState *s = GENERIC_LOADER(dev);
     hwaddr entry;
     int big_endian;
-    int size = 0;
+    ssize_t size = 0;
 
     s->set_pc = false;
 
@@ -165,7 +166,7 @@ static void generic_loader_realize(DeviceState *dev, Error **errp)
         }
     }
 
-    /* Convert the data endiannes */
+    /* Convert the data endianness */
     if (s->data_be) {
         s->data = cpu_to_be64(s->data);
     } else {
@@ -206,7 +207,7 @@ static void generic_loader_class_init(ObjectClass *klass, void *data)
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
 }
 
-static TypeInfo generic_loader_info = {
+static const TypeInfo generic_loader_info = {
     .name = TYPE_GENERIC_LOADER,
     .parent = TYPE_DEVICE,
     .instance_size = sizeof(GenericLoaderState),

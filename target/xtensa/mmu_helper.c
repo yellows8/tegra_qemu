@@ -26,14 +26,13 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu/main-loop.h"
+#include "qemu/log.h"
 #include "qemu/qemu-print.h"
 #include "qemu/units.h"
 #include "cpu.h"
 #include "exec/helper-proto.h"
 #include "qemu/host-utils.h"
 #include "exec/exec-all.h"
-#include "exec/cpu_ldst.h"
 
 #define XTENSA_MPU_SEGMENT_MASK 0x0000001f
 #define XTENSA_MPU_ACC_RIGHTS_MASK 0x00000f00
@@ -1098,7 +1097,7 @@ static void dump_tlb(CPUXtensaState *env, bool dtlb)
                     qemu_printf("\tVaddr       Paddr       ASID  Attr RWX Cache\n"
                                 "\t----------  ----------  ----  ---- --- -------\n");
                 }
-                qemu_printf("\t0x%08x  0x%08x  0x%02x  0x%02x %c%c%c %-7s\n",
+                qemu_printf("\t0x%08x  0x%08x  0x%02x  0x%02x %c%c%c %s\n",
                             entry->vaddr,
                             entry->paddr,
                             entry->asid,

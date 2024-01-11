@@ -1,6 +1,3 @@
-# The current Travis default is a VM based 16.04 Xenial on GCE
-# Additional builds with specific requirements for a full VM need to
-# be added as additional matrix: entries later on
 os: linux
 dist: focal
 language: c
@@ -17,43 +14,6 @@ cache:
   pip: true
   directories:
   - $HOME/avocado/data/cache
-
-
-addons:
-  apt:
-    packages:
-      # Build dependencies
-      - libaio-dev
-      - libattr1-dev
-      - libbrlapi-dev
-      - libcap-ng-dev
-      - libcacard-dev
-      - libgcc-7-dev
-      - libgnutls28-dev
-      - libgtk-3-dev
-      - libiscsi-dev
-      - liblttng-ust-dev
-      - libncurses5-dev
-      - libnfs-dev
-      - libpixman-1-dev
-      - libpng-dev
-      - librados-dev
-      - libsdl2-dev
-      - libsdl2-image-dev
-      - libseccomp-dev
-      - libspice-protocol-dev
-      - libspice-server-dev
-      - libssh-dev
-      - liburcu-dev
-      - libusb-1.0-0-dev
-      - libvdeplug-dev
-      - libvte-2.91-dev
-      - libzstd-dev
-      - ninja-build
-      - sparse
-      - uuid-dev
-      # Tests dependencies
-      - genisoimage
 
 
 # The channel name "irc.oftc.net#qemu" is encrypted against qemu/qemu
@@ -74,7 +34,7 @@ env:
     - BASE_CONFIG="--disable-docs --disable-tools"
     - TEST_BUILD_CMD=""
     - TEST_CMD="make check V=1"
-    # This is broadly a list of "mainline" softmmu targets which have support across the major distros
+    # This is broadly a list of "mainline" system targets which have support across the major distros
     - MAIN_SOFTMMU_TARGETS="aarch64-softmmu,mips64-softmmu,ppc64-softmmu,riscv64-softmmu,s390x-softmmu,x86_64-softmmu"
     - CCACHE_SLOPPINESS="include_file_ctime,include_file_mtime"
     - CCACHE_MAXSIZE=1G
@@ -131,6 +91,7 @@ jobs:
           - libbrlapi-dev
           - libcacard-dev
           - libcap-ng-dev
+          - libfdt-dev
           - libgcrypt20-dev
           - libgnutls28-dev
           - libgtk-3-dev
@@ -152,7 +113,8 @@ jobs:
           - genisoimage
       env:
         - TEST_CMD="make check check-tcg V=1"
-        - CONFIG="--disable-containers --target-list=${MAIN_SOFTMMU_TARGETS} --cxx=/bin/false"
+        - CONFIG="--disable-containers --enable-fdt=system
+                  --target-list=${MAIN_SOFTMMU_TARGETS} --cxx=/bin/false"
         - UNRELIABLE=true
 
     - name: "[ppc64] GCC check-tcg"
@@ -165,6 +127,7 @@ jobs:
           - libbrlapi-dev
           - libcacard-dev
           - libcap-ng-dev
+          - libfdt-dev
           - libgcrypt20-dev
           - libgnutls28-dev
           - libgtk-3-dev
@@ -186,11 +149,12 @@ jobs:
           - genisoimage
       env:
         - TEST_CMD="make check check-tcg V=1"
-        - CONFIG="--disable-containers --target-list=ppc64-softmmu,ppc64le-linux-user"
+        - CONFIG="--disable-containers --enable-fdt=system
+                  --target-list=ppc64-softmmu,ppc64le-linux-user"
 
     - name: "[s390x] GCC check-tcg"
       arch: s390x
-      dist: bionic
+      dist: focal
       addons:
         apt_packages:
           - libaio-dev
@@ -198,6 +162,7 @@ jobs:
           - libbrlapi-dev
           - libcacard-dev
           - libcap-ng-dev
+          - libfdt-dev
           - libgcrypt20-dev
           - libgnutls28-dev
           - libgtk-3-dev
@@ -219,27 +184,29 @@ jobs:
           - genisoimage
       env:
         - TEST_CMD="make check check-tcg V=1"
-        - CONFIG="--disable-containers --target-list=${MAIN_SOFTMMU_TARGETS},s390x-linux-user"
+        - CONFIG="--disable-containers --enable-fdt=system
+                  --target-list=${MAIN_SOFTMMU_TARGETS},s390x-linux-user"
         - UNRELIABLE=true
       script:
         - BUILD_RC=0 && make -j${JOBS} || BUILD_RC=$?
         - |
           if [ "$BUILD_RC" -eq 0 ] ; then
-              mv pc-bios/s390-ccw/*.img pc-bios/ ;
+              mv pc-bios/s390-ccw/*.img qemu-bundle/usr/local/share/qemu ;
               ${TEST_CMD} ;
           else
               $(exit $BUILD_RC);
           fi
 
-    - name: "[s390x] GCC (other-softmmu)"
+    - name: "[s390x] GCC (other-system)"
       arch: s390x
-      dist: bionic
+      dist: focal
       addons:
         apt_packages:
           - libaio-dev
           - libattr1-dev
           - libcacard-dev
           - libcap-ng-dev
+          - libfdt-dev
           - libgnutls28-dev
           - libiscsi-dev
           - liblttng-ust-dev
@@ -258,24 +225,27 @@ jobs:
           # Tests dependencies
           - genisoimage
       env:
-        - CONFIG="--disable-containers --audio-drv-list=sdl --disable-user
-                  --target-list-exclude=${MAIN_SOFTMMU_TARGETS}"
+        - CONFIG="--disable-containers --enable-fdt=system --audio-drv-list=sdl
+                  --disable-user --target-list-exclude=${MAIN_SOFTMMU_TARGETS}"
 
     - name: "[s390x] GCC (user)"
       arch: s390x
-      dist: bionic
+      dist: focal
       addons:
         apt_packages:
           - libgcrypt20-dev
+          - libglib2.0-dev
           - libgnutls28-dev
           - ninja-build
+          - flex
+          - bison
       env:
         - CONFIG="--disable-containers --disable-system"
 
     - name: "[s390x] Clang (disable-tcg)"
       arch: s390x
-      dist: bionic
-      compiler: clang
+      dist: focal
+      compiler: clang-10
       addons:
         apt_packages:
           - libaio-dev
@@ -283,6 +253,7 @@ jobs:
           - libbrlapi-dev
           - libcacard-dev
           - libcap-ng-dev
+          - libfdt-dev
           - libgcrypt20-dev
           - libgnutls28-dev
           - libgtk-3-dev
@@ -300,31 +271,9 @@ jobs:
           - libvdeplug-dev
           - libvte-2.91-dev
           - ninja-build
+          - clang-10
       env:
         - TEST_CMD="make check-unit"
-        - CONFIG="--disable-containers --disable-tcg --enable-kvm
-                  --disable-tools --host-cc=clang --cxx=clang++"
+        - CONFIG="--disable-containers --disable-tcg --enable-kvm --disable-tools
+                  --enable-fdt=system --host-cc=clang --cxx=clang++"
         - UNRELIABLE=true
-
-    # Release builds
-    # The make-release script expect a QEMU version, so our tag must start with a 'v'.
-    # This is the case when release candidate tags are created.
-    - name: "Release tarball"
-      if: tag IS present AND tag =~ /^v\d+\.\d+(\.\d+)?(-\S*)?$/
-      env:
-        # We want to build from the release tarball
-        - BUILD_DIR="release/build/dir" SRC_DIR="../../.."
-        - BASE_CONFIG="--prefix=$PWD/dist"
-        - CONFIG="--target-list=x86_64-softmmu,aarch64-softmmu,armeb-linux-user,ppc-linux-user"
-        - TEST_CMD="make install -j${JOBS}"
-        - QEMU_VERSION="${TRAVIS_TAG:1}"
-        - CACHE_NAME="${TRAVIS_BRANCH}-linux-gcc-default"
-      script:
-        - make -C ${SRC_DIR} qemu-${QEMU_VERSION}.tar.bz2
-        - ls -l ${SRC_DIR}/qemu-${QEMU_VERSION}.tar.bz2
-        - tar -xf ${SRC_DIR}/qemu-${QEMU_VERSION}.tar.bz2 && cd qemu-${QEMU_VERSION}
-        - mkdir -p release-build && cd release-build
-        - ../configure ${BASE_CONFIG} ${CONFIG} || { cat config.log meson-logs/meson-log.txt && exit 1; }
-        - make install
-  allow_failures:
-    - env: UNRELIABLE=true

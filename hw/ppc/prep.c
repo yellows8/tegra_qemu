@@ -40,18 +40,15 @@
 #include "hw/rtc/mc146818rtc.h"
 #include "hw/isa/pc87312.h"
 #include "hw/qdev-properties.h"
-#include "sysemu/arch_init.h"
 #include "sysemu/kvm.h"
 #include "sysemu/reset.h"
 #include "trace.h"
 #include "elf.h"
 #include "qemu/units.h"
-#include "kvm_ppc.h"
+#include "audio/audio.h"
 
 /* SMP is not enabled, for now */
 #define MAX_CPUS 1
-
-#define MAX_IDE_BUS 2
 
 #define CFG_ADDR 0xf0000510
 
@@ -71,6 +68,7 @@ static void ppc_prep_reset(void *opaque)
     PowerPCCPU *cpu = opaque;
 
     cpu_reset(CPU(cpu));
+    cpu_ppc_tb_reset(&cpu->env);
 }
 
 
@@ -215,14 +213,13 @@ static int PPC_NVRAM_set_params (Nvram *nvram, uint16_t NVRAM_size,
 static int prep_set_cmos_checksum(DeviceState *dev, void *opaque)
 {
     uint16_t checksum = *(uint16_t *)opaque;
-    ISADevice *rtc;
 
     if (object_dynamic_cast(OBJECT(dev), TYPE_MC146818_RTC)) {
-        rtc = ISA_DEVICE(dev);
-        rtc_set_memory(rtc, 0x2e, checksum & 0xff);
-        rtc_set_memory(rtc, 0x3e, checksum & 0xff);
-        rtc_set_memory(rtc, 0x2f, checksum >> 8);
-        rtc_set_memory(rtc, 0x3f, checksum >> 8);
+        MC146818RtcState *rtc = MC146818_RTC(dev);
+        mc146818rtc_set_cmos_data(rtc, 0x2e, checksum & 0xff);
+        mc146818rtc_set_cmos_data(rtc, 0x3e, checksum & 0xff);
+        mc146818rtc_set_cmos_data(rtc, 0x2f, checksum >> 8);
+        mc146818rtc_set_cmos_data(rtc, 0x3f, checksum >> 8);
 
         object_property_add_alias(qdev_get_machine(), "rtc-time", OBJECT(rtc),
                                   "date");
@@ -233,6 +230,7 @@ static int prep_set_cmos_checksum(DeviceState *dev, void *opaque)
 static void ibm_40p_init(MachineState *machine)
 {
     const char *bios_name = machine->firmware ?: "openbios-ppc";
+    MachineClass *mc = MACHINE_GET_CLASS(machine);
     CPUPPCState *env = NULL;
     uint16_t cmos_checksum;
     PowerPCCPU *cpu;
@@ -248,6 +246,12 @@ static void ibm_40p_init(MachineState *machine)
     long kernel_size = 0, initrd_size = 0;
     char boot_device;
 
+    if (kvm_enabled()) {
+        error_report("machine %s does not support the KVM accelerator",
+                     MACHINE_GET_CLASS(machine)->name);
+        exit(EXIT_FAILURE);
+    }
+
     /* init CPU */
     cpu = POWERPC_CPU(cpu_create(machine->cpu_type));
     env = &cpu->env;
@@ -256,13 +260,8 @@ static void ibm_40p_init(MachineState *machine)
         exit(1);
     }
 
-    if (env->flags & POWERPC_FLAG_RTC_CLK) {
-        /* POWER / PowerPC 601 RTC clock frequency is 7.8125 MHz */
-        cpu_ppc_tb_init(env, 7812500UL);
-    } else {
-        /* Set time-base frequency to 100 Mhz */
-        cpu_ppc_tb_init(env, 100UL * 1000UL * 1000UL);
-    }
+    /* Set time-base frequency to 100 Mhz */
+    cpu_ppc_tb_init(env, 100UL * 1000UL * 1000UL);
     qemu_register_reset(ppc_prep_reset, cpu);
 
     /* PCI host */
@@ -279,9 +278,11 @@ static void ibm_40p_init(MachineState *machine)
     }
 
     /* PCI -> ISA bridge */
-    i82378_dev = DEVICE(pci_create_simple(pci_bus, PCI_DEVFN(11, 0), "i82378"));
+    i82378_dev = DEVICE(pci_new(PCI_DEVFN(11, 0), "i82378"));
     qdev_connect_gpio_out(i82378_dev, 0,
-                          cpu->env.irq_inputs[PPC6xx_INPUT_INT]);
+                          qdev_get_gpio_in(DEVICE(cpu), PPC6xx_INPUT_INT));
+    qdev_realize_and_unref(i82378_dev, BUS(pci_bus), &error_fatal);
+
     sysbus_connect_irq(pcihost, 0, qdev_get_gpio_in(i82378_dev, 15));
     isa_bus = ISA_BUS(qdev_get_child_bus(i82378_dev, "isa.0"));
 
@@ -310,6 +311,10 @@ static void ibm_40p_init(MachineState *machine)
         dev = DEVICE(isa_dev);
         qdev_prop_set_uint32(dev, "iobase", 0x830);
         qdev_prop_set_uint32(dev, "irq", 10);
+
+        if (machine->audiodev) {
+            qdev_prop_set_string(dev, "audiodev", machine->audiodev);
+        }
         isa_realize_and_unref(isa_dev, isa_bus, &error_fatal);
 
         isa_dev = isa_new("pc87312");
@@ -332,7 +337,7 @@ static void ibm_40p_init(MachineState *machine)
         pci_vga_init(pci_bus);
 
         for (i = 0; i < nb_nics; i++) {
-            pci_nic_init_nofail(&nd_table[i], pci_bus, "pcnet",
+            pci_nic_init_nofail(&nd_table[i], pci_bus, mc->default_nic,
                                 i == 0 ? "3" : NULL);
         }
     }
@@ -387,7 +392,7 @@ static void ibm_40p_init(MachineState *machine)
         }
         boot_device = 'm';
     } else {
-        boot_device = machine->boot_order[0];
+        boot_device = machine->boot_config.order[0];
     }
 
     fw_cfg_add_i16(fw_cfg, FW_CFG_MAX_CPUS, (uint16_t)machine->smp.max_cpus);
@@ -398,18 +403,7 @@ static void ibm_40p_init(MachineState *machine)
     fw_cfg_add_i16(fw_cfg, FW_CFG_PPC_HEIGHT, graphic_height);
     fw_cfg_add_i16(fw_cfg, FW_CFG_PPC_DEPTH, graphic_depth);
 
-    fw_cfg_add_i32(fw_cfg, FW_CFG_PPC_IS_KVM, kvm_enabled());
-    if (kvm_enabled()) {
-        uint8_t *hypercall;
-
-        fw_cfg_add_i32(fw_cfg, FW_CFG_PPC_TBFREQ, kvmppc_get_tbfreq());
-        hypercall = g_malloc(16);
-        kvmppc_get_hypercall(env, hypercall, 16);
-        fw_cfg_add_bytes(fw_cfg, FW_CFG_PPC_KVM_HC, hypercall, 16);
-        fw_cfg_add_i32(fw_cfg, FW_CFG_PPC_KVM_PID, getpid());
-    } else {
-        fw_cfg_add_i32(fw_cfg, FW_CFG_PPC_TBFREQ, NANOSECONDS_PER_SECOND);
-    }
+    fw_cfg_add_i32(fw_cfg, FW_CFG_PPC_TBFREQ, NANOSECONDS_PER_SECOND);
     fw_cfg_add_i16(fw_cfg, FW_CFG_BOOT_DEVICE, boot_device);
     qemu_register_boot_set(fw_cfg_boot_set, fw_cfg);
 
@@ -436,6 +430,9 @@ static void ibm_40p_machine_init(MachineClass *mc)
     mc->default_boot_order = "c";
     mc->default_cpu_type = POWERPC_CPU_TYPE_NAME("604");
     mc->default_display = "std";
+    mc->default_nic = "pcnet";
+
+    machine_add_audiodev_property(mc);
 }
 
 DEFINE_MACHINE("40p", ibm_40p_machine_init)

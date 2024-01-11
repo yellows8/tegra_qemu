@@ -123,7 +123,7 @@ static const VMStateDescription vmstate_exynos4210_pwm = {
     .name = "exynos4210.pwm.pwm",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(id, Exynos4210PWM),
         VMSTATE_UINT32(freq, Exynos4210PWM),
         VMSTATE_PTIMER(ptimer, Exynos4210PWM),
@@ -137,7 +137,7 @@ static const VMStateDescription vmstate_exynos4210_pwm_state = {
     .name = "exynos4210.pwm",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(reg_tcfg, Exynos4210PWMState, 2),
         VMSTATE_UINT32(reg_tcon, Exynos4210PWMState),
         VMSTATE_UINT32(reg_tint_cstat, Exynos4210PWMState),
@@ -257,7 +257,7 @@ static uint64_t exynos4210_pwm_read(void *opaque, hwaddr offset,
 
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
-                      "exynos4210.pwm: bad read offset " TARGET_FMT_plx,
+                      "exynos4210.pwm: bad read offset " HWADDR_FMT_plx,
                       offset);
         break;
     }
@@ -352,7 +352,7 @@ static void exynos4210_pwm_write(void *opaque, hwaddr offset,
 
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
-                      "exynos4210.pwm: bad write offset " TARGET_FMT_plx,
+                      "exynos4210.pwm: bad write offset " HWADDR_FMT_plx,
                       offset);
         break;
 
@@ -400,7 +400,7 @@ static void exynos4210_pwm_init(Object *obj)
         sysbus_init_irq(dev, &s->timer[i].irq);
         s->timer[i].ptimer = ptimer_init(exynos4210_pwm_tick,
                                          &s->timer[i],
-                                         PTIMER_POLICY_DEFAULT);
+                                         PTIMER_POLICY_LEGACY);
         s->timer[i].id = i;
         s->timer[i].parent = s;
     }

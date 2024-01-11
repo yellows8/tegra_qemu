@@ -3,8 +3,6 @@
 x86 System emulator
 -------------------
 
-.. _pcsys_005fdevices:
-
 Board-specific documentation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -19,9 +17,18 @@ Board-specific documentation
    i386/microvm
    i386/pc
 
-.. include:: cpu-models-x86.rst.inc
+Architectural features
+~~~~~~~~~~~~~~~~~~~~~~
 
-.. _pcsys_005freq:
+.. toctree::
+   :maxdepth: 1
+
+   i386/cpu
+   i386/hyperv
+   i386/xen
+   i386/kvm-pv
+   i386/sgx
+   i386/amd-memory-encryption
 
 OS requirements
 ~~~~~~~~~~~~~~~

@@ -24,16 +24,11 @@
 #include "qemu/log.h"
 #include "qemu/module.h"
 
-static WatchdogTimerModel model = {
-    .wdt_name = TYPE_WDT_SBSA,
-    .wdt_description = "SBSA-compliant generic watchdog device",
-};
-
 static const VMStateDescription vmstate_sbsa_gwdt = {
     .name = "sbsa-gwdt",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_TIMER_PTR(timer, SBSA_GWDTState),
         VMSTATE_UINT32(wcs, SBSA_GWDTState),
         VMSTATE_UINT32(worl, SBSA_GWDTState),
@@ -273,8 +268,9 @@ static void wdt_sbsa_gwdt_class_init(ObjectClass *klass, void *data)
     dc->realize = wdt_sbsa_gwdt_realize;
     dc->reset = wdt_sbsa_gwdt_reset;
     dc->hotpluggable = false;
-    set_bit(DEVICE_CATEGORY_MISC, dc->categories);
+    set_bit(DEVICE_CATEGORY_WATCHDOG, dc->categories);
     dc->vmsd = &vmstate_sbsa_gwdt;
+    dc->desc = "SBSA-compliant generic watchdog device";
 }
 
 static const TypeInfo wdt_sbsa_gwdt_info = {
@@ -286,7 +282,6 @@ static const TypeInfo wdt_sbsa_gwdt_info = {
 
 static void wdt_sbsa_gwdt_register_types(void)
 {
-    watchdog_add_model(&model);
     type_register_static(&wdt_sbsa_gwdt_info);
 }
 

@@ -7,6 +7,11 @@
 #ifndef COMPILER_H
 #define COMPILER_H
 
+#define HOST_BIG_ENDIAN (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+
+/* HOST_LONG_BITS is the size of a native pointer in bits. */
+#define HOST_LONG_BITS (__SIZEOF_POINTER__ * 8)
+
 #if defined __clang_analyzer__ || defined __COVERITY__
 #define QEMU_STATIC_ANALYSIS 1
 #endif
@@ -16,12 +21,6 @@
 #else
 #define QEMU_EXTERN_C extern
 #endif
-
-#define QEMU_NORETURN __attribute__ ((__noreturn__))
-
-#define QEMU_WARN_UNUSED_RESULT __attribute__((warn_unused_result))
-
-#define QEMU_SENTINEL __attribute__((sentinel))
 
 #if defined(_WIN32) && (defined(__x86_64__) || defined(__i386__))
 # define QEMU_PACKED __attribute__((gcc_struct, packed))
@@ -34,9 +33,12 @@
 #ifndef glue
 #define xglue(x, y) x ## y
 #define glue(x, y) xglue(x, y)
-#define stringify(s)	tostring(s)
-#define tostring(s)	#s
+#define stringify(s) tostring(s)
+#define tostring(s) #s
 #endif
+
+/* Expands into an identifier stemN, where N is another number each time */
+#define MAKE_IDENTFIER(stem) glue(stem, __COUNTER__)
 
 #ifndef likely
 #define likely(x)   __builtin_expect(!!(x), 1)
@@ -79,19 +81,12 @@
 #define QEMU_BUILD_BUG_ON_ZERO(x) (sizeof(QEMU_BUILD_BUG_ON_STRUCT(x)) - \
                                    sizeof(QEMU_BUILD_BUG_ON_STRUCT(x)))
 
-#if defined(__clang__)
-/* clang doesn't support gnu_printf, so use printf. */
-# define GCC_FMT_ATTR(n, m) __attribute__((format(printf, n, m)))
-#else
-/* Use gnu_printf (qemu uses standard format strings). */
-# define GCC_FMT_ATTR(n, m) __attribute__((format(gnu_printf, n, m)))
-# if defined(_WIN32)
+#if !defined(__clang__) && defined(_WIN32)
 /*
  * Map __printf__ to __gnu_printf__ because we want standard format strings even
  * when MinGW or GLib include files use __printf__.
  */
-#  define __printf__ __gnu_printf__
-# endif
+# define __printf__ __gnu_printf__
 #endif
 
 #ifndef __has_warning
@@ -112,6 +107,14 @@
 
 #ifndef __has_attribute
 #define __has_attribute(x) 0 /* compatibility with older GCC */
+#endif
+
+#if defined(__SANITIZE_ADDRESS__) || __has_feature(address_sanitizer)
+# define QEMU_SANITIZE_ADDRESS 1
+#endif
+
+#if defined(__SANITIZE_THREAD__) || __has_feature(thread_sanitizer)
+# define QEMU_SANITIZE_THREAD 1
 #endif
 
 /*
@@ -163,22 +166,6 @@
 #endif
 
 /**
- * qemu_build_not_reached()
- *
- * The compiler, during optimization, is expected to prove that a call
- * to this function cannot be reached and remove it.  If the compiler
- * supports QEMU_ERROR, this will be reported at compile time; otherwise
- * this will be reported at link time due to the missing symbol.
- */
-extern void QEMU_NORETURN QEMU_ERROR("code path is reachable")
-    qemu_build_not_reached_always(void);
-#if defined(__OPTIMIZE__) && !defined(__NO_INLINE__)
-#define qemu_build_not_reached()  qemu_build_not_reached_always()
-#else
-#define qemu_build_not_reached()  g_assert_not_reached()
-#endif
-
-/**
  * In most cases, normal "fallthrough" comments are good enough for
  * switch-case statements, but sometimes the compiler has problems
  * with those. In that case you can use QEMU_FALLTHROUGH instead.
@@ -199,5 +186,45 @@ extern void QEMU_NORETURN QEMU_ERROR("code path is reachable")
 /* If CFI is not enabled, use an empty define to not change the behavior */
 #define QEMU_DISABLE_CFI
 #endif
+
+/*
+ * Apple clang version 14 has a bug in its __builtin_subcll(); define
+ * BUILTIN_SUBCLL_BROKEN for the offending versions so we can avoid it.
+ * When a version of Apple clang which has this bug fixed is released
+ * we can add an upper bound to this check.
+ * See https://gitlab.com/qemu-project/qemu/-/issues/1631
+ * and https://gitlab.com/qemu-project/qemu/-/issues/1659 for details.
+ * The bug never made it into any upstream LLVM releases, only Apple ones.
+ */
+#if defined(__apple_build_version__) && __clang_major__ >= 14
+#define BUILTIN_SUBCLL_BROKEN
+#endif
+
+#if __has_attribute(annotate)
+#define QEMU_ANNOTATE(x) __attribute__((annotate(x)))
+#else
+#define QEMU_ANNOTATE(x)
+#endif
+
+#if __has_attribute(used)
+# define QEMU_USED __attribute__((used))
+#else
+# define QEMU_USED
+#endif
+
+/*
+ * Ugly CPP trick that is like "defined FOO", but also works in C
+ * code.  Useful to replace #ifdef with "if" statements; assumes
+ * the symbol was defined with Meson's "config.set()", so it is empty
+ * if defined.
+ */
+#define IS_ENABLED(x)                  IS_EMPTY(x)
+
+#define IS_EMPTY_JUNK_                 junk,
+#define IS_EMPTY(value)                IS_EMPTY_(IS_EMPTY_JUNK_##value)
+
+/* Expands to either SECOND_ARG(junk, 1, 0) or SECOND_ARG(IS_EMPTY_JUNK_CONFIG_FOO 1, 0)  */
+#define SECOND_ARG(first, second, ...) second
+#define IS_EMPTY_(junk_maybecomma)     SECOND_ARG(junk_maybecomma 1, 0)
 
 #endif /* COMPILER_H */

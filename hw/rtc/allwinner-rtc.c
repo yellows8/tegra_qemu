@@ -23,9 +23,9 @@
 #include "migration/vmstate.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include "qemu-common.h"
 #include "hw/qdev-properties.h"
 #include "hw/rtc/allwinner-rtc.h"
+#include "sysemu/rtc.h"
 #include "trace.h"
 
 /* RTC registers */
@@ -305,7 +305,7 @@ static const VMStateDescription allwinner_rtc_vmstate = {
     .name = "allwinner-rtc",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, AwRtcState, AW_RTC_REGS_NUM),
         VMSTATE_END_OF_LIST()
     }

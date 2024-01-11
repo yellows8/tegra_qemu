@@ -12,6 +12,7 @@
 #include "qapi/error.h"
 #include "hw/arm/boot.h"
 #include "hw/sysbus.h"
+#include "hw/qdev-clock.h"
 #include "hw/misc/unimp.h"
 #include "qemu/log.h"
 
@@ -57,7 +58,6 @@ static void nrf51_soc_realize(DeviceState *dev_soc, Error **errp)
 {
     NRF51State *s = NRF51_SOC(dev_soc);
     MemoryRegion *mr;
-    Error *err = NULL;
     uint8_t i = 0;
     hwaddr base_addr = 0;
 
@@ -66,7 +66,22 @@ static void nrf51_soc_realize(DeviceState *dev_soc, Error **errp)
         return;
     }
 
-    system_clock_scale = NANOSECONDS_PER_SECOND / HCLK_FRQ;
+    /*
+     * HCLK on this SoC is fixed, so we set up sysclk ourselves and
+     * the board shouldn't connect it.
+     */
+    if (clock_has_source(s->sysclk)) {
+        error_setg(errp, "sysclk clock must not be wired up by the board code");
+        return;
+    }
+    /* This clock doesn't need migration because it is fixed-frequency */
+    clock_set_hz(s->sysclk, HCLK_FRQ);
+    qdev_connect_clock_in(DEVICE(&s->cpu), "cpuclk", s->sysclk);
+    /*
+     * This SoC has no systick device, so don't connect refclk.
+     * TODO: model the lack of systick (currently the armv7m object
+     * will always provide one).
+     */
 
     object_property_set_link(OBJECT(&s->cpu), "memory", OBJECT(&s->container),
                              &error_abort);
@@ -76,10 +91,8 @@ static void nrf51_soc_realize(DeviceState *dev_soc, Error **errp)
 
     memory_region_add_subregion_overlap(&s->container, 0, s->board_memory, -1);
 
-    memory_region_init_ram(&s->sram, OBJECT(s), "nrf51.sram", s->sram_size,
-                           &err);
-    if (err) {
-        error_propagate(errp, err);
+    if (!memory_region_init_ram(&s->sram, OBJECT(s), "nrf51.sram", s->sram_size,
+                                errp)) {
         return;
     }
     memory_region_add_subregion(&s->container, NRF51_SRAM_BASE, &s->sram);
@@ -191,6 +204,8 @@ static void nrf51_soc_init(Object *obj)
                                 TYPE_NRF51_TIMER);
 
     }
+
+    s->sysclk = qdev_init_clock_in(DEVICE(s), "sysclk", NULL, NULL, 0);
 }
 
 static Property nrf51_soc_properties[] = {

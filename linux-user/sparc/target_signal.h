@@ -8,7 +8,7 @@
 #define TARGET_SIGTRAP           5
 #define TARGET_SIGABRT           6
 #define TARGET_SIGIOT            6
-#define TARGET_SIGSTKFLT         7 /* actually EMT */
+#define TARGET_SIGEMT            7
 #define TARGET_SIGFPE            8
 #define TARGET_SIGKILL           9
 #define TARGET_SIGBUS           10
@@ -65,10 +65,13 @@ typedef struct target_sigaltstack {
 #define TARGET_ARCH_HAS_KA_RESTORER 1
 
 #define TARGET_MINSIGSTKSZ	4096
-#define TARGET_SIGSTKSZ		16384
 
 #ifdef TARGET_ABI32
 #define TARGET_ARCH_HAS_SETUP_FRAME
+#define TARGET_ARCH_HAS_SIGTRAMP_PAGE 1
+#else
+/* For sparc64, use of KA_RESTORER is mandatory. */
+#define TARGET_ARCH_HAS_SIGTRAMP_PAGE 0
 #endif
 
 /* bit-flags */

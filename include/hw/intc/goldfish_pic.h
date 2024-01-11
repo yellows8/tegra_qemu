@@ -1,5 +1,5 @@
 /*
- * SPDX-License-Identifer: GPL-2.0-or-later
+ * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * Goldfish PIC
  *
@@ -9,6 +9,8 @@
 
 #ifndef HW_INTC_GOLDFISH_PIC_H
 #define HW_INTC_GOLDFISH_PIC_H
+
+#include "hw/sysbus.h"
 
 #define TYPE_GOLDFISH_PIC "goldfish_pic"
 OBJECT_DECLARE_SIMPLE_TYPE(GoldfishPICState, GOLDFISH_PIC)

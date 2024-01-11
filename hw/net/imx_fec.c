@@ -195,7 +195,7 @@ static const VMStateDescription vmstate_imx_eth_txdescs = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = imx_eth_is_multi_tx_ring,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
          VMSTATE_UINT32(tx_descriptor[1], IMXFECState),
          VMSTATE_UINT32(tx_descriptor[2], IMXFECState),
          VMSTATE_END_OF_LIST()
@@ -206,7 +206,7 @@ static const VMStateDescription vmstate_imx_eth = {
     .name = TYPE_IMX_FEC,
     .version_id = 2,
     .minimum_version_id = 2,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, IMXFECState, ENET_MAX),
         VMSTATE_UINT32(rx_descriptor, IMXFECState),
         VMSTATE_UINT32(tx_descriptor[0], IMXFECState),
@@ -217,7 +217,7 @@ static const VMStateDescription vmstate_imx_eth = {
         VMSTATE_UINT32(phy_int_mask, IMXFECState),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription * []) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_imx_eth_txdescs,
         NULL
     },
@@ -282,9 +282,17 @@ static uint32_t imx_phy_read(IMXFECState *s, int reg)
     uint32_t val;
     uint32_t phy = reg / 32;
 
-    if (phy != s->phy_num) {
-        trace_imx_phy_read_num(phy, s->phy_num);
+    if (!s->phy_connected) {
         return 0xffff;
+    }
+
+    if (phy != s->phy_num) {
+        if (s->phy_consumer && phy == s->phy_consumer->phy_num) {
+            s = s->phy_consumer;
+        } else {
+            trace_imx_phy_read_num(phy, s->phy_num);
+            return 0xffff;
+        }
     }
 
     reg %= 32;
@@ -343,9 +351,17 @@ static void imx_phy_write(IMXFECState *s, int reg, uint32_t val)
 {
     uint32_t phy = reg / 32;
 
-    if (phy != s->phy_num) {
-        trace_imx_phy_write_num(phy, s->phy_num);
+    if (!s->phy_connected) {
         return;
+    }
+
+    if (phy != s->phy_num) {
+        if (s->phy_consumer && phy == s->phy_consumer->phy_num) {
+            s = s->phy_consumer;
+        } else {
+            trace_imx_phy_write_num(phy, s->phy_num);
+            return;
+        }
     }
 
     reg %= 32;
@@ -387,19 +403,22 @@ static void imx_phy_write(IMXFECState *s, int reg, uint32_t val)
 
 static void imx_fec_read_bd(IMXFECBufDesc *bd, dma_addr_t addr)
 {
-    dma_memory_read(&address_space_memory, addr, bd, sizeof(*bd));
+    dma_memory_read(&address_space_memory, addr, bd, sizeof(*bd),
+                    MEMTXATTRS_UNSPECIFIED);
 
     trace_imx_fec_read_bd(addr, bd->flags, bd->length, bd->data);
 }
 
 static void imx_fec_write_bd(IMXFECBufDesc *bd, dma_addr_t addr)
 {
-    dma_memory_write(&address_space_memory, addr, bd, sizeof(*bd));
+    dma_memory_write(&address_space_memory, addr, bd, sizeof(*bd),
+                     MEMTXATTRS_UNSPECIFIED);
 }
 
 static void imx_enet_read_bd(IMXENETBufDesc *bd, dma_addr_t addr)
 {
-    dma_memory_read(&address_space_memory, addr, bd, sizeof(*bd));
+    dma_memory_read(&address_space_memory, addr, bd, sizeof(*bd),
+                    MEMTXATTRS_UNSPECIFIED);
 
     trace_imx_enet_read_bd(addr, bd->flags, bd->length, bd->data,
                    bd->option, bd->status);
@@ -407,7 +426,8 @@ static void imx_enet_read_bd(IMXENETBufDesc *bd, dma_addr_t addr)
 
 static void imx_enet_write_bd(IMXENETBufDesc *bd, dma_addr_t addr)
 {
-    dma_memory_write(&address_space_memory, addr, bd, sizeof(*bd));
+    dma_memory_write(&address_space_memory, addr, bd, sizeof(*bd),
+                     MEMTXATTRS_UNSPECIFIED);
 }
 
 static void imx_eth_update(IMXFECState *s)
@@ -434,7 +454,7 @@ static void imx_eth_update(IMXFECState *s)
      *   assignment fail.
      *
      * To ensure that all versions of Linux work, generate ENET_INT_MAC
-     * interrrupts on both interrupt lines. This should be changed if and when
+     * interrupts on both interrupt lines. This should be changed if and when
      * qemu supports IOMUX.
      */
     if (s->regs[ENET_EIR] & s->regs[ENET_EIMR] &
@@ -474,7 +494,8 @@ static void imx_fec_do_tx(IMXFECState *s)
             len = ENET_MAX_FRAME_SIZE - frame_size;
             s->regs[ENET_EIR] |= ENET_INT_BABT;
         }
-        dma_memory_read(&address_space_memory, bd.data, ptr, len);
+        dma_memory_read(&address_space_memory, bd.data, ptr, len,
+                        MEMTXATTRS_UNSPECIFIED);
         ptr += len;
         frame_size += len;
         if (bd.flags & ENET_BD_L) {
@@ -555,7 +576,8 @@ static void imx_enet_do_tx(IMXFECState *s, uint32_t index)
             len = ENET_MAX_FRAME_SIZE - frame_size;
             s->regs[ENET_EIR] |= ENET_INT_BABT;
         }
-        dma_memory_read(&address_space_memory, bd.data, ptr, len);
+        dma_memory_read(&address_space_memory, bd.data, ptr, len,
+                        MEMTXATTRS_UNSPECIFIED);
         ptr += len;
         frame_size += len;
         if (bd.flags & ENET_BD_L) {
@@ -1062,9 +1084,9 @@ static ssize_t imx_fec_receive(NetClientState *nc, const uint8_t *buf,
         return 0;
     }
 
-    /* 4 bytes for the CRC.  */
-    size += 4;
     crc = cpu_to_be32(crc32(~0, buf, size));
+    /* Increase size by 4, loop below reads the last 4 bytes from crc_ptr. */
+    size += 4;
     crc_ptr = (uint8_t *) &crc;
 
     /* Huge frames are truncated.  */
@@ -1103,11 +1125,12 @@ static ssize_t imx_fec_receive(NetClientState *nc, const uint8_t *buf,
             buf_len += size - 4;
         }
         buf_addr = bd.data;
-        dma_memory_write(&address_space_memory, buf_addr, buf, buf_len);
+        dma_memory_write(&address_space_memory, buf_addr, buf, buf_len,
+                         MEMTXATTRS_UNSPECIFIED);
         buf += buf_len;
         if (size < 4) {
             dma_memory_write(&address_space_memory, buf_addr + buf_len,
-                             crc_ptr, 4 - size);
+                             crc_ptr, 4 - size, MEMTXATTRS_UNSPECIFIED);
             crc_ptr += 4 - size;
         }
         bd.flags &= ~ENET_BD_E;
@@ -1157,9 +1180,9 @@ static ssize_t imx_enet_receive(NetClientState *nc, const uint8_t *buf,
         return 0;
     }
 
-    /* 4 bytes for the CRC.  */
-    size += 4;
     crc = cpu_to_be32(crc32(~0, buf, size));
+    /* Increase size by 4, loop below reads the last 4 bytes from crc_ptr. */
+    size += 4;
     crc_ptr = (uint8_t *) &crc;
 
     if (shift16) {
@@ -1210,8 +1233,8 @@ static ssize_t imx_enet_receive(NetClientState *nc, const uint8_t *buf,
              */
             const uint8_t zeros[2] = { 0 };
 
-            dma_memory_write(&address_space_memory, buf_addr,
-                             zeros, sizeof(zeros));
+            dma_memory_write(&address_space_memory, buf_addr, zeros,
+                             sizeof(zeros), MEMTXATTRS_UNSPECIFIED);
 
             buf_addr += sizeof(zeros);
             buf_len  -= sizeof(zeros);
@@ -1220,11 +1243,12 @@ static ssize_t imx_enet_receive(NetClientState *nc, const uint8_t *buf,
             shift16 = false;
         }
 
-        dma_memory_write(&address_space_memory, buf_addr, buf, buf_len);
+        dma_memory_write(&address_space_memory, buf_addr, buf, buf_len,
+                         MEMTXATTRS_UNSPECIFIED);
         buf += buf_len;
         if (size < 4) {
             dma_memory_write(&address_space_memory, buf_addr + buf_len,
-                             crc_ptr, 4 - size);
+                             crc_ptr, 4 - size, MEMTXATTRS_UNSPECIFIED);
             crc_ptr += 4 - size;
         }
         bd.flags &= ~ENET_BD_E;
@@ -1310,7 +1334,7 @@ static void imx_eth_realize(DeviceState *dev, Error **errp)
 
     s->nic = qemu_new_nic(&imx_eth_net_info, &s->conf,
                           object_get_typename(OBJECT(dev)),
-                          dev->id, s);
+                          dev->id, &dev->mem_reentrancy_guard, s);
 
     qemu_format_nic_info_str(qemu_get_queue(s->nic), s->conf.macaddr.a);
 }
@@ -1319,6 +1343,9 @@ static Property imx_eth_properties[] = {
     DEFINE_NIC_PROPERTIES(IMXFECState, conf),
     DEFINE_PROP_UINT32("tx-ring-num", IMXFECState, tx_ring_num, 1),
     DEFINE_PROP_UINT32("phy-num", IMXFECState, phy_num, 0),
+    DEFINE_PROP_BOOL("phy-connected", IMXFECState, phy_connected, true),
+    DEFINE_PROP_LINK("phy-consumer", IMXFECState, phy_consumer, TYPE_IMX_FEC,
+                     IMXFECState *),
     DEFINE_PROP_END_OF_LIST(),
 };
 

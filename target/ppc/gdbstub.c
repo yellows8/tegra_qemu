@@ -20,6 +20,7 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "exec/gdbstub.h"
+#include "gdbstub/helpers.h"
 #include "internal.h"
 
 static int ppc_gdb_register_len_apple(int n)
@@ -53,12 +54,6 @@ static int ppc_gdb_register_len(int n)
     case 0 ... 31:
         /* gprs */
         return sizeof(target_ulong);
-    case 32 ... 63:
-        /* fprs */
-        if (gdb_has_xml) {
-            return 0;
-        }
-        return 8;
     case 66:
         /* cr */
     case 69:
@@ -73,12 +68,6 @@ static int ppc_gdb_register_len(int n)
     case 68:
         /* ctr */
         return sizeof(target_ulong);
-    case 70:
-        /* fpscr */
-        if (gdb_has_xml) {
-            return 0;
-        }
-        return sizeof(target_ulong);
     default:
         return 0;
     }
@@ -87,20 +76,22 @@ static int ppc_gdb_register_len(int n)
 /*
  * We need to present the registers to gdb in the "current" memory
  * ordering.  For user-only mode we get this for free;
- * TARGET_WORDS_BIGENDIAN is set to the proper ordering for the
+ * TARGET_BIG_ENDIAN is set to the proper ordering for the
  * binary, and cannot be changed.  For system mode,
- * TARGET_WORDS_BIGENDIAN is always set, and we must check the current
+ * TARGET_BIG_ENDIAN is always set, and we must check the current
  * mode of the chip to see if we're running in little-endian.
  */
 void ppc_maybe_bswap_register(CPUPPCState *env, uint8_t *mem_buf, int len)
 {
 #ifndef CONFIG_USER_ONLY
-    if (!msr_le) {
+    if (!FIELD_EX64(env->msr, MSR, LE)) {
         /* do nothing */
     } else if (len == 4) {
         bswap32s((uint32_t *)mem_buf);
     } else if (len == 8) {
         bswap64s((uint64_t *)mem_buf);
+    } else if (len == 16) {
+        bswap128s((Int128 *)mem_buf);
     } else {
         g_assert_not_reached();
     }
@@ -129,9 +120,6 @@ int ppc_cpu_gdb_read_register(CPUState *cs, GByteArray *buf, int n)
     if (n < 32) {
         /* gprs */
         gdb_get_regl(buf, env->gpr[n]);
-    } else if (n < 64) {
-        /* fprs */
-        gdb_get_reg64(buf, *cpu_fpr_ptr(env, n - 32));
     } else {
         switch (n) {
         case 64:
@@ -142,11 +130,7 @@ int ppc_cpu_gdb_read_register(CPUState *cs, GByteArray *buf, int n)
             break;
         case 66:
             {
-                uint32_t cr = 0;
-                int i;
-                for (i = 0; i < 8; i++) {
-                    cr |= env->crf[i] << (32 - ((i + 1) * 4));
-                }
+                uint32_t cr = ppc_get_cr(env);
                 gdb_get_reg32(buf, cr);
                 break;
             }
@@ -157,10 +141,7 @@ int ppc_cpu_gdb_read_register(CPUState *cs, GByteArray *buf, int n)
             gdb_get_regl(buf, env->ctr);
             break;
         case 69:
-            gdb_get_reg32(buf, env->xer);
-            break;
-        case 70:
-            gdb_get_reg32(buf, env->fpscr);
+            gdb_get_reg32(buf, cpu_read_xer(env));
             break;
         }
     }
@@ -200,11 +181,7 @@ int ppc_cpu_gdb_read_register_apple(CPUState *cs, GByteArray *buf, int n)
             break;
         case 66 + 32:
             {
-                uint32_t cr = 0;
-                int i;
-                for (i = 0; i < 8; i++) {
-                    cr |= env->crf[i] << (32 - ((i + 1) * 4));
-                }
+                uint32_t cr = ppc_get_cr(env);
                 gdb_get_reg32(buf, cr);
                 break;
             }
@@ -215,7 +192,7 @@ int ppc_cpu_gdb_read_register_apple(CPUState *cs, GByteArray *buf, int n)
             gdb_get_reg64(buf, env->ctr);
             break;
         case 69 + 32:
-            gdb_get_reg32(buf, env->xer);
+            gdb_get_reg32(buf, cpu_read_xer(env));
             break;
         case 70 + 32:
             gdb_get_reg64(buf, env->fpscr);
@@ -254,10 +231,7 @@ int ppc_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
         case 66:
             {
                 uint32_t cr = ldl_p(mem_buf);
-                int i;
-                for (i = 0; i < 8; i++) {
-                    env->crf[i] = (cr >> (32 - ((i + 1) * 4))) & 0xF;
-                }
+                ppc_set_cr(env, cr);
                 break;
             }
         case 67:
@@ -267,7 +241,7 @@ int ppc_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
             env->ctr = ldtul_p(mem_buf);
             break;
         case 69:
-            env->xer = ldl_p(mem_buf);
+            cpu_write_xer(env, ldl_p(mem_buf));
             break;
         case 70:
             /* fpscr */
@@ -304,10 +278,7 @@ int ppc_cpu_gdb_write_register_apple(CPUState *cs, uint8_t *mem_buf, int n)
         case 66 + 32:
             {
                 uint32_t cr = ldl_p(mem_buf);
-                int i;
-                for (i = 0; i < 8; i++) {
-                    env->crf[i] = (cr >> (32 - ((i + 1) * 4))) & 0xF;
-                }
+                ppc_set_cr(env, cr);
                 break;
             }
         case 67 + 32:
@@ -317,7 +288,7 @@ int ppc_cpu_gdb_write_register_apple(CPUState *cs, uint8_t *mem_buf, int n)
             env->ctr = ldq_p(mem_buf);
             break;
         case 69 + 32:
-            env->xer = ldl_p(mem_buf);
+            cpu_write_xer(env, ldl_p(mem_buf));
             break;
         case 70 + 32:
             /* fpscr */
@@ -337,6 +308,25 @@ void ppc_gdb_gen_spr_xml(PowerPCCPU *cpu)
     char *spr_name;
     unsigned int num_regs = 0;
     int i;
+
+    for (i = 0; i < ARRAY_SIZE(env->spr_cb); i++) {
+        ppc_spr_t *spr = &env->spr_cb[i];
+
+        if (!spr->name) {
+            continue;
+        }
+
+        /*
+         * GDB identifies registers based on the order they are
+         * presented in the XML. These ids will not match QEMU's
+         * representation (which follows the PowerISA).
+         *
+         * Store the position of the current register description so
+         * we can make the correspondence later.
+         */
+        spr->gdb_id = num_regs;
+        num_regs++;
+    }
 
     if (pcc->gdb_spr_xml) {
         return;
@@ -359,17 +349,6 @@ void ppc_gdb_gen_spr_xml(PowerPCCPU *cpu)
 
         g_string_append_printf(xml, " bitsize=\"%d\"", TARGET_LONG_BITS);
         g_string_append(xml, " group=\"spr\"/>");
-
-        /*
-         * GDB identifies registers based on the order they are
-         * presented in the XML. These ids will not match QEMU's
-         * representation (which follows the PowerISA).
-         *
-         * Store the position of the current register description so
-         * we can make the correspondence later.
-         */
-        spr->gdb_id = num_regs;
-        num_regs++;
     }
 
     g_string_append(xml, "</feature>");
@@ -388,15 +367,6 @@ const char *ppc_gdb_get_dynamic_xml(CPUState *cs, const char *xml_name)
     return NULL;
 }
 #endif
-
-static bool avr_need_swap(CPUPPCState *env)
-{
-#ifdef HOST_WORDS_BIGENDIAN
-    return msr_le;
-#else
-    return !msr_le;
-#endif
-}
 
 #if !defined(CONFIG_USER_ONLY)
 static int gdb_find_spr_idx(CPUPPCState *env, int n)
@@ -486,14 +456,9 @@ static int gdb_get_avr_reg(CPUPPCState *env, GByteArray *buf, int n)
 
     if (n < 32) {
         ppc_avr_t *avr = cpu_avr_ptr(env, n);
-        if (!avr_need_swap(env)) {
-            gdb_get_reg128(buf, avr->u64[0] , avr->u64[1]);
-        } else {
-            gdb_get_reg128(buf, avr->u64[1] , avr->u64[0]);
-        }
+        gdb_get_reg128(buf, avr->VsrD(0), avr->VsrD(1));
         mem_buf = gdb_get_reg_ptr(buf, 16);
-        ppc_maybe_bswap_register(env, mem_buf, 8);
-        ppc_maybe_bswap_register(env, mem_buf + 8, 8);
+        ppc_maybe_bswap_register(env, mem_buf, 16);
         return 16;
     }
     if (n == 32) {
@@ -515,15 +480,9 @@ static int gdb_set_avr_reg(CPUPPCState *env, uint8_t *mem_buf, int n)
 {
     if (n < 32) {
         ppc_avr_t *avr = cpu_avr_ptr(env, n);
-        ppc_maybe_bswap_register(env, mem_buf, 8);
-        ppc_maybe_bswap_register(env, mem_buf + 8, 8);
-        if (!avr_need_swap(env)) {
-            avr->u64[0] = ldq_p(mem_buf);
-            avr->u64[1] = ldq_p(mem_buf + 8);
-        } else {
-            avr->u64[1] = ldq_p(mem_buf);
-            avr->u64[0] = ldq_p(mem_buf + 8);
-        }
+        ppc_maybe_bswap_register(env, mem_buf, 16);
+        avr->VsrD(0) = ldq_p(mem_buf);
+        avr->VsrD(1) = ldq_p(mem_buf + 8);
         return 16;
     }
     if (n == 32) {
@@ -612,12 +571,12 @@ static int gdb_set_vsx_reg(CPUPPCState *env, uint8_t *mem_buf, int n)
     return 0;
 }
 
-gchar *ppc_gdb_arch_name(CPUState *cs)
+const gchar *ppc_gdb_arch_name(CPUState *cs)
 {
 #if defined(TARGET_PPC64)
-    return g_strdup("powerpc:common64");
+    return "powerpc:common64";
 #else
-    return g_strdup("powerpc:common");
+    return "powerpc:common";
 #endif
 }
 

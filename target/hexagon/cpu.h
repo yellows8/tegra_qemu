@@ -1,5 +1,5 @@
 /*
- *  Copyright(c) 2019-2021 Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright(c) 2019-2023 Qualcomm Innovation Center, Inc. All Rights Reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -18,14 +18,13 @@
 #ifndef HEXAGON_CPU_H
 #define HEXAGON_CPU_H
 
-/* Forward declaration needed by some of the header files */
-typedef struct CPUHexagonState CPUHexagonState;
-
 #include "fpu/softfloat-types.h"
 
-#include "qemu-common.h"
+#include "cpu-qom.h"
 #include "exec/cpu-defs.h"
 #include "hex_regs.h"
+#include "mmvec/mmvec.h"
+#include "hw/registerfields.h"
 
 #define NUM_PREGS 4
 #define TOTAL_PER_THREAD_REGS 64
@@ -34,14 +33,9 @@ typedef struct CPUHexagonState CPUHexagonState;
 #define STORES_MAX 2
 #define REG_WRITES_MAX 32
 #define PRED_WRITES_MAX 5                   /* 4 insns + endloop */
+#define VSTORES_MAX 2
 
-#define TYPE_HEXAGON_CPU "hexagon-cpu"
-
-#define HEXAGON_CPU_TYPE_SUFFIX "-" TYPE_HEXAGON_CPU
-#define HEXAGON_CPU_TYPE_NAME(name) (name HEXAGON_CPU_TYPE_SUFFIX)
 #define CPU_RESOLVING_TYPE TYPE_HEXAGON_CPU
-
-#define TYPE_HEXAGON_CPU_V67 HEXAGON_CPU_TYPE_NAME("v67")
 
 #define MMU_USER_IDX 0
 
@@ -51,6 +45,13 @@ typedef struct {
     uint32_t data32;
     uint64_t data64;
 } MemLog;
+
+typedef struct {
+    target_ulong va;
+    int size;
+    DECLARE_BITMAP(mask, MAX_VEC_SIZE_BYTES) QEMU_ALIGNED(16);
+    MMVector data QEMU_ALIGNED(16);
+} VStoreLog;
 
 #define EXEC_STATUS_OK          0x0000
 #define EXEC_STATUS_STOP        0x0002
@@ -64,32 +65,27 @@ typedef struct {
 #define CLEAR_EXCEPTION         (env->status &= (~EXEC_STATUS_EXCEPTION))
 #define SET_EXCEPTION           (env->status |= EXEC_STATUS_EXCEPTION)
 
-struct CPUHexagonState {
+/* Maximum number of vector temps in a packet */
+#define VECTOR_TEMPS_MAX            4
+
+typedef struct CPUArchState {
     target_ulong gpr[TOTAL_PER_THREAD_REGS];
     target_ulong pred[NUM_PREGS];
-    target_ulong branch_taken;
-    target_ulong next_PC;
 
     /* For comparing with LLDB on target - see adjust_stack_ptrs function */
     target_ulong last_pc_dumped;
     target_ulong stack_start;
 
     uint8_t slot_cancelled;
-    target_ulong new_value[TOTAL_PER_THREAD_REGS];
+    target_ulong new_value_usr;
 
     /*
      * Only used when HEX_DEBUG is on, but unconditionally included
      * to reduce recompile time when turning HEX_DEBUG on/off.
      */
-    target_ulong this_PC;
     target_ulong reg_written[TOTAL_PER_THREAD_REGS];
 
-    target_ulong new_pred_value[NUM_PREGS];
-    target_ulong pred_written;
-
     MemLog mem_log_stores[STORES_MAX];
-    target_ulong pkt_has_store_s1;
-    target_ulong dczero_addr;
 
     float_status fp_status;
 
@@ -97,54 +93,68 @@ struct CPUHexagonState {
     target_ulong llsc_val;
     uint64_t     llsc_val_i64;
 
-    target_ulong is_gather_store_insn;
-    target_ulong gather_issued;
-};
+    MMVector VRegs[NUM_VREGS] QEMU_ALIGNED(16);
+    MMVector future_VRegs[VECTOR_TEMPS_MAX] QEMU_ALIGNED(16);
+    MMVector tmp_VRegs[VECTOR_TEMPS_MAX] QEMU_ALIGNED(16);
 
-#define HEXAGON_CPU_CLASS(klass) \
-    OBJECT_CLASS_CHECK(HexagonCPUClass, (klass), TYPE_HEXAGON_CPU)
-#define HEXAGON_CPU(obj) \
-    OBJECT_CHECK(HexagonCPU, (obj), TYPE_HEXAGON_CPU)
-#define HEXAGON_CPU_GET_CLASS(obj) \
-    OBJECT_GET_CLASS(HexagonCPUClass, (obj), TYPE_HEXAGON_CPU)
+    MMQReg QRegs[NUM_QREGS] QEMU_ALIGNED(16);
+    MMQReg future_QRegs[NUM_QREGS] QEMU_ALIGNED(16);
+
+    /* Temporaries used within instructions */
+    MMVectorPair VuuV QEMU_ALIGNED(16);
+    MMVectorPair VvvV QEMU_ALIGNED(16);
+    MMVectorPair VxxV QEMU_ALIGNED(16);
+    MMVector     vtmp QEMU_ALIGNED(16);
+    MMQReg       qtmp QEMU_ALIGNED(16);
+
+    VStoreLog vstore[VSTORES_MAX];
+    target_ulong vstore_pending[VSTORES_MAX];
+    bool vtcm_pending;
+    VTCMStoreLog vtcm_log;
+} CPUHexagonState;
 
 typedef struct HexagonCPUClass {
-    /*< private >*/
     CPUClass parent_class;
-    /*< public >*/
+
     DeviceRealize parent_realize;
-    DeviceReset parent_reset;
+    ResettablePhases parent_phases;
 } HexagonCPUClass;
 
-typedef struct HexagonCPU {
-    /*< private >*/
+struct ArchCPU {
     CPUState parent_obj;
-    /*< public >*/
-    CPUNegativeOffsetState neg;
+
     CPUHexagonState env;
 
     bool lldb_compat;
     target_ulong lldb_stack_adjust;
-} HexagonCPU;
+    bool short_circuit;
+};
 
 #include "cpu_bits.h"
 
-#define cpu_signal_handler cpu_hexagon_signal_handler
-int cpu_hexagon_signal_handler(int host_signum, void *pinfo, void *puc);
+FIELD(TB_FLAGS, IS_TIGHT_LOOP, 0, 1)
 
-static inline void cpu_get_tb_cpu_state(CPUHexagonState *env, target_ulong *pc,
-                                        target_ulong *cs_base, uint32_t *flags)
+static inline void cpu_get_tb_cpu_state(CPUHexagonState *env, vaddr *pc,
+                                        uint64_t *cs_base, uint32_t *flags)
 {
+    uint32_t hex_flags = 0;
     *pc = env->gpr[HEX_REG_PC];
     *cs_base = 0;
+    if (*pc == env->gpr[HEX_REG_SA0]) {
+        hex_flags = FIELD_DP32(hex_flags, TB_FLAGS, IS_TIGHT_LOOP, 1);
+    }
+    *flags = hex_flags;
+}
+
+static inline int cpu_mmu_index(CPUHexagonState *env, bool ifetch)
+{
 #ifdef CONFIG_USER_ONLY
-    *flags = 0;
+    return MMU_USER_IDX;
 #else
 #error System mode not supported on Hexagon yet
 #endif
 }
 
-typedef struct CPUHexagonState CPUArchState;
 typedef HexagonCPU ArchCPU;
 
 void hexagon_translate_init(void);

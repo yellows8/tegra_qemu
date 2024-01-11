@@ -12,15 +12,17 @@ enum QType
 module doc-good.json
 enum Enum
     member one
-        if ['defined(IFONE)']
+        if IFONE
+        feature enum-member-feat
     member two
-    if ['defined(IFCOND)']
+    if IFCOND
     feature enum-feat
 object Base
     member base1: Enum optional=False
+    if {'all': ['IFALL1', 'IFALL2']}
 object Variant1
     member var1: str optional=False
-        if ['defined(IFSTR)']
+        if IFSTR
         feature member-feat
     feature variant1-feat
 object Variant2
@@ -29,27 +31,13 @@ object Object
     tag base1
     case one: Variant1
     case two: Variant2
-        if ['IFTWO']
+        if {'any': ['IFONE', 'IFTWO']}
     feature union-feat1
-object q_obj_Variant1-wrapper
-    member data: Variant1 optional=False
-object q_obj_Variant2-wrapper
-    member data: Variant2 optional=False
-enum SugaredUnionKind
-    member one
-    member two
-        if ['IFTWO']
-object SugaredUnion
-    member type: SugaredUnionKind optional=False
-    tag type
-    case one: q_obj_Variant1-wrapper
-    case two: q_obj_Variant2-wrapper
-        if ['IFTWO']
-    feature union-feat2
 alternate Alternate
     tag type
     case i: int
     case b: bool
+    if {'not': {'any': ['IFONE', 'IFTWO']}}
     feature alt-feat
 object q_obj_cmd-arg
     member arg1: int optional=False
@@ -116,23 +104,28 @@ doc symbol=Enum
     body=
 
     arg=one
-The _one_ {and only}
+The _one_ {and only}, description on the same line
     arg=two
 
     feature=enum-feat
 Also _one_ {and only}
+    feature=enum-member-feat
+a member feature
     section=None
 @two is undocumented
 doc symbol=Base
     body=
 
     arg=base1
-the first member
+description starts on a new line,
+not indented
 doc symbol=Variant1
     body=
 A paragraph
 
-Another paragraph (but no @var: line)
+Another paragraph
+
+@var1 is undocumented
     arg=var1
 
     feature=variant1-feat
@@ -147,18 +140,12 @@ doc symbol=Object
 
     feature=union-feat1
 a feature
-doc symbol=SugaredUnion
-    body=
-
-    arg=type
-
-    feature=union-feat2
-a feature
 doc symbol=Alternate
     body=
 
     arg=i
-an integer
+description starts on the same line
+remainder indented the same
 @b is undocumented
     arg=b
 
@@ -171,10 +158,11 @@ doc symbol=cmd
     body=
 
     arg=arg1
-the first argument
+description starts on a new line,
+indented
     arg=arg2
-the second
-argument
+description starts on the same line
+remainder indented differently
     arg=arg3
 
     feature=cmd-feat1

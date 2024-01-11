@@ -288,7 +288,7 @@ static const VMStateDescription vmstate_pxa2xx_keypad = {
     .name = "pxa2xx_keypad",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(kpc, PXA2xxKeyPadState),
         VMSTATE_UINT32(kpdk, PXA2xxKeyPadState),
         VMSTATE_UINT32(kprec, PXA2xxKeyPadState),
@@ -306,7 +306,7 @@ PXA2xxKeyPadState *pxa27x_keypad_init(MemoryRegion *sysmem,
 {
     PXA2xxKeyPadState *s;
 
-    s = (PXA2xxKeyPadState *) g_malloc0(sizeof(PXA2xxKeyPadState));
+    s = g_new0(PXA2xxKeyPadState, 1);
     s->irq = irq;
 
     memory_region_init_io(&s->iomem, NULL, &pxa2xx_keypad_ops, s,

@@ -1,6 +1,8 @@
 config MALTA
     bool
+    select GT64120
     select ISA_SUPERIO
+    select PIIX
 
 config MIPSSIM
     bool
@@ -16,7 +18,7 @@ config JAZZ
     select I8254
     select I8257
     select PCSPK
-    select VGA_ISA_MM
+    select VGA_MMIO
     select G364FB
     select DP8393X
     select ESP
@@ -31,6 +33,7 @@ config JAZZ
 config FULOONG
     bool
     select PCI_BONITO
+    select VT82C686
 
 config LOONGSON3V
     bool
@@ -43,6 +46,7 @@ config LOONGSON3V
     select PCI_EXPRESS_GENERIC_BRIDGE
     select MSI_NONBROKEN
     select FW_CFG_MIPS
+    select UNIMP
 
 config MIPS_CPS
     bool

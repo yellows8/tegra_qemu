@@ -324,7 +324,7 @@ static void sse_timer_write(void *opaque, hwaddr offset, uint64_t value,
     {
         uint32_t old_ctl = s->cntp_aival_ctl;
 
-        /* EN bit is writeable; CLR bit is write-0-to-clear, write-1-ignored */
+        /* EN bit is writable; CLR bit is write-0-to-clear, write-1-ignored */
         s->cntp_aival_ctl &= ~R_CNTP_AIVAL_CTL_EN_MASK;
         s->cntp_aival_ctl |= value & R_CNTP_AIVAL_CTL_EN_MASK;
         if (!(value & R_CNTP_AIVAL_CTL_CLR_MASK)) {
@@ -428,7 +428,7 @@ static const VMStateDescription sse_timer_vmstate = {
     .name = "sse-timer",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_TIMER(timer, SSETimer),
         VMSTATE_UINT32(cntfrq, SSETimer),
         VMSTATE_UINT32(cntp_ctl, SSETimer),

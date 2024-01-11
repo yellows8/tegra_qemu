@@ -10,7 +10,7 @@
  */
 #include "qemu/osdep.h"
 #include "qemu/bitops.h"
-#include "libqos/libqtest.h"
+#include "libqtest.h"
 #include "qapi/qmp/qdict.h"
 #include "qapi/qmp/qjson.h"
 
@@ -21,25 +21,10 @@
 #define SVE_MAX_VQ 16
 
 #define MACHINE     "-machine virt,gic-version=max -accel tcg "
-#define MACHINE_KVM "-machine virt,gic-version=max -accel kvm -accel tcg "
+#define MACHINE_KVM "-machine virt,gic-version=max -accel kvm "
 #define QUERY_HEAD  "{ 'execute': 'query-cpu-model-expansion', " \
                     "  'arguments': { 'type': 'full', "
 #define QUERY_TAIL  "}}"
-
-static bool kvm_enabled(QTestState *qts)
-{
-    QDict *resp, *qdict;
-    bool enabled;
-
-    resp = qtest_qmp(qts, "{ 'execute': 'query-kvm' }");
-    g_assert(qdict_haskey(resp, "return"));
-    qdict = qdict_get_qdict(resp, "return");
-    g_assert(qdict_haskey(qdict, "enabled"));
-    enabled = qdict_get_bool(qdict, "enabled");
-    qobject_unref(resp);
-
-    return enabled;
-}
 
 static QDict *do_query_no_props(QTestState *qts, const char *cpu_type)
 {
@@ -47,6 +32,7 @@ static QDict *do_query_no_props(QTestState *qts, const char *cpu_type)
                           QUERY_TAIL, cpu_type);
 }
 
+G_GNUC_PRINTF(3, 4)
 static QDict *do_query(QTestState *qts, const char *cpu_type,
                        const char *fmt, ...)
 {
@@ -431,12 +417,22 @@ static void pauth_tests_default(QTestState *qts, const char *cpu_type)
 {
     assert_has_feature_enabled(qts, cpu_type, "pauth");
     assert_has_feature_disabled(qts, cpu_type, "pauth-impdef");
+    assert_has_feature_disabled(qts, cpu_type, "pauth-qarma3");
     assert_set_feature(qts, cpu_type, "pauth", false);
     assert_set_feature(qts, cpu_type, "pauth", true);
     assert_set_feature(qts, cpu_type, "pauth-impdef", true);
     assert_set_feature(qts, cpu_type, "pauth-impdef", false);
-    assert_error(qts, cpu_type, "cannot enable pauth-impdef without pauth",
+    assert_set_feature(qts, cpu_type, "pauth-qarma3", true);
+    assert_set_feature(qts, cpu_type, "pauth-qarma3", false);
+    assert_error(qts, cpu_type,
+                 "cannot enable pauth-impdef or pauth-qarma3 without pauth",
                  "{ 'pauth': false, 'pauth-impdef': true }");
+    assert_error(qts, cpu_type,
+                 "cannot enable pauth-impdef or pauth-qarma3 without pauth",
+                 "{ 'pauth': false, 'pauth-qarma3': true }");
+    assert_error(qts, cpu_type,
+                 "cannot enable both pauth-impdef and pauth-qarma3",
+                 "{ 'pauth': true, 'pauth-impdef': true, 'pauth-qarma3': true }");
 }
 
 static void test_query_cpu_model_expansion(const void *data)
@@ -473,6 +469,19 @@ static void test_query_cpu_model_expansion(const void *data)
         assert_has_feature_enabled(qts, "cortex-a57", "pmu");
         assert_has_feature_enabled(qts, "cortex-a57", "aarch64");
 
+        assert_has_feature_enabled(qts, "a64fx", "pmu");
+        assert_has_feature_enabled(qts, "a64fx", "aarch64");
+        /*
+         * A64FX does not support any other vector lengths besides those
+         * that are enabled by default(128bit, 256bits, 512bit).
+         */
+        assert_has_feature_enabled(qts, "a64fx", "sve");
+        assert_sve_vls(qts, "a64fx", 0xb, NULL);
+        assert_error(qts, "a64fx", "cannot enable sve384",
+                     "{ 'sve384': true }");
+        assert_error(qts, "a64fx", "cannot enable sve640",
+                     "{ 'sve640': true }");
+
         sve_tests_default(qts, "max");
         pauth_tests_default(qts, "max");
 
@@ -493,14 +502,6 @@ static void test_query_cpu_model_expansion_kvm(const void *data)
 
     qts = qtest_init(MACHINE_KVM "-cpu max");
 
-    /*
-     * These tests target the 'host' CPU type, so KVM must be enabled.
-     */
-    if (!kvm_enabled(qts)) {
-        qtest_quit(qts);
-        return;
-    }
-
     /* Enabling and disabling kvm-no-adjvtime should always work. */
     assert_has_feature_disabled(qts, "host", "kvm-no-adjvtime");
     assert_set_feature(qts, "host", "kvm-no-adjvtime", true);
@@ -515,9 +516,23 @@ static void test_query_cpu_model_expansion_kvm(const void *data)
         QDict *resp;
         char *error;
 
-        assert_error(qts, "cortex-a15",
-            "We cannot guarantee the CPU type 'cortex-a15' works "
-            "with KVM on this host", NULL);
+        /*
+         * When using KVM, only the 'host' and 'max' CPU models are
+         * supported. Test that we're emitting a suitable error for
+         * unsupported CPU models.
+         */
+        if (qtest_has_accel("tcg")) {
+            assert_error(qts, "cortex-a7",
+                         "We cannot guarantee the CPU type 'cortex-a7' works "
+                         "with KVM on this host", NULL);
+        } else {
+            /*
+             * With a KVM-only build the 32-bit CPUs are not present.
+             */
+            assert_error(qts, "cortex-a7",
+                         "The CPU type 'cortex-a7' is not a "
+                         "recognized ARM CPU type", NULL);
+        }
 
         assert_has_feature_enabled(qts, "host", "aarch64");
 
@@ -616,27 +631,39 @@ int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
 
-    qtest_add_data_func("/arm/query-cpu-model-expansion",
-                        NULL, test_query_cpu_model_expansion);
+    if (qtest_has_accel("tcg")) {
+        qtest_add_data_func("/arm/query-cpu-model-expansion",
+                            NULL, test_query_cpu_model_expansion);
+    }
+
+    if (!g_str_equal(qtest_get_arch(), "aarch64")) {
+        goto out;
+    }
 
     /*
      * For now we only run KVM specific tests with AArch64 QEMU in
      * order avoid attempting to run an AArch32 QEMU with KVM on
      * AArch64 hosts. That won't work and isn't easy to detect.
      */
-    if (g_str_equal(qtest_get_arch(), "aarch64")) {
+    if (qtest_has_accel("kvm")) {
+        /*
+         * This tests target the 'host' CPU type, so register it only if
+         * KVM is available.
+         */
         qtest_add_data_func("/arm/kvm/query-cpu-model-expansion",
                             NULL, test_query_cpu_model_expansion_kvm);
-    }
 
-    if (g_str_equal(qtest_get_arch(), "aarch64")) {
-        qtest_add_data_func("/arm/max/query-cpu-model-expansion/sve-max-vq-8",
-                            NULL, sve_tests_sve_max_vq_8);
-        qtest_add_data_func("/arm/max/query-cpu-model-expansion/sve-off",
-                            NULL, sve_tests_sve_off);
         qtest_add_data_func("/arm/kvm/query-cpu-model-expansion/sve-off",
                             NULL, sve_tests_sve_off_kvm);
     }
 
+    if (qtest_has_accel("tcg")) {
+        qtest_add_data_func("/arm/max/query-cpu-model-expansion/sve-max-vq-8",
+                            NULL, sve_tests_sve_max_vq_8);
+        qtest_add_data_func("/arm/max/query-cpu-model-expansion/sve-off",
+                            NULL, sve_tests_sve_off);
+    }
+
+out:
     return g_test_run();
 }

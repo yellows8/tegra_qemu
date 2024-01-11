@@ -140,17 +140,78 @@ Use ``-rtc driftfix=slew`` instead.
 
 Replaced by ``-rtc base=date``.
 
-``-vnc ...,tls=...``, ``-vnc ...,x509=...`` & ``-vnc ...,x509verify=...``
-'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+``-vnc ...,tls=...``, ``-vnc ...,x509=...`` & ``-vnc ...,x509verify=...`` (removed in 3.1)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 The "tls-creds" option should be used instead to point to a "tls-creds-x509"
 object created using "-object".
+
+``-mem-path`` fallback to RAM (removed in 5.0)
+''''''''''''''''''''''''''''''''''''''''''''''
+
+If guest RAM allocation from file pointed by ``mem-path`` failed,
+QEMU was falling back to allocating from RAM, which might have resulted
+in unpredictable behavior since the backing file specified by the user
+as ignored. Currently, users are responsible for making sure the backing storage
+specified with ``-mem-path`` can actually provide the guest RAM configured with
+``-m`` and QEMU fails to start up if RAM allocation is unsuccessful.
 
 ``-net ...,name=...`` (removed in 5.1)
 ''''''''''''''''''''''''''''''''''''''
 
 The ``name`` parameter of the ``-net`` option was a synonym
 for the ``id`` parameter, which should now be used instead.
+
+``-numa node,mem=...`` (removed in 5.1)
+'''''''''''''''''''''''''''''''''''''''
+
+The parameter ``mem`` of ``-numa node`` was used to assign a part of guest RAM
+to a NUMA node. But when using it, it's impossible to manage a specified RAM
+chunk on the host side (like bind it to a host node, setting bind policy, ...),
+so the guest ends up with the fake NUMA configuration with suboptiomal
+performance.
+However since 2014 there is an alternative way to assign RAM to a NUMA node
+using parameter ``memdev``, which does the same as ``mem`` and adds
+means to actually manage node RAM on the host side. Use parameter ``memdev``
+with *memory-backend-ram* backend as replacement for parameter ``mem``
+to achieve the same fake NUMA effect or a properly configured
+*memory-backend-file* backend to actually benefit from NUMA configuration.
+New machine versions (since 5.1) will not accept the option but it will still
+work with old machine types. User can check the QAPI schema to see if the legacy
+option is supported by looking at MachineInfo::numa-mem-supported property.
+
+``-numa`` node (without memory specified) (removed in 5.2)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Splitting RAM by default between NUMA nodes had the same issues as ``mem``
+parameter with the difference that the role of the user plays QEMU using
+implicit generic or board specific splitting rule.
+Use ``memdev`` with *memory-backend-ram* backend or ``mem`` (if
+it's supported by used machine type) to define mapping explicitly instead.
+Users of existing VMs, wishing to preserve the same RAM distribution, should
+configure it explicitly using ``-numa node,memdev`` options. Current RAM
+distribution can be retrieved using HMP command ``info numa`` and if separate
+memory devices (pc|nv-dimm) are present use ``info memory-device`` and subtract
+device memory from output of ``info numa``.
+
+``-smp`` (invalid topologies) (removed in 5.2)
+''''''''''''''''''''''''''''''''''''''''''''''
+
+CPU topology properties should describe whole machine topology including
+possible CPUs.
+
+However, historically it was possible to start QEMU with an incorrect topology
+where *n* <= *sockets* * *cores* * *threads* < *maxcpus*,
+which could lead to an incorrect topology enumeration by the guest.
+Support for invalid topologies is removed, the user must ensure
+topologies described with -smp include all possible cpus, i.e.
+*sockets* * *cores* * *threads* = *maxcpus*.
+
+``-machine enforce-config-section=on|off`` (removed in 5.2)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+The ``enforce-config-section`` property was replaced by the
+``-global migration.send-configuration={on|off}`` option.
 
 ``-no-kvm`` (removed in 5.2)
 ''''''''''''''''''''''''''''
@@ -194,8 +255,8 @@ by the ``tls-authz`` and ``sasl-authz`` options.
 The ``pretty=on|off`` switch has no effect for HMP monitors and
 its use is rejected.
 
-``-drive file=json:{...{'driver':'file'}}`` (removed 6.0)
-'''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+``-drive file=json:{...{'driver':'file'}}`` (removed in 6.0)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 The 'file' driver for drives is no longer appropriate for character or host
 devices and will only accept regular files (S_IFREG). The correct driver
@@ -269,11 +330,141 @@ RISC-V firmware not booted by default (removed in 5.1)
 QEMU 5.1 changes the default behaviour from ``-bios none`` to ``-bios default``
 for the RISC-V ``virt`` machine and ``sifive_u`` machine.
 
+``-no-quit`` (removed in 7.0)
+'''''''''''''''''''''''''''''
+
+The ``-no-quit`` was a synonym for ``-display ...,window-close=off`` which
+should be used instead.
+
+``--enable-fips`` (removed in 7.1)
+''''''''''''''''''''''''''''''''''
+
+This option restricted usage of certain cryptographic algorithms when
+the host is operating in FIPS mode.
+
+If FIPS compliance is required, QEMU should be built with the ``libgcrypt``
+or ``gnutls`` library enabled as a cryptography provider.
+
+Neither the ``nettle`` library, or the built-in cryptography provider are
+supported on FIPS enabled hosts.
+
+``-writeconfig`` (removed in 7.1)
+'''''''''''''''''''''''''''''''''
+
+The ``-writeconfig`` option was not able to serialize the entire contents
+of the QEMU command line.  It is thus considered a failed experiment
+and removed without a replacement.
+
+``loaded`` property of ``secret`` and ``secret_keyring`` objects (removed in 7.1)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+The ``loaded=on`` option in the command line or QMP ``object-add`` either had
+no effect (if ``loaded`` was the last option) or caused options to be
+effectively ignored as if they were not given.  The property is therefore
+useless and should simply be removed.
+
+``opened`` property of ``rng-*`` objects (removed in 7.1)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+The ``opened=on`` option in the command line or QMP ``object-add`` either had
+no effect (if ``opened`` was the last option) or caused errors.  The property
+is therefore useless and should simply be removed.
+
+``-display sdl,window_close=...`` (removed in 7.1)
+''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Use ``-display sdl,window-close=...`` instead (i.e. with a minus instead of
+an underscore between "window" and "close").
+
+``-alt-grab`` and ``-display sdl,alt_grab=on`` (removed in 7.1)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Use ``-display sdl,grab-mod=lshift-lctrl-lalt`` instead.
+
+``-ctrl-grab`` and ``-display sdl,ctrl_grab=on`` (removed in 7.1)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Use ``-display sdl,grab-mod=rctrl`` instead.
+
+``-sdl`` (removed in 7.1)
+'''''''''''''''''''''''''
+
+Use ``-display sdl`` instead.
+
+``-curses`` (removed in 7.1)
+''''''''''''''''''''''''''''
+
+Use ``-display curses`` instead.
+
+Creating sound card devices using ``-soundhw`` (removed in 7.1)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Sound card devices should be created using ``-device`` or ``-audio``.
+The exception is ``pcspk`` which can be activated using ``-machine
+pcspk-audiodev=<name>``.
+
+``-watchdog`` (since 7.2)
+'''''''''''''''''''''''''
+
+Use ``-device`` instead.
+
+Hexadecimal sizes with scaling multipliers (since 8.0)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Input parameters that take a size value should only use a size suffix
+(such as 'k' or 'M') when the base is written in decimal, and not when
+the value is hexadecimal.  That is, '0x20M' should be written either as
+'32M' or as '0x2000000'.
+
+``-chardev`` backend aliases ``tty`` and ``parport`` (removed in 8.0)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+``tty`` and ``parport`` used to be aliases for ``serial`` and ``parallel``
+respectively. The actual backend names should be used instead.
+
+``-drive if=none`` for the sifive_u OTP device (removed in 8.0)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Use ``-drive if=pflash`` to configure the OTP device of the sifive_u
+RISC-V machine instead.
+
+``-spice password=string`` (removed in 8.0)
+'''''''''''''''''''''''''''''''''''''''''''
+
+This option was insecure because the SPICE password remained visible in
+the process listing. This was replaced by the new ``password-secret``
+option which lets the password be securely provided on the command
+line using a ``secret`` object instance.
+
+``QEMU_AUDIO_`` environment variables and ``-audio-help`` (removed in 8.2)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+The ``-audiodev`` and ``-audio`` command line options are now the only
+way to specify audio backend settings.
+
+Using ``-audiodev`` to define the default audio backend (removed in 8.2)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+If no audiodev property is specified, previous versions would use the
+first ``-audiodev`` command line option as a fallback.  Starting with
+version 8.2, audio backends created with ``-audiodev`` will only be
+used by clients (sound cards, machines with embedded sound hardware, VNC)
+that refer to it in an ``audiodev=`` property.
+
+In order to configure a default audio backend, use the ``-audio``
+command line option without specifying a ``model``; while previous
+versions of QEMU required a model, starting with version 8.2
+QEMU does not require a model and will not create any sound card
+in this case.
+
+Note that the default audio backend must be configured on the command
+line if the ``-nodefaults`` options is used.
+
 QEMU Machine Protocol (QMP) commands
 ------------------------------------
 
-``block-dirty-bitmap-add`` "autoload" parameter (removed in 4.2.0)
-''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+``block-dirty-bitmap-add`` "autoload" parameter (removed in 4.2)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 The "autoload" parameter has been ignored since 2.12.0. All bitmaps
 are automatically loaded from qcow2 images.
@@ -287,7 +478,8 @@ documentation of ``query-hotpluggable-cpus`` for additional details.
 ``change`` (removed in 6.0)
 '''''''''''''''''''''''''''
 
-Use ``blockdev-change-medium`` or ``change-vnc-password`` instead.
+Use ``blockdev-change-medium`` or ``change-vnc-password`` or
+``display-update`` instead.
 
 ``query-events`` (removed in 6.0)
 '''''''''''''''''''''''''''''''''
@@ -352,6 +544,19 @@ type of array items in query-named-block-nodes.
 ''''''''''''''''''''''''''''''''''''''''''''''''
 
 Specify the properties for the object as top-level arguments instead.
+
+``query-sgx`` return value member ``section-size`` (removed in 8.0)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Member ``section-size`` in the return value of ``query-sgx``
+was superseded by ``sections``.
+
+
+``query-sgx-capabilities`` return value member ``section-size`` (removed in 8.0)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Member ``section-size`` in the return value of ``query-sgx-capabilities``
+was superseded by ``sections``.
 
 Human Monitor Protocol (HMP) commands
 -------------------------------------
@@ -424,9 +629,8 @@ KVM guest support on 32-bit Arm hosts (removed in 5.2)
 ''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 The Linux kernel has dropped support for allowing 32-bit Arm systems
-to host KVM guests as of the 5.7 kernel. Accordingly, QEMU is deprecating
-its support for this configuration and will remove it in a future version.
-Running 32-bit guests on a 64-bit Arm host remains supported.
+to host KVM guests as of the 5.7 kernel, and was thus removed from QEMU
+as well.  Running 32-bit guests on a 64-bit Arm host remains supported.
 
 RISC-V ISA Specific CPUs (removed in 5.1)
 '''''''''''''''''''''''''''''''''''''''''
@@ -456,19 +660,47 @@ Nobody was using this CPU emulation in QEMU, and there were no test images
 available to make sure that the code is still working, so it has been removed
 without replacement.
 
-``lm32`` CPUs (removed in 6.1.0)
-''''''''''''''''''''''''''''''''
+``lm32`` CPUs (removed in 6.1)
+''''''''''''''''''''''''''''''
 
 The only public user of this architecture was the milkymist project,
 which has been dead for years; there was never an upstream Linux
 port.  Removed without replacement.
 
-``unicore32`` CPUs (since 6.1.0)
-''''''''''''''''''''''''''''''''
+``unicore32`` CPUs (removed in 6.1)
+'''''''''''''''''''''''''''''''''''
 
 Support for this CPU was removed from the upstream Linux kernel, and
 there is no available upstream toolchain to build binaries for it.
 Removed without replacement.
+
+x86 ``Icelake-Client`` CPU (removed in 7.1)
+'''''''''''''''''''''''''''''''''''''''''''
+
+There isn't ever Icelake Client CPU, it is some wrong and imaginary one.
+Use ``Icelake-Server`` instead.
+
+System accelerators
+-------------------
+
+Userspace local APIC with KVM (x86, removed in 8.0)
+'''''''''''''''''''''''''''''''''''''''''''''''''''
+
+``-M kernel-irqchip=off`` cannot be used on KVM if the CPU model includes
+a local APIC.  The ``split`` setting is supported, as is using ``-M
+kernel-irqchip=off`` when the CPU does not have a local APIC.
+
+HAXM (``-accel hax``) (removed in 8.2)
+''''''''''''''''''''''''''''''''''''''
+
+The HAXM project has been retired (see https://github.com/intel/haxm#status).
+Use "whpx" (on Windows) or "hvf" (on macOS) instead.
+
+MIPS "Trap-and-Emulate" KVM support (removed in 8.0)
+''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+The MIPS "Trap-and-Emulate" KVM host and guest support was removed
+from Linux in 2021, and is not supported anymore by QEMU either.
 
 System emulator machines
 ------------------------
@@ -507,12 +739,30 @@ mips ``fulong2e`` machine alias (removed in 6.0)
 
 This machine has been renamed ``fuloong2e``.
 
-``pc-0.10`` up to ``pc-1.3`` (removed in 4.0 up to 6.0)
-'''''''''''''''''''''''''''''''''''''''''''''''''''''''
+``pc-0.10`` up to ``pc-i440fx-1.7`` (removed in 4.0 up to 8.2)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 These machine types were very old and likely could not be used for live
 migration from old QEMU versions anymore. Use a newer machine type instead.
 
+Raspberry Pi ``raspi2`` and ``raspi3`` machines (removed in 6.2)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+The Raspberry Pi machines come in various models (A, A+, B, B+). To be able
+to distinguish which model QEMU is implementing, the ``raspi2`` and ``raspi3``
+machines have been renamed ``raspi2b`` and ``raspi3b``.
+
+Aspeed ``swift-bmc`` machine (removed in 7.0)
+'''''''''''''''''''''''''''''''''''''''''''''
+
+This machine was removed because it was unused. Alternative AST2500 based
+OpenPOWER machines are ``witherspoon-bmc`` and ``romulus-bmc``.
+
+ppc ``taihu`` machine (removed in 7.2)
+'''''''''''''''''''''''''''''''''''''''''''''
+
+This machine was removed because it was partially emulated and 405
+machines are very similar. Use the ``ref405ep`` machine instead.
 
 linux-user mode CPUs
 --------------------
@@ -525,6 +775,27 @@ only implemented in linux-user mode, but support for this CPU was removed from
 the upstream Linux kernel in 2018, and it has also been dropped from glibc, so
 there is no new Linux development taking place with this architecture. For
 running the old binaries, you can use older versions of QEMU.
+
+``ppc64abi32`` CPUs (removed in 7.0)
+''''''''''''''''''''''''''''''''''''
+
+The ``ppc64abi32`` architecture has a number of issues which regularly
+tripped up the CI testing and was suspected to be quite broken. For that
+reason the maintainers strongly suspected no one actually used it.
+
+
+TCG introspection features
+--------------------------
+
+TCG trace-events (since 6.2)
+''''''''''''''''''''''''''''
+
+The ability to add new TCG trace points had bit rotted and as the
+feature can be replicated with TCG plugins it was removed. If
+any user is currently using this feature and needs help with
+converting to using TCG plugins they should contact the qemu-devel
+mailing list.
+
 
 System emulator devices
 -----------------------
@@ -551,6 +822,16 @@ The 'ide-drive' device has been removed. Users should use 'ide-hd' or
 
 The 'scsi-disk' device has been removed. Users should use 'scsi-hd' or
 'scsi-cd' as appropriate to get a SCSI hard disk or CD-ROM as needed.
+
+``sga`` (removed in 8.0)
+''''''''''''''''''''''''
+
+The ``sga`` device loaded an option ROM for x86 targets which enabled
+SeaBIOS to send messages to the serial console. SeaBIOS 1.11.0 onwards
+contains native support for this feature and thus use of the option
+ROM approach was obsolete. The native SeaBIOS support can be activated
+by using ``-machine graphics=off``.
+
 
 Related binaries
 ----------------
@@ -590,84 +871,8 @@ enforce that any failure to open the backing image (including if the
 backing file is missing or an incorrect format was specified) is an
 error when ``-u`` is not used.
 
-Command line options
---------------------
-
-``-smp`` (invalid topologies) (removed 5.2)
-'''''''''''''''''''''''''''''''''''''''''''
-
-CPU topology properties should describe whole machine topology including
-possible CPUs.
-
-However, historically it was possible to start QEMU with an incorrect topology
-where *n* <= *sockets* * *cores* * *threads* < *maxcpus*,
-which could lead to an incorrect topology enumeration by the guest.
-Support for invalid topologies is removed, the user must ensure
-topologies described with -smp include all possible cpus, i.e.
-*sockets* * *cores* * *threads* = *maxcpus*.
-
-``-numa`` node (without memory specified) (removed 5.2)
-'''''''''''''''''''''''''''''''''''''''''''''''''''''''
-
-Splitting RAM by default between NUMA nodes had the same issues as ``mem``
-parameter with the difference that the role of the user plays QEMU using
-implicit generic or board specific splitting rule.
-Use ``memdev`` with *memory-backend-ram* backend or ``mem`` (if
-it's supported by used machine type) to define mapping explicitly instead.
-Users of existing VMs, wishing to preserve the same RAM distribution, should
-configure it explicitly using ``-numa node,memdev`` options. Current RAM
-distribution can be retrieved using HMP command ``info numa`` and if separate
-memory devices (pc|nv-dimm) are present use ``info memory-device`` and subtract
-device memory from output of ``info numa``.
-
-``-numa node,mem=``\ *size* (removed in 5.1)
-''''''''''''''''''''''''''''''''''''''''''''
-
-The parameter ``mem`` of ``-numa node`` was used to assign a part of
-guest RAM to a NUMA node. But when using it, it's impossible to manage a specified
-RAM chunk on the host side (like bind it to a host node, setting bind policy, ...),
-so the guest ends up with the fake NUMA configuration with suboptiomal performance.
-However since 2014 there is an alternative way to assign RAM to a NUMA node
-using parameter ``memdev``, which does the same as ``mem`` and adds
-means to actually manage node RAM on the host side. Use parameter ``memdev``
-with *memory-backend-ram* backend as replacement for parameter ``mem``
-to achieve the same fake NUMA effect or a properly configured
-*memory-backend-file* backend to actually benefit from NUMA configuration.
-New machine versions (since 5.1) will not accept the option but it will still
-work with old machine types. User can check the QAPI schema to see if the legacy
-option is supported by looking at MachineInfo::numa-mem-supported property.
-
-``-mem-path`` fallback to RAM (removed in 5.0)
-''''''''''''''''''''''''''''''''''''''''''''''
-
-If guest RAM allocation from file pointed by ``mem-path`` failed,
-QEMU was falling back to allocating from RAM, which might have resulted
-in unpredictable behavior since the backing file specified by the user
-as ignored. Currently, users are responsible for making sure the backing storage
-specified with ``-mem-path`` can actually provide the guest RAM configured with
-``-m`` and QEMU fails to start up if RAM allocation is unsuccessful.
-
-``-smp`` (invalid topologies) (removed 5.2)
-'''''''''''''''''''''''''''''''''''''''''''
-
-CPU topology properties should describe whole machine topology including
-possible CPUs.
-
-However, historically it was possible to start QEMU with an incorrect topology
-where *n* <= *sockets* * *cores* * *threads* < *maxcpus*,
-which could lead to an incorrect topology enumeration by the guest.
-Support for invalid topologies is removed, the user must ensure
-topologies described with -smp include all possible cpus, i.e.
-*sockets* * *cores* * *threads* = *maxcpus*.
-
-``-machine enforce-config-section=on|off`` (removed 5.2)
-''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-
-The ``enforce-config-section`` property was replaced by the
-``-global migration.send-configuration={on|off}`` option.
-
-qemu-img amend to adjust backing file (removed in 6.1)
-''''''''''''''''''''''''''''''''''''''''''''''''''''''
+``qemu-img amend`` to adjust backing file (removed in 6.1)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 The use of ``qemu-img amend`` to modify the name or format of a qcow2
 backing image was never fully documented or tested, and interferes
@@ -678,8 +883,8 @@ backing chain should be performed with ``qemu-img rebase -u`` either
 before or after the remaining changes being performed by amend, as
 appropriate.
 
-qemu-img backing file without format (removed in 6.1)
-'''''''''''''''''''''''''''''''''''''''''''''''''''''
+``qemu-img`` backing file without format (removed in 6.1)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 The use of ``qemu-img create``, ``qemu-img rebase``, or ``qemu-img
 convert`` to create or modify an image that depends on a backing file
@@ -711,3 +916,16 @@ The VXHS code did not compile since v2.12.0. It was removed in 5.1.
 The corresponding upstream server project is no longer maintained.
 Users are recommended to switch to an alternative distributed block
 device driver such as RBD.
+
+Tools
+-----
+
+virtiofsd (removed in 8.0)
+''''''''''''''''''''''''''
+
+There is a newer Rust implementation of ``virtiofsd`` at
+``https://gitlab.com/virtio-fs/virtiofsd``; this has been
+stable for some time and is now widely used.
+The command line and feature set is very close to the removed
+C implementation.
+

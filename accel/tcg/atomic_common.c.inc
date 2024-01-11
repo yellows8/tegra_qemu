@@ -13,58 +13,11 @@
  * See the COPYING file in the top-level directory.
  */
 
-static uint16_t atomic_trace_rmw_pre(CPUArchState *env, target_ulong addr,
-                                     TCGMemOpIdx oi)
+static void atomic_trace_rmw_post(CPUArchState *env, uint64_t addr,
+                                  MemOpIdx oi)
 {
-    CPUState *cpu = env_cpu(env);
-    uint16_t info = trace_mem_get_info(get_memop(oi), get_mmuidx(oi), false);
-
-    trace_guest_mem_before_exec(cpu, addr, info);
-    trace_guest_mem_before_exec(cpu, addr, info | TRACE_MEM_ST);
-
-    return info;
+    qemu_plugin_vcpu_mem_cb(env_cpu(env), addr, oi, QEMU_PLUGIN_MEM_RW);
 }
-
-static void atomic_trace_rmw_post(CPUArchState *env, target_ulong addr,
-                                  uint16_t info)
-{
-    qemu_plugin_vcpu_mem_cb(env_cpu(env), addr, info);
-    qemu_plugin_vcpu_mem_cb(env_cpu(env), addr, info | TRACE_MEM_ST);
-}
-
-#if HAVE_ATOMIC128
-static uint16_t atomic_trace_ld_pre(CPUArchState *env, target_ulong addr,
-                                    TCGMemOpIdx oi)
-{
-    uint16_t info = trace_mem_get_info(get_memop(oi), get_mmuidx(oi), false);
-
-    trace_guest_mem_before_exec(env_cpu(env), addr, info);
-
-    return info;
-}
-
-static void atomic_trace_ld_post(CPUArchState *env, target_ulong addr,
-                                 uint16_t info)
-{
-    qemu_plugin_vcpu_mem_cb(env_cpu(env), addr, info);
-}
-
-static uint16_t atomic_trace_st_pre(CPUArchState *env, target_ulong addr,
-                                    TCGMemOpIdx oi)
-{
-    uint16_t info = trace_mem_get_info(get_memop(oi), get_mmuidx(oi), true);
-
-    trace_guest_mem_before_exec(env_cpu(env), addr, info);
-
-    return info;
-}
-
-static void atomic_trace_st_post(CPUArchState *env, target_ulong addr,
-                                 uint16_t info)
-{
-    qemu_plugin_vcpu_mem_cb(env_cpu(env), addr, info);
-}
-#endif
 
 /*
  * Atomic helpers callable from TCG.
@@ -73,7 +26,7 @@ static void atomic_trace_st_post(CPUArchState *env, target_ulong addr,
  */
 
 #define CMPXCHG_HELPER(OP, TYPE) \
-    TYPE HELPER(atomic_##OP)(CPUArchState *env, target_ulong addr,  \
+    TYPE HELPER(atomic_##OP)(CPUArchState *env, uint64_t addr,      \
                              TYPE oldv, TYPE newv, uint32_t oi)     \
     { return cpu_atomic_##OP##_mmu(env, addr, oldv, newv, oi, GETPC()); }
 
@@ -88,10 +41,35 @@ CMPXCHG_HELPER(cmpxchgq_be, uint64_t)
 CMPXCHG_HELPER(cmpxchgq_le, uint64_t)
 #endif
 
+#if HAVE_CMPXCHG128
+CMPXCHG_HELPER(cmpxchgo_be, Int128)
+CMPXCHG_HELPER(cmpxchgo_le, Int128)
+#endif
+
 #undef CMPXCHG_HELPER
 
+Int128 HELPER(nonatomic_cmpxchgo)(CPUArchState *env, uint64_t addr,
+                                  Int128 cmpv, Int128 newv, uint32_t oi)
+{
+#if TCG_TARGET_REG_BITS == 32
+    uintptr_t ra = GETPC();
+    Int128 oldv;
+
+    oldv = cpu_ld16_mmu(env, addr, oi, ra);
+    if (int128_eq(oldv, cmpv)) {
+        cpu_st16_mmu(env, addr, newv, oi, ra);
+    } else {
+        /* Even with comparison failure, still need a write cycle. */
+        probe_write(env, addr, 16, get_mmuidx(oi), ra);
+    }
+    return oldv;
+#else
+    g_assert_not_reached();
+#endif
+}
+
 #define ATOMIC_HELPER(OP, TYPE) \
-    TYPE HELPER(glue(atomic_,OP))(CPUArchState *env, target_ulong addr,  \
+    TYPE HELPER(glue(atomic_,OP))(CPUArchState *env, uint64_t addr,  \
                                   TYPE val, uint32_t oi)                 \
     { return glue(glue(cpu_atomic_,OP),_mmu)(env, addr, val, oi, GETPC()); }
 

@@ -32,6 +32,7 @@
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "qemu/timer.h"
+#include "qemu/memalign.h"
 #include "hw/irq.h"
 #include "hw/isa/isa.h"
 #include "hw/qdev-properties.h"
@@ -61,6 +62,12 @@
     } while (0)
 
 
+/* Anonymous BlockBackend for empty drive */
+static BlockBackend *blk_create_empty_drive(void)
+{
+    return blk_new(qemu_get_aio_context(), 0, BLK_PERM_ALL);
+}
+
 /********************************************************/
 /* qdev floppy bus                                      */
 
@@ -77,7 +84,7 @@ static const TypeInfo floppy_bus_info = {
 
 static void floppy_bus_create(FDCtrl *fdc, FloppyBus *bus, DeviceState *dev)
 {
-    qbus_create_inplace(bus, sizeof(FloppyBus), TYPE_FLOPPY_BUS, dev, NULL);
+    qbus_init(bus, sizeof(FloppyBus), TYPE_FLOPPY_BUS, dev, NULL);
     bus->fdc = fdc;
 }
 
@@ -486,8 +493,7 @@ static void floppy_drive_realize(DeviceState *qdev, Error **errp)
     }
 
     if (!dev->conf.blk) {
-        /* Anonymous BlockBackend for an empty drive */
-        dev->conf.blk = blk_new(qemu_get_aio_context(), 0, BLK_PERM_ALL);
+        dev->conf.blk = blk_create_empty_drive();
         ret = blk_attach_dev(dev->conf.blk, qdev);
         assert(ret == 0);
 
@@ -595,8 +601,8 @@ enum {
 };
 
 enum {
-    FD_STATE_MULTI  = 0x01,	/* multi track flag */
-    FD_STATE_FORMAT = 0x02,	/* format flag */
+    FD_STATE_MULTI  = 0x01, /* multi track flag */
+    FD_STATE_FORMAT = 0x02, /* format flag */
 };
 
 enum {
@@ -848,7 +854,7 @@ static const VMStateDescription vmstate_fdrive_media_changed = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = fdrive_media_changed_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(media_changed, FDrive),
         VMSTATE_END_OF_LIST()
     }
@@ -858,7 +864,7 @@ static const VMStateDescription vmstate_fdrive_media_rate = {
     .name = "fdrive/media_rate",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(media_rate, FDrive),
         VMSTATE_END_OF_LIST()
     }
@@ -876,7 +882,7 @@ static const VMStateDescription vmstate_fdrive_perpendicular = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = fdrive_perpendicular_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(perpendicular, FDrive),
         VMSTATE_END_OF_LIST()
     }
@@ -893,13 +899,13 @@ static const VMStateDescription vmstate_fdrive = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = fdrive_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(head, FDrive),
         VMSTATE_UINT8(track, FDrive),
         VMSTATE_UINT8(sect, FDrive),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription*[]) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_fdrive_media_changed,
         &vmstate_fdrive_media_rate,
         &vmstate_fdrive_perpendicular,
@@ -971,7 +977,7 @@ static const VMStateDescription vmstate_fdc_reset_sensei = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = fdc_reset_sensei_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_INT32(reset_sensei, FDCtrl),
         VMSTATE_END_OF_LIST()
     }
@@ -989,7 +995,7 @@ static const VMStateDescription vmstate_fdc_result_timer = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = fdc_result_timer_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_TIMER_PTR(result_timer, FDCtrl),
         VMSTATE_END_OF_LIST()
     }
@@ -1007,7 +1013,7 @@ static const VMStateDescription vmstate_fdc_phase = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = fdc_phase_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(phase, FDCtrl),
         VMSTATE_END_OF_LIST()
     }
@@ -1020,7 +1026,7 @@ const VMStateDescription vmstate_fdc = {
     .pre_save = fdc_pre_save,
     .pre_load = fdc_pre_load,
     .post_load = fdc_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         /* Controller State */
         VMSTATE_UINT8(sra, FDCtrl),
         VMSTATE_UINT8(srb, FDCtrl),
@@ -1051,7 +1057,7 @@ const VMStateDescription vmstate_fdc = {
                              vmstate_fdrive, FDrive),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription*[]) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_fdc_reset_sensei,
         &vmstate_fdc_result_timer,
         &vmstate_fdc_phase,
@@ -1161,7 +1167,19 @@ static FDrive *get_drv(FDCtrl *fdctrl, int unit)
 
 static FDrive *get_cur_drv(FDCtrl *fdctrl)
 {
-    return get_drv(fdctrl, fdctrl->cur_drv);
+    FDrive *cur_drv = get_drv(fdctrl, fdctrl->cur_drv);
+
+    if (!cur_drv->blk) {
+        /*
+         * Kludge: empty drive line selected. Create an anonymous
+         * BlockBackend to avoid NULL deref with various BlockBackend
+         * API calls within this model (CVE-2021-20196).
+         * Due to the controller QOM model limitations, we don't
+         * attach the created to the controller device.
+         */
+        cur_drv->blk = blk_create_empty_drive();
+    }
+    return cur_drv;
 }
 
 /* Status A register : 0x00 (read-only) */
@@ -1512,6 +1530,14 @@ static void fdctrl_start_transfer(FDCtrl *fdctrl, int direction)
         int tmp;
         fdctrl->data_len = 128 << (fdctrl->fifo[5] > 7 ? 7 : fdctrl->fifo[5]);
         tmp = (fdctrl->fifo[6] - ks + 1);
+        if (tmp < 0) {
+            FLOPPY_DPRINTF("invalid EOT: %d\n", tmp);
+            fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM, FD_SR1_MA, 0x00);
+            fdctrl->fifo[3] = kt;
+            fdctrl->fifo[4] = kh;
+            fdctrl->fifo[5] = ks;
+            return;
+        }
         if (fdctrl->fifo[0] & 0x80)
             tmp += fdctrl->fifo[6];
         fdctrl->data_len *= tmp;
@@ -1602,8 +1628,8 @@ int fdctrl_transfer_handler(void *opaque, int nchan, int dma_pos, int dma_len)
         if (fdctrl->data_dir != FD_DIR_WRITE ||
             len < FD_SECTOR_LEN || rel_pos != 0) {
             /* READ & SCAN commands and realign to a sector for WRITE */
-            if (blk_pread(cur_drv->blk, fd_offset(cur_drv),
-                          fdctrl->fifo, BDRV_SECTOR_SIZE) < 0) {
+            if (blk_pread(cur_drv->blk, fd_offset(cur_drv), BDRV_SECTOR_SIZE,
+                          fdctrl->fifo, 0) < 0) {
                 FLOPPY_DPRINTF("Floppy: error getting sector %d\n",
                                fd_sector(cur_drv));
                 /* Sure, image size is too small... */
@@ -1630,8 +1656,8 @@ int fdctrl_transfer_handler(void *opaque, int nchan, int dma_pos, int dma_len)
 
             k->read_memory(fdctrl->dma, nchan, fdctrl->fifo + rel_pos,
                            fdctrl->data_pos, len);
-            if (blk_pwrite(cur_drv->blk, fd_offset(cur_drv),
-                           fdctrl->fifo, BDRV_SECTOR_SIZE, 0) < 0) {
+            if (blk_pwrite(cur_drv->blk, fd_offset(cur_drv), BDRV_SECTOR_SIZE,
+                           fdctrl->fifo, 0) < 0) {
                 FLOPPY_DPRINTF("error writing sector %d\n",
                                fd_sector(cur_drv));
                 fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM | FD_SR0_SEEK, 0x00, 0x00);
@@ -1714,8 +1740,8 @@ static uint32_t fdctrl_read_data(FDCtrl *fdctrl)
                                    fd_sector(cur_drv));
                     return 0;
                 }
-            if (blk_pread(cur_drv->blk, fd_offset(cur_drv), fdctrl->fifo,
-                          BDRV_SECTOR_SIZE)
+            if (blk_pread(cur_drv->blk, fd_offset(cur_drv), BDRV_SECTOR_SIZE,
+                          fdctrl->fifo, 0)
                 < 0) {
                 FLOPPY_DPRINTF("error getting sector %d\n",
                                fd_sector(cur_drv));
@@ -1794,8 +1820,8 @@ static void fdctrl_format_sector(FDCtrl *fdctrl)
     }
     memset(fdctrl->fifo, 0, FD_SECTOR_LEN);
     if (cur_drv->blk == NULL ||
-        blk_pwrite(cur_drv->blk, fd_offset(cur_drv), fdctrl->fifo,
-                   BDRV_SECTOR_SIZE, 0) < 0) {
+        blk_pwrite(cur_drv->blk, fd_offset(cur_drv), BDRV_SECTOR_SIZE,
+                   fdctrl->fifo, 0) < 0) {
         FLOPPY_DPRINTF("error formatting sector %d\n", fd_sector(cur_drv));
         fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM | FD_SR0_SEEK, 0x00, 0x00);
     } else {
@@ -2218,8 +2244,8 @@ static void fdctrl_write_data(FDCtrl *fdctrl, uint32_t value)
         if (pos == FD_SECTOR_LEN - 1 ||
             fdctrl->data_pos == fdctrl->data_len) {
             cur_drv = get_cur_drv(fdctrl);
-            if (blk_pwrite(cur_drv->blk, fd_offset(cur_drv), fdctrl->fifo,
-                           BDRV_SECTOR_SIZE, 0) < 0) {
+            if (blk_pwrite(cur_drv->blk, fd_offset(cur_drv), BDRV_SECTOR_SIZE,
+                           fdctrl->fifo, 0) < 0) {
                 FLOPPY_DPRINTF("error writing sector %d\n",
                                fd_sector(cur_drv));
                 break;

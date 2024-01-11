@@ -28,7 +28,7 @@ typedef struct SCLPEventsBus {
 } SCLPEventsBus;
 
 /* we need to save 32 bit chunks for compatibility */
-#ifdef HOST_WORDS_BIGENDIAN
+#if HOST_BIG_ENDIAN
 #define RECV_MASK_LOWER 1
 #define RECV_MASK_UPPER 0
 #else /* little endian host */
@@ -64,8 +64,7 @@ static bool event_pending(SCLPEventFacility *ef)
     SCLPEventClass *event_class;
 
     QTAILQ_FOREACH(kid, &ef->sbus.qbus.children, sibling) {
-        DeviceState *qdev = kid->child;
-        event = DO_UPCAST(SCLPEvent, qdev, qdev);
+        event = SCLP_EVENT(kid->child);
         event_class = SCLP_EVENT_GET_CLASS(event);
         if (event->event_pending &&
             event_class->get_send_mask() & ef->receive_mask) {
@@ -368,7 +367,7 @@ static const VMStateDescription vmstate_event_facility_mask64 = {
     .version_id = 0,
     .minimum_version_id = 0,
     .needed = vmstate_event_facility_mask64_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(receive_mask_pieces[RECV_MASK_LOWER], SCLPEventFacility),
         VMSTATE_END_OF_LIST()
      }
@@ -379,7 +378,7 @@ static const VMStateDescription vmstate_event_facility_mask_length = {
     .version_id = 0,
     .minimum_version_id = 0,
     .needed = vmstate_event_facility_mask_length_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT16(mask_length, SCLPEventFacility),
         VMSTATE_END_OF_LIST()
      }
@@ -389,11 +388,11 @@ static const VMStateDescription vmstate_event_facility = {
     .name = "vmstate-event-facility",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(receive_mask_pieces[RECV_MASK_UPPER], SCLPEventFacility),
         VMSTATE_END_OF_LIST()
      },
-    .subsections = (const VMStateDescription * []) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_event_facility_mask64,
         &vmstate_event_facility_mask_length,
         NULL
@@ -427,8 +426,8 @@ static void init_event_facility(Object *obj)
                              sclp_event_set_allow_all_mask_sizes);
 
     /* Spawn a new bus for SCLP events */
-    qbus_create_inplace(&event_facility->sbus, sizeof(event_facility->sbus),
-                        TYPE_SCLP_EVENTS_BUS, sdev, NULL);
+    qbus_init(&event_facility->sbus, sizeof(event_facility->sbus),
+              TYPE_SCLP_EVENTS_BUS, sdev, NULL);
 
     object_initialize_child(obj, TYPE_SCLP_QUIESCE,
                             &event_facility->quiesce,

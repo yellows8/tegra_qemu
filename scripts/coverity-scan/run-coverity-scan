@@ -116,14 +116,14 @@ update_coverity_tools () {
     cd "$COVERITY_TOOL_BASE"
 
     echo "Checking for new version of coverity build tools..."
-    wget https://scan.coverity.com/download/linux64 --post-data "token=$COVERITY_TOKEN&project=$PROJNAME&md5=1" -O coverity_tool.md5.new
+    wget https://scan.coverity.com/download/cxx/linux64 --post-data "token=$COVERITY_TOKEN&project=$PROJNAME&md5=1" -O coverity_tool.md5.new
 
     if ! cmp -s coverity_tool.md5 coverity_tool.md5.new; then
         # out of date md5 or no md5: download new build tool
         # blow away the old build tool
         echo "Downloading coverity build tools..."
         rm -rf coverity_tool coverity_tool.tgz
-        wget https://scan.coverity.com/download/linux64 --post-data "token=$COVERITY_TOKEN&project=$PROJNAME" -O coverity_tool.tgz
+        wget https://scan.coverity.com/download/cxx/linux64 --post-data "token=$COVERITY_TOKEN&project=$PROJNAME" -O coverity_tool.tgz
         if ! (cat coverity_tool.md5.new; echo "  coverity_tool.tgz") | md5sum -c --status; then
             echo "Downloaded tarball didn't match md5sum!"
             exit 1
@@ -394,15 +394,15 @@ echo "Configuring..."
     --enable-opengl --enable-vte --enable-gnutls \
     --enable-nettle --enable-curses --enable-curl \
     --audio-drv-list=oss,alsa,sdl,pa --enable-virtfs \
-    --enable-vnc --enable-vnc-sasl --enable-vnc-jpeg --enable-vnc-png \
+    --enable-vnc --enable-vnc-sasl --enable-vnc-jpeg --enable-png \
     --enable-xen --enable-brlapi \
     --enable-linux-aio --enable-attr \
     --enable-cap-ng --enable-trace-backends=log --enable-spice --enable-rbd \
-    --enable-xfsctl --enable-libusb --enable-usb-redir \
+    --enable-libusb --enable-usb-redir \
     --enable-libiscsi --enable-libnfs --enable-seccomp \
     --enable-tpm --enable-libssh --enable-lzo --enable-snappy --enable-bzip2 \
     --enable-numa --enable-rdma --enable-smartcard --enable-virglrenderer \
-    --enable-mpath --enable-libxml2 --enable-glusterfs \
+    --enable-mpath --enable-glusterfs \
     --enable-virtfs --enable-zstd
 
 echo "Running cov-build..."

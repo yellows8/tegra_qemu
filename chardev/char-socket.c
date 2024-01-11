@@ -25,9 +25,7 @@
 #include "qemu/osdep.h"
 #include "chardev/char.h"
 #include "io/channel-socket.h"
-#include "io/channel-tls.h"
 #include "io/channel-websock.h"
-#include "io/net-listener.h"
 #include "qemu/error-report.h"
 #include "qemu/module.h"
 #include "qemu/option.h"
@@ -37,61 +35,7 @@
 #include "qemu/yank.h"
 
 #include "chardev/char-io.h"
-#include "qom/object.h"
-
-/***********************************************************/
-/* TCP Net console */
-
-#define TCP_MAX_FDS 16
-
-typedef struct {
-    char buf[21];
-    size_t buflen;
-} TCPChardevTelnetInit;
-
-typedef enum {
-    TCP_CHARDEV_STATE_DISCONNECTED,
-    TCP_CHARDEV_STATE_CONNECTING,
-    TCP_CHARDEV_STATE_CONNECTED,
-} TCPChardevState;
-
-struct SocketChardev {
-    Chardev parent;
-    QIOChannel *ioc; /* Client I/O channel */
-    QIOChannelSocket *sioc; /* Client master channel */
-    QIONetListener *listener;
-    GSource *hup_source;
-    QCryptoTLSCreds *tls_creds;
-    char *tls_authz;
-    TCPChardevState state;
-    int max_size;
-    int do_telnetopt;
-    int do_nodelay;
-    int *read_msgfds;
-    size_t read_msgfds_num;
-    int *write_msgfds;
-    size_t write_msgfds_num;
-    bool registered_yank;
-
-    SocketAddress *addr;
-    bool is_listen;
-    bool is_telnet;
-    bool is_tn3270;
-    GSource *telnet_source;
-    TCPChardevTelnetInit *telnet_init;
-
-    bool is_websock;
-
-    GSource *reconnect_timer;
-    int64_t reconnect_time;
-    bool connect_err_reported;
-
-    QIOTask *connect_task;
-};
-typedef struct SocketChardev SocketChardev;
-
-DECLARE_INSTANCE_CHECKER(SocketChardev, SOCKET_CHARDEV,
-                         TYPE_CHARDEV_SOCKET)
+#include "chardev/char-socket.h"
 
 static gboolean socket_reconnect_timeout(gpointer opaque);
 static void tcp_chr_telnet_init(Chardev *chr);
@@ -339,18 +283,11 @@ static ssize_t tcp_chr_recv(Chardev *chr, char *buf, size_t len)
     if (qio_channel_has_feature(s->ioc, QIO_CHANNEL_FEATURE_FD_PASS)) {
         ret = qio_channel_readv_full(s->ioc, &iov, 1,
                                      &msgfds, &msgfds_num,
-                                     NULL);
+                                     0, NULL);
     } else {
         ret = qio_channel_readv_full(s->ioc, &iov, 1,
                                      NULL, NULL,
-                                     NULL);
-    }
-
-    if (ret == QIO_CHANNEL_ERR_BLOCK) {
-        errno = EAGAIN;
-        ret = -1;
-    } else if (ret == -1) {
-        errno = EIO;
+                                     0, NULL);
     }
 
     if (msgfds_num) {
@@ -374,11 +311,18 @@ static ssize_t tcp_chr_recv(Chardev *chr, char *buf, size_t len)
         }
 
         /* O_NONBLOCK is preserved across SCM_RIGHTS so reset it */
-        qemu_set_block(fd);
+        qemu_socket_set_block(fd);
 
 #ifndef MSG_CMSG_CLOEXEC
         qemu_set_cloexec(fd);
 #endif
+    }
+
+    if (ret == QIO_CHANNEL_ERR_BLOCK) {
+        errno = EAGAIN;
+        ret = -1;
+    } else if (ret == -1) {
+        errno = EIO;
     }
 
     return ret;
@@ -581,6 +525,7 @@ static int tcp_chr_sync_read(Chardev *chr, const uint8_t *buf, int len)
 {
     SocketChardev *s = SOCKET_CHARDEV(chr);
     int size;
+    int saved_errno;
 
     if (s->state != TCP_CHARDEV_STATE_CONNECTED) {
         return 0;
@@ -588,6 +533,7 @@ static int tcp_chr_sync_read(Chardev *chr, const uint8_t *buf, int len)
 
     qio_channel_set_blocking(s->ioc, true, NULL);
     size = tcp_chr_recv(chr, (void *) buf, len);
+    saved_errno = errno;
     if (s->state != TCP_CHARDEV_STATE_DISCONNECTED) {
         qio_channel_set_blocking(s->ioc, false, NULL);
     }
@@ -596,6 +542,7 @@ static int tcp_chr_sync_read(Chardev *chr, const uint8_t *buf, int len)
         tcp_chr_disconnect(chr);
     }
 
+    errno = saved_errno;
     return size;
 }
 
@@ -610,12 +557,10 @@ static char *qemu_chr_compute_filename(SocketChardev *s)
     const char *left = "", *right = "";
 
     switch (ss->ss_family) {
-#ifndef _WIN32
     case AF_UNIX:
         return g_strdup_printf("unix:%s%s",
                                ((struct sockaddr_un *)(ss))->sun_path,
                                s->is_listen ? ",server=on" : "");
-#endif
     case AF_INET6:
         left  = "[";
         right = "]";
@@ -765,7 +710,7 @@ static void tcp_chr_telnet_init(Chardev *chr)
 
     if (!s->is_tn3270) {
         init->buflen = 12;
-        /* Prep the telnet negotion to put telnet in binary,
+        /* Prep the telnet negotiation to put telnet in binary,
          * no echo, single char mode */
         IACSET(init->buf, 0xff, 0xfb, 0x01);  /* IAC WILL ECHO */
         IACSET(init->buf, 0xff, 0xfb, 0x03);  /* IAC WILL Suppress go ahead */
@@ -773,7 +718,7 @@ static void tcp_chr_telnet_init(Chardev *chr)
         IACSET(init->buf, 0xff, 0xfd, 0x00);  /* IAC DO Binary */
     } else {
         init->buflen = 21;
-        /* Prep the TN3270 negotion based on RFC1576 */
+        /* Prep the TN3270 negotiation based on RFC1576 */
         IACSET(init->buf, 0xff, 0xfd, 0x19);  /* IAC DO EOR */
         IACSET(init->buf, 0xff, 0xfb, 0x19);  /* IAC WILL EOR */
         IACSET(init->buf, 0xff, 0xfd, 0x00);  /* IAC DO BINARY */
@@ -797,8 +742,12 @@ static void tcp_chr_websock_handshake(QIOTask *task, gpointer user_data)
 {
     Chardev *chr = user_data;
     SocketChardev *s = user_data;
+    Error *err = NULL;
 
-    if (qio_task_propagate_error(task, NULL)) {
+    if (qio_task_propagate_error(task, &err)) {
+        error_reportf_err(err,
+                          "websock handshake of character device %s failed: ",
+                          chr->label);
         tcp_chr_disconnect(chr);
     } else {
         if (s->do_telnetopt) {
@@ -833,8 +782,12 @@ static void tcp_chr_tls_handshake(QIOTask *task,
 {
     Chardev *chr = user_data;
     SocketChardev *s = user_data;
+    Error *err = NULL;
 
-    if (qio_task_propagate_error(task, NULL)) {
+    if (qio_task_propagate_error(task, &err)) {
+        error_reportf_err(err,
+                          "TLS handshake of character device %s failed: ",
+                          chr->label);
         tcp_chr_disconnect(chr);
     } else {
         if (s->is_websock) {
@@ -1120,6 +1073,7 @@ static void char_socket_finalize(Object *obj)
         qio_net_listener_set_client_func_full(s->listener, NULL, NULL,
                                               NULL, chr->gcontext);
         object_unref(OBJECT(s->listener));
+        s->listener = NULL;
     }
     if (s->tls_creds) {
         object_unref(OBJECT(s->tls_creds));
@@ -1248,6 +1202,10 @@ static int qmp_chardev_open_socket_server(Chardev *chr,
     qio_net_listener_set_name(s->listener, name);
     g_free(name);
 
+    if (s->addr->type == SOCKET_ADDRESS_TYPE_FD && !*s->addr->u.fd.str) {
+        goto skip_listen;
+    }
+
     if (qio_net_listener_open_sync(s->listener, s->addr, 1, errp) < 0) {
         object_unref(OBJECT(s->listener));
         s->listener = NULL;
@@ -1256,6 +1214,8 @@ static int qmp_chardev_open_socket_server(Chardev *chr,
 
     qapi_free_SocketAddress(s->addr);
     s->addr = socket_local_address(s->listener->sioc[0]->fd, errp);
+
+skip_listen:
     update_disconnected_filename(s);
 
     if (is_waitconnect) {
@@ -1300,7 +1260,7 @@ static bool qmp_chardev_validate_socket(ChardevSocket *sock,
                        "'fd' address type");
             return false;
         }
-        if (sock->has_tls_creds &&
+        if (sock->tls_creds &&
             !(sock->has_server && sock->server)) {
             error_setg(errp,
                        "'tls_creds' option is incompatible with "
@@ -1310,7 +1270,7 @@ static bool qmp_chardev_validate_socket(ChardevSocket *sock,
         break;
 
     case SOCKET_ADDRESS_TYPE_UNIX:
-        if (sock->has_tls_creds) {
+        if (sock->tls_creds) {
             error_setg(errp,
                        "'tls_creds' option is incompatible with "
                        "'unix' address type");
@@ -1322,7 +1282,7 @@ static bool qmp_chardev_validate_socket(ChardevSocket *sock,
         break;
 
     case SOCKET_ADDRESS_TYPE_VSOCK:
-        if (sock->has_tls_creds) {
+        if (sock->tls_creds) {
             error_setg(errp,
                        "'tls_creds' option is incompatible with "
                        "'vsock' address type");
@@ -1333,12 +1293,12 @@ static bool qmp_chardev_validate_socket(ChardevSocket *sock,
         break;
     }
 
-    if (sock->has_tls_authz && !sock->has_tls_creds) {
+    if (sock->tls_authz && !sock->tls_creds) {
         error_setg(errp, "'tls_authz' option requires 'tls_creds' option");
         return false;
     }
 
-    /* Validate any options which have a dependancy on client vs server */
+    /* Validate any options which have a dependency on client vs server */
     if (!sock->has_server || sock->server) {
         if (sock->has_reconnect) {
             error_setg(errp,
@@ -1419,10 +1379,12 @@ static void qmp_chardev_open_socket(Chardev *chr,
     }
 
     qemu_chr_set_feature(chr, QEMU_CHAR_FEATURE_RECONNECTABLE);
+#ifndef _WIN32
     /* TODO SOCKET_ADDRESS_FD where fd has AF_UNIX */
     if (addr->type == SOCKET_ADDRESS_TYPE_UNIX) {
         qemu_chr_set_feature(chr, QEMU_CHAR_FEATURE_FD_PASS);
     }
+#endif
 
     /*
      * In the chardev-change special-case, we shouldn't register a new yank
@@ -1466,9 +1428,9 @@ static void qemu_chr_parse_socket(QemuOpts *opts, ChardevBackend *backend,
     SocketAddressLegacy *addr;
     ChardevSocket *sock;
 
-    if ((!!path + !!fd + !!host) != 1) {
+    if ((!!path + !!fd + !!host) > 1) {
         error_setg(errp,
-                   "Exactly one of 'path', 'fd' or 'host' required");
+                   "None or one of 'path', 'fd' or 'host' option required.");
         return;
     }
 
@@ -1512,15 +1474,13 @@ static void qemu_chr_parse_socket(QemuOpts *opts, ChardevBackend *backend,
     sock->wait = qemu_opt_get_bool(opts, "wait", true);
     sock->has_reconnect = qemu_opt_find(opts, "reconnect");
     sock->reconnect = qemu_opt_get_number(opts, "reconnect", 0);
-    sock->has_tls_creds = qemu_opt_get(opts, "tls-creds");
     sock->tls_creds = g_strdup(qemu_opt_get(opts, "tls-creds"));
-    sock->has_tls_authz = qemu_opt_get(opts, "tls-authz");
     sock->tls_authz = g_strdup(qemu_opt_get(opts, "tls-authz"));
 
     addr = g_new0(SocketAddressLegacy, 1);
     if (path) {
         UnixSocketAddress *q_unix;
-        addr->type = SOCKET_ADDRESS_LEGACY_KIND_UNIX;
+        addr->type = SOCKET_ADDRESS_TYPE_UNIX;
         q_unix = addr->u.q_unix.data = g_new0(UnixSocketAddress, 1);
         q_unix->path = g_strdup(path);
 #ifdef CONFIG_LINUX
@@ -1530,7 +1490,7 @@ static void qemu_chr_parse_socket(QemuOpts *opts, ChardevBackend *backend,
         q_unix->abstract = abstract;
 #endif
     } else if (host) {
-        addr->type = SOCKET_ADDRESS_LEGACY_KIND_INET;
+        addr->type = SOCKET_ADDRESS_TYPE_INET;
         addr->u.inet.data = g_new(InetSocketAddress, 1);
         *addr->u.inet.data = (InetSocketAddress) {
             .host = g_strdup(host),
@@ -1542,12 +1502,10 @@ static void qemu_chr_parse_socket(QemuOpts *opts, ChardevBackend *backend,
             .has_ipv6 = qemu_opt_get(opts, "ipv6"),
             .ipv6 = qemu_opt_get_bool(opts, "ipv6", 0),
         };
-    } else if (fd) {
-        addr->type = SOCKET_ADDRESS_LEGACY_KIND_FD;
+    } else {
+        addr->type = SOCKET_ADDRESS_TYPE_FD;
         addr->u.fd.data = g_new(String, 1);
         addr->u.fd.data->str = g_strdup(fd);
-    } else {
-        g_assert_not_reached();
     }
     sock->addr = addr;
 }

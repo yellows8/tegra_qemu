@@ -284,7 +284,7 @@ static const VMStateDescription vmstate_bcm2835_gpio = {
     .name = "bcm2835_gpio",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8_ARRAY(fsel, BCM2835GpioState, 54),
         VMSTATE_UINT32(lev0, BCM2835GpioState),
         VMSTATE_UINT32(lev1, BCM2835GpioState),
@@ -299,8 +299,7 @@ static void bcm2835_gpio_init(Object *obj)
     DeviceState *dev = DEVICE(obj);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
 
-    qbus_create_inplace(&s->sdbus, sizeof(s->sdbus),
-                        TYPE_SD_BUS, DEVICE(s), "sd-bus");
+    qbus_init(&s->sdbus, sizeof(s->sdbus), TYPE_SD_BUS, DEVICE(s), "sd-bus");
 
     memory_region_init_io(&s->iomem, obj,
             &bcm2835_gpio_ops, s, "bcm2835_gpio", 0x1000);

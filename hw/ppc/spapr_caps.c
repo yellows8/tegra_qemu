@@ -95,12 +95,12 @@ static void spapr_cap_set_bool(Object *obj, Visitor *v, const char *name,
 }
 
 
-static void  spapr_cap_get_string(Object *obj, Visitor *v, const char *name,
-                                  void *opaque, Error **errp)
+static void spapr_cap_get_string(Object *obj, Visitor *v, const char *name,
+                                 void *opaque, Error **errp)
 {
     SpaprCapabilityInfo *cap = opaque;
     SpaprMachineState *spapr = SPAPR_MACHINE(obj);
-    char *val = NULL;
+    g_autofree char *val = NULL;
     uint8_t value = spapr_get_cap(spapr, cap->index);
 
     if (value >= cap->possible->num) {
@@ -111,7 +111,6 @@ static void  spapr_cap_get_string(Object *obj, Visitor *v, const char *name,
     val = g_strdup(cap->possible->vals[value]);
 
     visit_type_str(v, name, &val, errp);
-    g_free(val);
 }
 
 static void spapr_cap_set_string(Object *obj, Visitor *v, const char *name,
@@ -120,7 +119,7 @@ static void spapr_cap_set_string(Object *obj, Visitor *v, const char *name,
     SpaprCapabilityInfo *cap = opaque;
     SpaprMachineState *spapr = SPAPR_MACHINE(obj);
     uint8_t i;
-    char *val;
+    g_autofree char *val = NULL;
 
     if (!visit_type_str(v, name, &val, errp)) {
         return;
@@ -128,20 +127,18 @@ static void spapr_cap_set_string(Object *obj, Visitor *v, const char *name,
 
     if (!strcmp(val, "?")) {
         error_setg(errp, "%s", cap->possible->help);
-        goto out;
+        return;
     }
     for (i = 0; i < cap->possible->num; i++) {
         if (!strcasecmp(val, cap->possible->vals[i])) {
             spapr->cmd_line_caps[cap->index] = true;
             spapr->eff.caps[cap->index] = i;
-            goto out;
+            return;
         }
     }
 
     error_setg(errp, "Invalid capability mode \"%s\" for cap-%s", val,
                cap->name);
-out:
-    g_free(val);
 }
 
 static void spapr_cap_get_pagesize(Object *obj, Visitor *v, const char *name,
@@ -444,19 +441,23 @@ static void cap_nested_kvm_hv_apply(SpaprMachineState *spapr,
 {
     ERRP_GUARD();
     PowerPCCPU *cpu = POWERPC_CPU(first_cpu);
+    CPUPPCState *env = &cpu->env;
 
     if (!val) {
         /* capability disabled by default */
         return;
     }
 
-    if (tcg_enabled()) {
-        error_setg(errp, "No Nested KVM-HV support in TCG");
+    if (!(env->insns_flags2 & PPC2_ISA300)) {
+        error_setg(errp, "Nested-HV only supported on POWER9 and later");
         error_append_hint(errp, "Try appending -machine cap-nested-hv=off\n");
-    } else if (kvm_enabled()) {
+        return;
+    }
+
+    if (kvm_enabled()) {
         if (!ppc_check_compat(cpu, CPU_POWERPC_LOGICAL_3_00, 0,
                               spapr->max_compat_pvr)) {
-            error_setg(errp, "Nested KVM-HV only supported on POWER9");
+            error_setg(errp, "Nested-HV only supported on POWER9 and later");
             error_append_hint(errp,
                               "Try appending -machine max-cpu-compat=power9\n");
             return;
@@ -464,13 +465,27 @@ static void cap_nested_kvm_hv_apply(SpaprMachineState *spapr,
 
         if (!kvmppc_has_cap_nested_kvm_hv()) {
             error_setg(errp,
-                       "KVM implementation does not support Nested KVM-HV");
+                       "KVM implementation does not support Nested-HV");
             error_append_hint(errp,
                               "Try appending -machine cap-nested-hv=off\n");
         } else if (kvmppc_set_cap_nested_kvm_hv(val) < 0) {
                 error_setg(errp, "Error enabling cap-nested-hv with KVM");
                 error_append_hint(errp,
                                   "Try appending -machine cap-nested-hv=off\n");
+        }
+    } else if (tcg_enabled()) {
+        MachineState *ms = MACHINE(spapr);
+        unsigned int smp_threads = ms->smp.threads;
+
+        /*
+         * Nested-HV vCPU env state to L2, so SMT-shared SPR updates, for
+         * example, do not necessarily update the correct SPR value on sibling
+         * threads that are in a different guest/host context.
+         */
+        if (smp_threads > 1) {
+            error_setg(errp, "TCG does not support nested-HV with SMT");
+            error_append_hint(errp, "Try appending -machine cap-nested-hv=off "
+                                    "or use threads=1 with -smp\n");
         }
     }
 }
@@ -552,7 +567,7 @@ static void cap_ccf_assist_apply(SpaprMachineState *spapr, uint8_t val,
              * instruction is a harmless no-op.  It won't correctly
              * implement the cache count flush *but* if we have
              * count-cache-disabled in the host, that flush is
-             * unnnecessary.  So, specifically allow this case.  This
+             * unnecessary.  So, specifically allow this case.  This
              * allows us to have better performance on POWER9 DD2.3,
              * while still working on POWER9 DD2.2 and POWER8 host
              * cpus.
@@ -609,6 +624,33 @@ static void cap_rpt_invalidate_apply(SpaprMachineState *spapr,
                               "Try appending -machine cap-rpt-invalidate=off\n");
         } else {
             kvmppc_enable_h_rpt_invalidate();
+        }
+    }
+}
+
+static void cap_ail_mode_3_apply(SpaprMachineState *spapr,
+                                     uint8_t val, Error **errp)
+{
+    ERRP_GUARD();
+    PowerPCCPU *cpu = POWERPC_CPU(first_cpu);
+    PowerPCCPUClass *pcc = POWERPC_CPU_GET_CLASS(cpu);
+
+    if (!val) {
+        return;
+    }
+
+    if (tcg_enabled()) {
+        /* AIL-3 is only supported on POWER8 and above CPUs. */
+        if (!(pcc->insns_flags2 & PPC2_ISA207S)) {
+            error_setg(errp, "TCG only supports cap-ail-mode-3 on POWER8 and later CPUs");
+            error_append_hint(errp, "Try appending -machine cap-ail-mode-3=off\n");
+            return;
+        }
+    } else if (kvm_enabled()) {
+        if (!kvmppc_supports_ail_3()) {
+            error_setg(errp, "KVM implementation does not support cap-ail-mode-3");
+            error_append_hint(errp, "Try appending -machine cap-ail-mode-3=off\n");
+            return;
         }
     }
 }
@@ -730,6 +772,15 @@ SpaprCapabilityInfo capability_table[SPAPR_CAP_NUM] = {
         .type = "bool",
         .apply = cap_rpt_invalidate_apply,
     },
+    [SPAPR_CAP_AIL_MODE_3] = {
+        .name = "ail-mode-3",
+        .description = "Alternate Interrupt Location (AIL) mode 3 support",
+        .index = SPAPR_CAP_AIL_MODE_3,
+        .get = spapr_cap_get_bool,
+        .set = spapr_cap_set_bool,
+        .type = "bool",
+        .apply = cap_ail_mode_3_apply,
+    },
 };
 
 static SpaprCapabilities default_caps_with_cpu(SpaprMachineState *spapr,
@@ -749,6 +800,7 @@ static SpaprCapabilities default_caps_with_cpu(SpaprMachineState *spapr,
                                0, spapr->max_compat_pvr)) {
         caps.caps[SPAPR_CAP_HTM] = SPAPR_CAP_OFF;
         caps.caps[SPAPR_CAP_CFPC] = SPAPR_CAP_BROKEN;
+        caps.caps[SPAPR_CAP_AIL_MODE_3] = SPAPR_CAP_OFF;
     }
 
     if (!ppc_type_check_compat(cputype, CPU_POWERPC_LOGICAL_2_06_PLUS,
@@ -852,7 +904,7 @@ const VMStateDescription vmstate_spapr_cap_##sname = {  \
     .version_id = 1,                                    \
     .minimum_version_id = 1,                            \
     .needed = spapr_cap_##sname##_needed,               \
-    .fields = (VMStateField[]) {                        \
+    .fields = (const VMStateField[]) {                  \
         VMSTATE_UINT8(mig.caps[cap],                    \
                       SpaprMachineState),               \
         VMSTATE_END_OF_LIST()                           \
@@ -929,16 +981,13 @@ void spapr_caps_add_properties(SpaprMachineClass *smc)
 
     for (i = 0; i < ARRAY_SIZE(capability_table); i++) {
         SpaprCapabilityInfo *cap = &capability_table[i];
-        char *name = g_strdup_printf("cap-%s", cap->name);
-        char *desc;
+        g_autofree char *name = g_strdup_printf("cap-%s", cap->name);
+        g_autofree char *desc = g_strdup_printf("%s", cap->description);
 
         object_class_property_add(klass, name, cap->type,
                                   cap->get, cap->set,
                                   NULL, cap);
 
-        desc = g_strdup_printf("%s", cap->description);
         object_class_property_set_description(klass, name, desc);
-        g_free(name);
-        g_free(desc);
     }
 }

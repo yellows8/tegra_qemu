@@ -1,25 +1,13 @@
 #include "qemu/osdep.h"
 #include "qemu/cutils.h"
-#include "qapi/error.h"
-#include "sysemu/hw_accel.h"
-#include "sysemu/runstate.h"
-#include "qemu/log.h"
-#include "qemu/main-loop.h"
-#include "qemu/module.h"
+#include "qemu/memalign.h"
 #include "qemu/error-report.h"
 #include "cpu.h"
-#include "exec/exec-all.h"
 #include "helper_regs.h"
 #include "hw/ppc/spapr.h"
-#include "hw/ppc/spapr_cpu_core.h"
 #include "mmu-hash64.h"
-#include "cpu-models.h"
-#include "trace.h"
-#include "kvm_ppc.h"
-#include "hw/ppc/fdt.h"
-#include "hw/ppc/spapr_ovec.h"
 #include "mmu-book3s-v3.h"
-#include "hw/mem/memory-device.h"
+
 
 static inline bool valid_ptex(PowerPCCPU *cpu, target_ulong ptex)
 {
@@ -346,7 +334,7 @@ static void *hpt_prepare_thread(void *opaque)
         pending->ret = H_NO_MEM;
     }
 
-    qemu_mutex_lock_iothread();
+    bql_lock();
 
     if (SPAPR_MACHINE(qdev_get_machine())->pending_hpt == pending) {
         /* Ready to go */
@@ -356,7 +344,7 @@ static void *hpt_prepare_thread(void *opaque)
         free_pending_hpt(pending);
     }
 
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
     return NULL;
 }
 
@@ -441,7 +429,7 @@ static void new_hpte_store(void *htab, uint64_t pteg, int slot,
     addr += slot * HASH_PTE_SIZE_64;
 
     stq_p(addr, pte0);
-    stq_p(addr + HASH_PTE_SIZE_64 / 2, pte1);
+    stq_p(addr + HPTE64_DW1, pte1);
 }
 
 static int rehash_hpte(PowerPCCPU *cpu,

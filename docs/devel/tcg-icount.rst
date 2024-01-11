@@ -62,12 +62,6 @@ To deal with this case, when an I/O access is made we:
   - re-compile a single [1]_ instruction block for the current PC
   - exit the cpu loop and execute the re-compiled block
 
-The new block is created with the CF_LAST_IO compile flag which
-ensures the final instruction translation starts with a call to
-gen_io_start() so we don't enter a perpetual loop constantly
-recompiling a single instruction block. For translators using the
-common translator_loop this is done automatically.
-  
 .. [1] sometimes two instructions if dealing with delay slots  
 
 Other I/O operations
@@ -92,6 +86,3 @@ When the translator is handling an instruction of this kind:
     }
 
 * it must end the TB immediately after this instruction
-
-Note that some older front-ends call a "gen_io_end()" function:
-this is obsolete and should not be used.

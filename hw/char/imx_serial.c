@@ -43,7 +43,7 @@ static const VMStateDescription vmstate_imx_serial = {
     .name = TYPE_IMX_SERIAL,
     .version_id = 2,
     .minimum_version_id = 2,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_INT32(readbuff, IMXSerialState),
         VMSTATE_UINT32(usr1, IMXSerialState),
         VMSTATE_UINT32(usr2, IMXSerialState),
@@ -80,7 +80,7 @@ static void imx_update(IMXSerialState *s)
      * TCEN and TXDC are both bit 3
      * RDR and DREN are both bit 0
      */
-    mask |= s->ucr4 & (UCR4_TCEN | UCR4_DREN);
+    mask |= s->ucr4 & (UCR4_WKEN | UCR4_TCEN | UCR4_DREN);
 
     usr2 = s->usr2 & mask;
 
@@ -112,7 +112,7 @@ static void imx_serial_reset_at_boot(DeviceState *dev)
     imx_serial_reset(s);
 
     /*
-     * enable the uart on boot, so messages from the linux decompresser
+     * enable the uart on boot, so messages from the linux decompressor
      * are visible.  On real hardware this is done by the boot rom
      * before anything else is loaded.
      */
@@ -321,6 +321,9 @@ static void imx_put_data(void *opaque, uint32_t value)
 
 static void imx_receive(void *opaque, const uint8_t *buf, int size)
 {
+    IMXSerialState *s = (IMXSerialState *)opaque;
+
+    s->usr2 |= USR2_WAKE;
     imx_put_data(opaque, *buf);
 }
 

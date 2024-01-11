@@ -47,6 +47,8 @@
 #define ACPI_PM_PROP_PM_IO_BASE "pm_io_base"
 #define ACPI_PM_PROP_GPE0_BLK "gpe0_blk"
 #define ACPI_PM_PROP_GPE0_BLK_LEN "gpe0_blk_len"
+#define ACPI_PM_PROP_ACPI_PCIHP_BRIDGE "acpi-pci-hotplug-with-bridge-support"
+#define ACPI_PM_PROP_ACPI_PCI_ROOTHP "acpi-root-pci-hotplug"
 
 /* PM Timer ticks per second (HZ) */
 #define PM_TIMER_FREQUENCY  3579545
@@ -64,7 +66,7 @@
 #define ACPI_BITMASK_POWER_BUTTON_STATUS        0x0100
 #define ACPI_BITMASK_SLEEP_BUTTON_STATUS        0x0200
 #define ACPI_BITMASK_RT_CLOCK_STATUS            0x0400
-#define ACPI_BITMASK_PCIEXP_WAKE_STATUS         0x4000	/* ACPI 3.0 */
+#define ACPI_BITMASK_PCIEXP_WAKE_STATUS         0x4000  /* ACPI 3.0 */
 #define ACPI_BITMASK_WAKE_STATUS                0x8000
 
 #define ACPI_BITMASK_ALL_FIXED_STATUS           (\
@@ -82,7 +84,7 @@
 #define ACPI_BITMASK_POWER_BUTTON_ENABLE        0x0100
 #define ACPI_BITMASK_SLEEP_BUTTON_ENABLE        0x0200
 #define ACPI_BITMASK_RT_CLOCK_ENABLE            0x0400
-#define ACPI_BITMASK_PCIEXP_WAKE_DISABLE        0x4000	/* ACPI 3.0 */
+#define ACPI_BITMASK_PCIEXP_WAKE_DISABLE        0x4000  /* ACPI 3.0 */
 
 #define ACPI_BITMASK_PM1_COMMON_ENABLED         ( \
         ACPI_BITMASK_RT_CLOCK_ENABLE        | \

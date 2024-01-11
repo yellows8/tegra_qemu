@@ -168,7 +168,7 @@ static const USBDescIface desc_iface[] = {
                     STRING_FEATURE_UNIT,        /*  u8  iFeature */
                 }
             },{
-                /* Headphone Ouptut Terminal ID3 Descriptor */
+                /* Headphone Output Terminal ID3 Descriptor */
                 .data = (uint8_t[]) {
                     0x09,                       /*  u8  bLength */
                     USB_DT_CS_INTERFACE,        /*  u8  bDescriptorType */
@@ -332,7 +332,7 @@ static const USBDescIface desc_iface_multi[] = {
                     STRING_FEATURE_UNIT,        /*  u8  iFeature */
                 }
             },{
-                /* Headphone Ouptut Terminal ID3 Descriptor */
+                /* Headphone Output Terminal ID3 Descriptor */
                 .data = (uint8_t[]) {
                     0x09,                       /*  u8  bLength */
                     USB_DT_CS_INTERFACE,        /*  u8  bDescriptorType */
@@ -944,12 +944,15 @@ static void usb_audio_realize(USBDevice *dev, Error **errp)
     USBAudioState *s = USB_AUDIO(dev);
     int i;
 
+    if (!AUD_register_card(TYPE_USB_AUDIO, &s->card, errp)) {
+        return;
+    }
+
     dev->usb_desc = s->multi ? &desc_audio_multi : &desc_audio;
 
     usb_desc_create_serial(dev);
     usb_desc_init(dev);
     s->dev.opaque = s;
-    AUD_register_card(TYPE_USB_AUDIO, &s->card);
 
     s->out.altset        = ALTSET_OFF;
     s->out.vol.mute      = false;

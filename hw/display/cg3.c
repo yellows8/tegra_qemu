@@ -24,7 +24,6 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "qemu/datadir.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
@@ -335,7 +334,7 @@ static const VMStateDescription vmstate_cg3 = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = vmstate_cg3_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT16(height, CG3State),
         VMSTATE_UINT16(width, CG3State),
         VMSTATE_UINT16(depth, CG3State),

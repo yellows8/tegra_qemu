@@ -2,8 +2,8 @@
 
 #include "qemu/cutils.h"
 #include "qapi/error.h"
-#include "qapi/qapi-commands-qom.h"
 #include "qapi/qapi-visit-qom.h"
+#include "qapi/qmp/qobject.h"
 #include "qapi/qmp/qdict.h"
 #include "qapi/qmp/qerror.h"
 #include "qapi/qmp/qjson.h"
@@ -17,6 +17,7 @@
 #include "qemu/qemu-print.h"
 #include "qapi/opts-visitor.h"
 #include "qemu/config-file.h"
+#include "qemu/keyval.h"
 
 bool user_creatable_complete(UserCreatable *uc, Error **errp)
 {
@@ -46,25 +47,18 @@ static void object_set_properties_from_qdict(Object *obj, const QDict *qdict,
                                              Visitor *v, Error **errp)
 {
     const QDictEntry *e;
-    Error *local_err = NULL;
 
-    if (!visit_start_struct(v, NULL, NULL, 0, &local_err)) {
-        goto out;
+    if (!visit_start_struct(v, NULL, NULL, 0, errp)) {
+        return;
     }
     for (e = qdict_first(qdict); e; e = qdict_next(qdict, e)) {
-        if (!object_property_set(obj, e->key, v, &local_err)) {
-            break;
+        if (!object_property_set(obj, e->key, v, errp)) {
+            goto out;
         }
     }
-    if (!local_err) {
-        visit_check_struct(v, &local_err);
-    }
-    visit_end_struct(v, NULL);
-
+    visit_check_struct(v, errp);
 out:
-    if (local_err) {
-        error_propagate(errp, local_err);
-    }
+    visit_end_struct(v, NULL);
 }
 
 void object_set_properties_from_keyval(Object *obj, const QDict *qdict,
@@ -265,7 +259,7 @@ static void user_creatable_print_help_from_qdict(QDict *args)
     }
 }
 
-ObjectOptions *user_creatable_parse_str(const char *optarg, Error **errp)
+ObjectOptions *user_creatable_parse_str(const char *str, Error **errp)
 {
     ERRP_GUARD();
     QObject *obj;
@@ -273,14 +267,14 @@ ObjectOptions *user_creatable_parse_str(const char *optarg, Error **errp)
     Visitor *v;
     ObjectOptions *options;
 
-    if (optarg[0] == '{') {
-        obj = qobject_from_json(optarg, errp);
+    if (str[0] == '{') {
+        obj = qobject_from_json(str, errp);
         if (!obj) {
             return NULL;
         }
         v = qobject_input_visitor_new(obj);
     } else {
-        QDict *args = keyval_parse(optarg, "qom-type", &help, errp);
+        QDict *args = keyval_parse(str, "qom-type", &help, errp);
         if (*errp) {
             return NULL;
         }
@@ -301,12 +295,12 @@ ObjectOptions *user_creatable_parse_str(const char *optarg, Error **errp)
     return options;
 }
 
-bool user_creatable_add_from_str(const char *optarg, Error **errp)
+bool user_creatable_add_from_str(const char *str, Error **errp)
 {
     ERRP_GUARD();
     ObjectOptions *options;
 
-    options = user_creatable_parse_str(optarg, errp);
+    options = user_creatable_parse_str(str, errp);
     if (!options) {
         return false;
     }
@@ -316,9 +310,9 @@ bool user_creatable_add_from_str(const char *optarg, Error **errp)
     return !*errp;
 }
 
-void user_creatable_process_cmdline(const char *optarg)
+void user_creatable_process_cmdline(const char *cmdline)
 {
-    if (!user_creatable_add_from_str(optarg, &error_fatal)) {
+    if (!user_creatable_add_from_str(cmdline, &error_fatal)) {
         /* Help was printed */
         exit(EXIT_SUCCESS);
     }

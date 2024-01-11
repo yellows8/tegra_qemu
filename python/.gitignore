@@ -11,7 +11,12 @@ qemu.egg-info/
 .idea/
 .vscode/
 
-# virtual environments (pipenv et al)
-.venv/
+# virtual environments
+.min-venv/
 .tox/
 .dev-venv/
+
+# Coverage.py reports
+.coverage
+.coverage.*
+htmlcov/

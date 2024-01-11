@@ -30,6 +30,7 @@
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "qemu/timer.h"
+#include "hw/qdev-properties.h"
 #include "hw/timer/hpet.h"
 #include "hw/sysbus.h"
 #include "hw/rtc/mc146818rtc.h"
@@ -295,7 +296,7 @@ static const VMStateDescription vmstate_hpet_rtc_irq_level = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = hpet_rtc_irq_level_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(rtc_irq_level, HPETState),
         VMSTATE_END_OF_LIST()
     }
@@ -306,7 +307,7 @@ static const VMStateDescription vmstate_hpet_offset = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = hpet_offset_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(hpet_offset, HPETState),
         VMSTATE_END_OF_LIST()
     }
@@ -316,7 +317,7 @@ static const VMStateDescription vmstate_hpet_timer = {
     .name = "hpet_timer",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(tn, HPETTimer),
         VMSTATE_UINT64(config, HPETTimer),
         VMSTATE_UINT64(cmp, HPETTimer),
@@ -335,7 +336,7 @@ static const VMStateDescription vmstate_hpet = {
     .pre_save = hpet_pre_save,
     .pre_load = hpet_pre_load,
     .post_load = hpet_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(config, HPETState),
         VMSTATE_UINT64(isr, HPETState),
         VMSTATE_UINT64(hpet_counter, HPETState),
@@ -345,12 +346,22 @@ static const VMStateDescription vmstate_hpet = {
                                     vmstate_hpet_timer, HPETTimer),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription*[]) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_hpet_rtc_irq_level,
         &vmstate_hpet_offset,
         NULL
     }
 };
+
+static void hpet_arm(HPETTimer *t, uint64_t ticks)
+{
+    if (ticks < ns_to_ticks(INT64_MAX / 2)) {
+        timer_mod(t->qemu_timer,
+                  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + ticks_to_ns(ticks));
+    } else {
+        timer_del(t->qemu_timer);
+    }
+}
 
 /*
  * timer expiration callback
@@ -374,13 +385,11 @@ static void hpet_timer(void *opaque)
             }
         }
         diff = hpet_calculate_diff(t, cur_tick);
-        timer_mod(t->qemu_timer,
-                       qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (int64_t)ticks_to_ns(diff));
+        hpet_arm(t, diff);
     } else if (t->config & HPET_TN_32BIT && !timer_is_periodic(t)) {
         if (t->wrap_flag) {
             diff = hpet_calculate_diff(t, cur_tick);
-            timer_mod(t->qemu_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
-                           (int64_t)ticks_to_ns(diff));
+            hpet_arm(t, diff);
             t->wrap_flag = 0;
         }
     }
@@ -407,8 +416,7 @@ static void hpet_set_timer(HPETTimer *t)
             t->wrap_flag = 1;
         }
     }
-    timer_mod(t->qemu_timer,
-                   qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (int64_t)ticks_to_ns(diff));
+    hpet_arm(t, diff);
 }
 
 static void hpet_del_timer(HPETTimer *t)

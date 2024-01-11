@@ -28,7 +28,6 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "qemu-common.h"
 
 #include "hw/char/serial.h"
 #include "hw/boards.h"
@@ -96,6 +95,7 @@ static void nios2_generic_nommu_machine_init(struct MachineClass *mc)
 {
     mc->desc = "Generic NOMMU Nios II design";
     mc->init = nios2_generic_nommu_init;
+    mc->deprecation_reason = "Nios II architecture is deprecated";
 }
 
 DEFINE_MACHINE("nios2-generic-nommu", nios2_generic_nommu_machine_init);

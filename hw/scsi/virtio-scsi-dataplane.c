@@ -19,9 +19,8 @@
 #include "hw/scsi/scsi.h"
 #include "scsi/constants.h"
 #include "hw/virtio/virtio-bus.h"
-#include "hw/virtio/virtio-access.h"
 
-/* Context: QEMU global mutex held */
+/* Context: BQL held */
 void virtio_scsi_dataplane_setup(VirtIOSCSI *s, Error **errp)
 {
     VirtIOSCSICommon *vs = VIRTIO_SCSI_COMMON(s);
@@ -49,51 +48,6 @@ void virtio_scsi_dataplane_setup(VirtIOSCSI *s, Error **errp)
     }
 }
 
-static bool virtio_scsi_data_plane_handle_cmd(VirtIODevice *vdev,
-                                              VirtQueue *vq)
-{
-    bool progress = false;
-    VirtIOSCSI *s = VIRTIO_SCSI(vdev);
-
-    virtio_scsi_acquire(s);
-    if (!s->dataplane_fenced) {
-        assert(s->ctx && s->dataplane_started);
-        progress = virtio_scsi_handle_cmd_vq(s, vq);
-    }
-    virtio_scsi_release(s);
-    return progress;
-}
-
-static bool virtio_scsi_data_plane_handle_ctrl(VirtIODevice *vdev,
-                                               VirtQueue *vq)
-{
-    bool progress = false;
-    VirtIOSCSI *s = VIRTIO_SCSI(vdev);
-
-    virtio_scsi_acquire(s);
-    if (!s->dataplane_fenced) {
-        assert(s->ctx && s->dataplane_started);
-        progress = virtio_scsi_handle_ctrl_vq(s, vq);
-    }
-    virtio_scsi_release(s);
-    return progress;
-}
-
-static bool virtio_scsi_data_plane_handle_event(VirtIODevice *vdev,
-                                                VirtQueue *vq)
-{
-    bool progress = false;
-    VirtIOSCSI *s = VIRTIO_SCSI(vdev);
-
-    virtio_scsi_acquire(s);
-    if (!s->dataplane_fenced) {
-        assert(s->ctx && s->dataplane_started);
-        progress = virtio_scsi_handle_event_vq(s, vq);
-    }
-    virtio_scsi_release(s);
-    return progress;
-}
-
 static int virtio_scsi_set_host_notifier(VirtIOSCSI *s, VirtQueue *vq, int n)
 {
     BusState *qbus = BUS(qdev_get_parent_bus(DEVICE(s)));
@@ -116,16 +70,30 @@ static void virtio_scsi_dataplane_stop_bh(void *opaque)
 {
     VirtIOSCSI *s = opaque;
     VirtIOSCSICommon *vs = VIRTIO_SCSI_COMMON(s);
+    EventNotifier *host_notifier;
     int i;
 
-    virtio_queue_aio_set_host_notifier_handler(vs->ctrl_vq, s->ctx, NULL);
-    virtio_queue_aio_set_host_notifier_handler(vs->event_vq, s->ctx, NULL);
+    virtio_queue_aio_detach_host_notifier(vs->ctrl_vq, s->ctx);
+    host_notifier = virtio_queue_get_host_notifier(vs->ctrl_vq);
+
+    /*
+     * Test and clear notifier after disabling event, in case poll callback
+     * didn't have time to run.
+     */
+    virtio_queue_host_notifier_read(host_notifier);
+
+    virtio_queue_aio_detach_host_notifier(vs->event_vq, s->ctx);
+    host_notifier = virtio_queue_get_host_notifier(vs->event_vq);
+    virtio_queue_host_notifier_read(host_notifier);
+
     for (i = 0; i < vs->conf.num_queues; i++) {
-        virtio_queue_aio_set_host_notifier_handler(vs->cmd_vqs[i], s->ctx, NULL);
+        virtio_queue_aio_detach_host_notifier(vs->cmd_vqs[i], s->ctx);
+        host_notifier = virtio_queue_get_host_notifier(vs->cmd_vqs[i]);
+        virtio_queue_host_notifier_read(host_notifier);
     }
 }
 
-/* Context: QEMU global mutex held */
+/* Context: BQL held */
 int virtio_scsi_dataplane_start(VirtIODevice *vdev)
 {
     int i;
@@ -181,20 +149,18 @@ int virtio_scsi_dataplane_start(VirtIODevice *vdev)
 
     memory_region_transaction_commit();
 
-    aio_context_acquire(s->ctx);
-    virtio_queue_aio_set_host_notifier_handler(vs->ctrl_vq, s->ctx,
-                                            virtio_scsi_data_plane_handle_ctrl);
-    virtio_queue_aio_set_host_notifier_handler(vs->event_vq, s->ctx,
-                                           virtio_scsi_data_plane_handle_event);
-
-    for (i = 0; i < vs->conf.num_queues; i++) {
-        virtio_queue_aio_set_host_notifier_handler(vs->cmd_vqs[i], s->ctx,
-                                             virtio_scsi_data_plane_handle_cmd);
-    }
-
     s->dataplane_starting = false;
     s->dataplane_started = true;
-    aio_context_release(s->ctx);
+    smp_wmb(); /* paired with aio_notify_accept() */
+
+    if (s->bus.drain_count == 0) {
+        virtio_queue_aio_attach_host_notifier(vs->ctrl_vq, s->ctx);
+        virtio_queue_aio_attach_host_notifier_no_poll(vs->event_vq, s->ctx);
+
+        for (i = 0; i < vs->conf.num_queues; i++) {
+            virtio_queue_aio_attach_host_notifier(vs->cmd_vqs[i], s->ctx);
+        }
+    }
     return 0;
 
 fail_host_notifiers:
@@ -219,7 +185,7 @@ fail_guest_notifiers:
     return -ENOSYS;
 }
 
-/* Context: QEMU global mutex held */
+/* Context: BQL held */
 void virtio_scsi_dataplane_stop(VirtIODevice *vdev)
 {
     BusState *qbus = qdev_get_parent_bus(DEVICE(vdev));
@@ -240,9 +206,9 @@ void virtio_scsi_dataplane_stop(VirtIODevice *vdev)
     }
     s->dataplane_stopping = true;
 
-    aio_context_acquire(s->ctx);
-    aio_wait_bh_oneshot(s->ctx, virtio_scsi_dataplane_stop_bh, s);
-    aio_context_release(s->ctx);
+    if (s->bus.drain_count == 0) {
+        aio_wait_bh_oneshot(s->ctx, virtio_scsi_dataplane_stop_bh, s);
+    }
 
     blk_drain_all(); /* ensure there are no in-flight requests */
 

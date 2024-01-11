@@ -12,7 +12,6 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "hw/rtc/pl031.h"
 #include "migration/vmstate.h"
 #include "hw/irq.h"
@@ -20,10 +19,12 @@
 #include "hw/sysbus.h"
 #include "qemu/timer.h"
 #include "sysemu/sysemu.h"
+#include "sysemu/rtc.h"
 #include "qemu/cutils.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "trace.h"
+#include "qapi/qapi-events-misc.h"
 
 #define RTC_DR      0x00    /* Data read register */
 #define RTC_MR      0x04    /* Match register */
@@ -136,10 +137,18 @@ static void pl031_write(void * opaque, hwaddr offset,
     trace_pl031_write(offset, value);
 
     switch (offset) {
-    case RTC_LR:
+    case RTC_LR: {
+        g_autofree const char *qom_path = object_get_canonical_path(opaque);
+        struct tm tm;
+
         s->tick_offset += value - pl031_get_count(s);
+
+        qemu_get_timedate(&tm, s->tick_offset);
+        qapi_event_send_rtc_change(qemu_timedate_diff(&tm), qom_path);
+
         pl031_set_alarm(s);
         break;
+    }
     case RTC_MR:
         s->mr = value;
         pl031_set_alarm(s);
@@ -281,7 +290,7 @@ static const VMStateDescription vmstate_pl031_tick_offset = {
     .minimum_version_id = 1,
     .needed = pl031_tick_offset_needed,
     .post_load = pl031_tick_offset_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(tick_offset, PL031State),
         VMSTATE_END_OF_LIST()
     }
@@ -294,7 +303,7 @@ static const VMStateDescription vmstate_pl031 = {
     .pre_save = pl031_pre_save,
     .pre_load = pl031_pre_load,
     .post_load = pl031_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(tick_offset_vmstate, PL031State),
         VMSTATE_UINT32(mr, PL031State),
         VMSTATE_UINT32(lr, PL031State),
@@ -303,7 +312,7 @@ static const VMStateDescription vmstate_pl031 = {
         VMSTATE_UINT32(is, PL031State),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription*[]) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_pl031_tick_offset,
         NULL
     }

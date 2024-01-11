@@ -224,7 +224,7 @@ static const VMStateDescription vmstate_sifive_uart = {
     .name = TYPE_SIFIVE_UART,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8_ARRAY(rx_fifo, SiFiveUARTState,
                             SIFIVE_UART_RX_FIFO_SIZE),
         VMSTATE_UINT8(rx_fifo_len, SiFiveUARTState),
@@ -248,6 +248,7 @@ static void sifive_uart_class_init(ObjectClass *oc, void *data)
     rc->phases.enter = sifive_uart_reset_enter;
     rc->phases.hold  = sifive_uart_reset_hold;
     device_class_set_props(dc, sifive_uart_properties);
+    set_bit(DEVICE_CATEGORY_INPUT, dc->categories);
 }
 
 static const TypeInfo sifive_uart_info = {
@@ -273,7 +274,6 @@ SiFiveUARTState *sifive_uart_create(MemoryRegion *address_space, hwaddr base,
 {
     DeviceState *dev;
     SysBusDevice *s;
-    SiFiveUARTState *r;
 
     dev = qdev_new("riscv.sifive.uart");
     s = SYS_BUS_DEVICE(dev);
@@ -283,6 +283,5 @@ SiFiveUARTState *sifive_uart_create(MemoryRegion *address_space, hwaddr base,
                                 sysbus_mmio_get_region(s, 0));
     sysbus_connect_irq(s, 0, irq);
 
-    r = SIFIVE_UART(dev);
-    return r;
+    return SIFIVE_UART(dev);
 }

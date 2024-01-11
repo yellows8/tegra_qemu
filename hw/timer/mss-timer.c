@@ -232,7 +232,7 @@ static void mss_timer_init(Object *obj)
     for (i = 0; i < NUM_TIMERS; i++) {
         struct Msf2Timer *st = &t->timers[i];
 
-        st->ptimer = ptimer_init(timer_hit, st, PTIMER_POLICY_DEFAULT);
+        st->ptimer = ptimer_init(timer_hit, st, PTIMER_POLICY_LEGACY);
         ptimer_transaction_begin(st->ptimer);
         ptimer_set_freq(st->ptimer, t->freq_hz);
         ptimer_transaction_commit(st->ptimer);
@@ -260,7 +260,7 @@ static const VMStateDescription vmstate_timers = {
     .name = "mss-timer-block",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PTIMER(ptimer, struct Msf2Timer),
         VMSTATE_UINT32_ARRAY(regs, struct Msf2Timer, R_TIM1_MAX),
         VMSTATE_END_OF_LIST()
@@ -271,7 +271,7 @@ static const VMStateDescription vmstate_mss_timer = {
     .name = TYPE_MSS_TIMER,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(freq_hz, MSSTimerState),
         VMSTATE_STRUCT_ARRAY(timers, MSSTimerState, NUM_TIMERS, 0,
                 vmstate_timers, struct Msf2Timer),

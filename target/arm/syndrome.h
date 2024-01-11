@@ -36,6 +36,7 @@ enum arm_exception_class {
     EC_ADVSIMDFPACCESSTRAP    = 0x07,
     EC_FPIDTRAP               = 0x08,
     EC_PACTRAP                = 0x09,
+    EC_BXJTRAP                = 0x0a,
     EC_CP14RRTTRAP            = 0x0c,
     EC_BTITRAP                = 0x0d,
     EC_ILLEGALSTATE           = 0x0e,
@@ -47,12 +48,17 @@ enum arm_exception_class {
     EC_AA64_SMC               = 0x17,
     EC_SYSTEMREGISTERTRAP     = 0x18,
     EC_SVEACCESSTRAP          = 0x19,
+    EC_ERETTRAP               = 0x1a,
+    EC_PACFAIL                = 0x1c,
+    EC_SMETRAP                = 0x1d,
+    EC_GPC                    = 0x1e,
     EC_INSNABORT              = 0x20,
     EC_INSNABORT_SAME_EL      = 0x21,
     EC_PCALIGNMENT            = 0x22,
     EC_DATAABORT              = 0x24,
     EC_DATAABORT_SAME_EL      = 0x25,
     EC_SPALIGNMENT            = 0x26,
+    EC_MOP                    = 0x27,
     EC_AA32_FPTRAP            = 0x28,
     EC_AA64_FPTRAP            = 0x2c,
     EC_SERROR                 = 0x2f,
@@ -67,11 +73,21 @@ enum arm_exception_class {
     EC_AA64_BKPT              = 0x3c,
 };
 
+typedef enum {
+    SME_ET_AccessTrap,
+    SME_ET_Streaming,
+    SME_ET_NotStreaming,
+    SME_ET_InactiveZA,
+} SMEExceptionType;
+
 #define ARM_EL_EC_SHIFT 26
 #define ARM_EL_IL_SHIFT 25
 #define ARM_EL_ISV_SHIFT 24
 #define ARM_EL_IL (1 << ARM_EL_IL_SHIFT)
 #define ARM_EL_ISV (1 << ARM_EL_ISV_SHIFT)
+
+/* In the Data Abort syndrome */
+#define ARM_EL_VNCR (1 << 13)
 
 static inline uint32_t syn_get_ec(uint32_t syn)
 {
@@ -184,12 +200,13 @@ static inline uint32_t syn_cp15_rrt_trap(int cv, int cond, int opc1, int crm,
         | (rt2 << 10) | (rt << 5) | (crm << 1) | isread;
 }
 
-static inline uint32_t syn_fp_access_trap(int cv, int cond, bool is_16bit)
+static inline uint32_t syn_fp_access_trap(int cv, int cond, bool is_16bit,
+                                          int coproc)
 {
-    /* AArch32 FP trap or any AArch64 FP/SIMD trap: TA == 0 coproc == 0xa */
+    /* AArch32 FP trap or any AArch64 FP/SIMD trap: TA == 0 */
     return (EC_ADVSIMDFPACCESSTRAP << ARM_EL_EC_SHIFT)
         | (is_16bit ? 0 : ARM_EL_IL)
-        | (cv << 24) | (cond << 20) | 0xa;
+        | (cv << 24) | (cond << 20) | coproc;
 }
 
 static inline uint32_t syn_simd_access_trap(int cv, int cond, bool is_16bit)
@@ -202,17 +219,52 @@ static inline uint32_t syn_simd_access_trap(int cv, int cond, bool is_16bit)
 
 static inline uint32_t syn_sve_access_trap(void)
 {
-    return EC_SVEACCESSTRAP << ARM_EL_EC_SHIFT;
+    return (EC_SVEACCESSTRAP << ARM_EL_EC_SHIFT) | ARM_EL_IL;
+}
+
+/*
+ * eret_op is bits [1:0] of the ERET instruction, so:
+ * 0 for ERET, 2 for ERETAA, 3 for ERETAB.
+ */
+static inline uint32_t syn_erettrap(int eret_op)
+{
+    return (EC_ERETTRAP << ARM_EL_EC_SHIFT) | ARM_EL_IL | eret_op;
+}
+
+static inline uint32_t syn_smetrap(SMEExceptionType etype, bool is_16bit)
+{
+    return (EC_SMETRAP << ARM_EL_EC_SHIFT)
+        | (is_16bit ? 0 : ARM_EL_IL) | etype;
+}
+
+static inline uint32_t syn_pacfail(bool data, int keynumber)
+{
+    int error_code = (data << 1) | keynumber;
+    return (EC_PACFAIL << ARM_EL_EC_SHIFT) | ARM_EL_IL | error_code;
 }
 
 static inline uint32_t syn_pactrap(void)
 {
-    return EC_PACTRAP << ARM_EL_EC_SHIFT;
+    return (EC_PACTRAP << ARM_EL_EC_SHIFT) | ARM_EL_IL;
 }
 
 static inline uint32_t syn_btitrap(int btype)
 {
-    return (EC_BTITRAP << ARM_EL_EC_SHIFT) | btype;
+    return (EC_BTITRAP << ARM_EL_EC_SHIFT) | ARM_EL_IL | btype;
+}
+
+static inline uint32_t syn_bxjtrap(int cv, int cond, int rm)
+{
+    return (EC_BXJTRAP << ARM_EL_EC_SHIFT) | ARM_EL_IL |
+        (cv << 24) | (cond << 20) | rm;
+}
+
+static inline uint32_t syn_gpc(int s2ptw, int ind, int gpcsc, int vncr,
+                               int cm, int s1ptw, int wnr, int fsc)
+{
+    return (EC_GPC << ARM_EL_EC_SHIFT) | ARM_EL_IL | (s2ptw << 21)
+        | (ind << 20) | (gpcsc << 14) | (vncr << 13) | (cm << 8)
+        | (s1ptw << 7) | (wnr << 6) | fsc;
 }
 
 static inline uint32_t syn_insn_abort(int same_el, int ea, int s1ptw, int fsc)
@@ -245,6 +297,16 @@ static inline uint32_t syn_data_abort_with_iss(int same_el,
            | (ea << 9) | (cm << 8) | (s1ptw << 7) | (wnr << 6) | fsc;
 }
 
+/*
+ * Faults due to FEAT_NV2 VNCR_EL2-based accesses report as same-EL
+ * Data Aborts with the VNCR bit set.
+ */
+static inline uint32_t syn_data_abort_vncr(int ea, int wnr, int fsc)
+{
+    return (EC_DATAABORT << ARM_EL_EC_SHIFT) | (1 << ARM_EL_EC_SHIFT)
+        | ARM_EL_IL | ARM_EL_VNCR | (wnr << 6) | fsc;
+}
+
 static inline uint32_t syn_swstep(int same_el, int isv, int ex)
 {
     return (EC_SOFTWARESTEP << ARM_EL_EC_SHIFT) | (same_el << ARM_EL_EC_SHIFT)
@@ -269,5 +331,31 @@ static inline uint32_t syn_wfx(int cv, int cond, int ti, bool is_16bit)
            (is_16bit ? 0 : (1 << ARM_EL_IL_SHIFT)) |
            (cv << 24) | (cond << 20) | ti;
 }
+
+static inline uint32_t syn_illegalstate(void)
+{
+    return (EC_ILLEGALSTATE << ARM_EL_EC_SHIFT) | ARM_EL_IL;
+}
+
+static inline uint32_t syn_pcalignment(void)
+{
+    return (EC_PCALIGNMENT << ARM_EL_EC_SHIFT) | ARM_EL_IL;
+}
+
+static inline uint32_t syn_serror(uint32_t extra)
+{
+    return (EC_SERROR << ARM_EL_EC_SHIFT) | ARM_EL_IL | extra;
+}
+
+static inline uint32_t syn_mop(bool is_set, bool is_setg, int options,
+                               bool epilogue, bool wrong_option, bool option_a,
+                               int destreg, int srcreg, int sizereg)
+{
+    return (EC_MOP << ARM_EL_EC_SHIFT) | ARM_EL_IL |
+        (is_set << 24) | (is_setg << 23) | (options << 19) |
+        (epilogue << 18) | (wrong_option << 17) | (option_a << 16) |
+        (destreg << 10) | (srcreg << 5) | sizereg;
+}
+
 
 #endif /* TARGET_ARM_SYNDROME_H */

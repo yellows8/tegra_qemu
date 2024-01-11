@@ -32,7 +32,7 @@
  * Application Note AN524:
  * https://developer.arm.com/documentation/dai0524/latest/
  * Application Note AN547:
- * https://developer.arm.com/-/media/Arm%20Developer%20Community/PDF/DAI0547B_SSE300_PLUS_U55_FPGA_for_mps3.pdf
+ * https://developer.arm.com/documentation/dai0547/latest/
  *
  * The AN505 defers to the Cortex-M33 processor ARMv8M IoT Kit FVP User Guide
  * (ARM ECM0601256) for the details of some of the device layout:
@@ -48,6 +48,7 @@
 #include "qemu/units.h"
 #include "qemu/cutils.h"
 #include "qapi/error.h"
+#include "qapi/qmp/qlist.h"
 #include "qemu/error-report.h"
 #include "hw/arm/boot.h"
 #include "hw/arm/armv7m.h"
@@ -124,6 +125,10 @@ struct MPS2TZMachineClass {
     int uart_overflow_irq; /* number of the combined UART overflow IRQ */
     uint32_t init_svtor; /* init-svtor setting for SSE */
     uint32_t sram_addr_width; /* SRAM_ADDR_WIDTH setting for SSE */
+    uint32_t cpu0_mpu_ns; /* CPU0_MPU_NS setting for SSE */
+    uint32_t cpu0_mpu_s; /* CPU0_MPU_S setting for SSE */
+    uint32_t cpu1_mpu_ns; /* CPU1_MPU_NS setting for SSE */
+    uint32_t cpu1_mpu_s; /* CPU1_MPU_S setting for SSE */
     const RAMInfo *raminfo;
     const char *armsse_type;
     uint32_t boot_ram_size; /* size of ram at address 0; 0 == find in raminfo */
@@ -152,7 +157,7 @@ struct MPS2TZMachineState {
     TZMSC msc[4];
     CMSDKAPBUART uart[6];
     SplitIRQ sec_resp_splitter;
-    qemu_or_irq uart_irq_orgate;
+    OrIRQState uart_irq_orgate;
     DeviceState *lan9118;
     SplitIRQ cpu_irq_splitter[MPS2TZ_NUMIRQ_MAX];
     Clock *sysclk;
@@ -182,6 +187,9 @@ OBJECT_DECLARE_TYPE(MPS2TZMachineState, MPS2TZMachineClass, MPS2TZ_MACHINE)
 #else
 #define MPS3_DDR_SIZE (2 * GiB)
 #endif
+
+/* For cpu{0,1}_mpu_{ns,s}, means "leave at SSE's default value" */
+#define MPU_REGION_DEFAULT UINT32_MAX
 
 static const uint32_t an505_oscclk[] = {
     40000000,
@@ -373,6 +381,11 @@ static qemu_irq get_sse_irq_in(MPS2TZMachineState *mms, int irqno)
     }
 }
 
+/* Union describing the device-specific extra data we pass to the devfn. */
+typedef union PPCExtraData {
+    bool i2c_internal;
+} PPCExtraData;
+
 /* Most of the devices in the AN505 FPGA image sit behind
  * Peripheral Protection Controllers. These data structures
  * define the layout of which devices sit behind which PPCs.
@@ -382,7 +395,8 @@ static qemu_irq get_sse_irq_in(MPS2TZMachineState *mms, int irqno)
  */
 typedef MemoryRegion *MakeDevFn(MPS2TZMachineState *mms, void *opaque,
                                 const char *name, hwaddr size,
-                                const int *irqs);
+                                const int *irqs,
+                                const PPCExtraData *extradata);
 
 typedef struct PPCPortInfo {
     const char *name;
@@ -391,6 +405,7 @@ typedef struct PPCPortInfo {
     hwaddr addr;
     hwaddr size;
     int irqs[3]; /* currently no device needs more IRQ lines than this */
+    PPCExtraData extradata; /* to pass device-specific info to the devfn */
 } PPCPortInfo;
 
 typedef struct PPCInfo {
@@ -401,7 +416,8 @@ typedef struct PPCInfo {
 static MemoryRegion *make_unimp_dev(MPS2TZMachineState *mms,
                                     void *opaque,
                                     const char *name, hwaddr size,
-                                    const int *irqs)
+                                    const int *irqs,
+                                    const PPCExtraData *extradata)
 {
     /* Initialize, configure and realize a TYPE_UNIMPLEMENTED_DEVICE,
      * and return a pointer to its MemoryRegion.
@@ -417,7 +433,7 @@ static MemoryRegion *make_unimp_dev(MPS2TZMachineState *mms,
 
 static MemoryRegion *make_uart(MPS2TZMachineState *mms, void *opaque,
                                const char *name, hwaddr size,
-                               const int *irqs)
+                               const int *irqs, const PPCExtraData *extradata)
 {
     /* The irq[] array is tx, rx, combined, in that order */
     MPS2TZMachineClass *mmc = MPS2TZ_MACHINE_GET_CLASS(mms);
@@ -441,11 +457,12 @@ static MemoryRegion *make_uart(MPS2TZMachineState *mms, void *opaque,
 
 static MemoryRegion *make_scc(MPS2TZMachineState *mms, void *opaque,
                               const char *name, hwaddr size,
-                              const int *irqs)
+                              const int *irqs, const PPCExtraData *extradata)
 {
     MPS2SCC *scc = opaque;
     DeviceState *sccdev;
     MPS2TZMachineClass *mmc = MPS2TZ_MACHINE_GET_CLASS(mms);
+    QList *oscclk;
     uint32_t i;
 
     object_initialize_child(OBJECT(mms), "scc", scc, TYPE_MPS2_SCC);
@@ -454,18 +471,20 @@ static MemoryRegion *make_scc(MPS2TZMachineState *mms, void *opaque,
     qdev_prop_set_uint32(sccdev, "scc-cfg4", 0x2);
     qdev_prop_set_uint32(sccdev, "scc-aid", 0x00200008);
     qdev_prop_set_uint32(sccdev, "scc-id", mmc->scc_id);
-    qdev_prop_set_uint32(sccdev, "len-oscclk", mmc->len_oscclk);
+
+    oscclk = qlist_new();
     for (i = 0; i < mmc->len_oscclk; i++) {
-        g_autofree char *propname = g_strdup_printf("oscclk[%u]", i);
-        qdev_prop_set_uint32(sccdev, propname, mmc->oscclk[i]);
+        qlist_append_int(oscclk, mmc->oscclk[i]);
     }
+    qdev_prop_set_array(sccdev, "oscclk", oscclk);
+
     sysbus_realize(SYS_BUS_DEVICE(scc), &error_fatal);
     return sysbus_mmio_get_region(SYS_BUS_DEVICE(sccdev), 0);
 }
 
 static MemoryRegion *make_fpgaio(MPS2TZMachineState *mms, void *opaque,
                                  const char *name, hwaddr size,
-                                 const int *irqs)
+                                 const int *irqs, const PPCExtraData *extradata)
 {
     MPS2FPGAIO *fpgaio = opaque;
     MPS2TZMachineClass *mmc = MPS2TZ_MACHINE_GET_CLASS(mms);
@@ -480,7 +499,8 @@ static MemoryRegion *make_fpgaio(MPS2TZMachineState *mms, void *opaque,
 
 static MemoryRegion *make_eth_dev(MPS2TZMachineState *mms, void *opaque,
                                   const char *name, hwaddr size,
-                                  const int *irqs)
+                                  const int *irqs,
+                                  const PPCExtraData *extradata)
 {
     SysBusDevice *s;
     NICInfo *nd = &nd_table[0];
@@ -500,7 +520,8 @@ static MemoryRegion *make_eth_dev(MPS2TZMachineState *mms, void *opaque,
 
 static MemoryRegion *make_eth_usb(MPS2TZMachineState *mms, void *opaque,
                                   const char *name, hwaddr size,
-                                  const int *irqs)
+                                  const int *irqs,
+                                  const PPCExtraData *extradata)
 {
     /*
      * The AN524 makes the ethernet and USB share a PPC port.
@@ -543,7 +564,7 @@ static MemoryRegion *make_eth_usb(MPS2TZMachineState *mms, void *opaque,
 
 static MemoryRegion *make_mpc(MPS2TZMachineState *mms, void *opaque,
                               const char *name, hwaddr size,
-                              const int *irqs)
+                              const int *irqs, const PPCExtraData *extradata)
 {
     TZMPC *mpc = opaque;
     int i = mpc - &mms->mpc[0];
@@ -615,7 +636,7 @@ static void remap_irq_fn(void *opaque, int n, int level)
 
 static MemoryRegion *make_dma(MPS2TZMachineState *mms, void *opaque,
                               const char *name, hwaddr size,
-                              const int *irqs)
+                              const int *irqs, const PPCExtraData *extradata)
 {
     /* The irq[] array is DMACINTR, DMACINTERR, DMACINTTC, in that order */
     PL080State *dma = opaque;
@@ -672,7 +693,7 @@ static MemoryRegion *make_dma(MPS2TZMachineState *mms, void *opaque,
 
 static MemoryRegion *make_spi(MPS2TZMachineState *mms, void *opaque,
                               const char *name, hwaddr size,
-                              const int *irqs)
+                              const int *irqs, const PPCExtraData *extradata)
 {
     /*
      * The AN505 has five PL022 SPI controllers.
@@ -694,7 +715,7 @@ static MemoryRegion *make_spi(MPS2TZMachineState *mms, void *opaque,
 
 static MemoryRegion *make_i2c(MPS2TZMachineState *mms, void *opaque,
                               const char *name, hwaddr size,
-                              const int *irqs)
+                              const int *irqs, const PPCExtraData *extradata)
 {
     ArmSbconI2CState *i2c = opaque;
     SysBusDevice *s;
@@ -702,12 +723,26 @@ static MemoryRegion *make_i2c(MPS2TZMachineState *mms, void *opaque,
     object_initialize_child(OBJECT(mms), name, i2c, TYPE_ARM_SBCON_I2C);
     s = SYS_BUS_DEVICE(i2c);
     sysbus_realize(s, &error_fatal);
+
+    /*
+     * If this is an internal-use-only i2c bus, mark it full
+     * so that user-created i2c devices are not plugged into it.
+     * If we implement models of any on-board i2c devices that
+     * plug in to one of the internal-use-only buses, then we will
+     * need to create and plugging those in here before we mark the
+     * bus as full.
+     */
+    if (extradata->i2c_internal) {
+        BusState *qbus = qdev_get_child_bus(DEVICE(i2c), "i2c");
+        qbus_mark_full(qbus);
+    }
+
     return sysbus_mmio_get_region(s, 0);
 }
 
 static MemoryRegion *make_rtc(MPS2TZMachineState *mms, void *opaque,
                               const char *name, hwaddr size,
-                              const int *irqs)
+                              const int *irqs, const PPCExtraData *extradata)
 {
     PL031State *pl031 = opaque;
     SysBusDevice *s;
@@ -778,12 +813,6 @@ static void mps2tz_common_init(MachineState *machine)
     int num_ppcs;
     int i;
 
-    if (strcmp(machine->cpu_type, mc->default_cpu_type) != 0) {
-        error_report("This board can only be used with CPU %s",
-                     mc->default_cpu_type);
-        exit(1);
-    }
-
     if (machine->ram_size != mc->default_ram_size) {
         char *sz = size_to_str(mc->default_ram_size);
         error_report("Invalid RAM size, should be %s", sz);
@@ -804,6 +833,20 @@ static void mps2tz_common_init(MachineState *machine)
                              OBJECT(system_memory), &error_abort);
     qdev_prop_set_uint32(iotkitdev, "EXP_NUMIRQ", mmc->numirq);
     qdev_prop_set_uint32(iotkitdev, "init-svtor", mmc->init_svtor);
+    if (mmc->cpu0_mpu_ns != MPU_REGION_DEFAULT) {
+        qdev_prop_set_uint32(iotkitdev, "CPU0_MPU_NS", mmc->cpu0_mpu_ns);
+    }
+    if (mmc->cpu0_mpu_s != MPU_REGION_DEFAULT) {
+        qdev_prop_set_uint32(iotkitdev, "CPU0_MPU_S", mmc->cpu0_mpu_s);
+    }
+    if (object_property_find(OBJECT(iotkitdev), "CPU1_MPU_NS")) {
+        if (mmc->cpu1_mpu_ns != MPU_REGION_DEFAULT) {
+            qdev_prop_set_uint32(iotkitdev, "CPU1_MPU_NS", mmc->cpu1_mpu_ns);
+        }
+        if (mmc->cpu1_mpu_s != MPU_REGION_DEFAULT) {
+            qdev_prop_set_uint32(iotkitdev, "CPU1_MPU_S", mmc->cpu1_mpu_s);
+        }
+    }
     qdev_prop_set_uint32(iotkitdev, "SRAM_ADDR_WIDTH", mmc->sram_addr_width);
     qdev_connect_clock_in(iotkitdev, "MAINCLK", mms->sysclk);
     qdev_connect_clock_in(iotkitdev, "S32KCLK", mms->s32kclk);
@@ -912,10 +955,14 @@ static void mps2tz_common_init(MachineState *machine)
                 { "uart2", make_uart, &mms->uart[2], 0x40202000, 0x1000, { 36, 37, 44 } },
                 { "uart3", make_uart, &mms->uart[3], 0x40203000, 0x1000, { 38, 39, 45 } },
                 { "uart4", make_uart, &mms->uart[4], 0x40204000, 0x1000, { 40, 41, 46 } },
-                { "i2c0", make_i2c, &mms->i2c[0], 0x40207000, 0x1000 },
-                { "i2c1", make_i2c, &mms->i2c[1], 0x40208000, 0x1000 },
-                { "i2c2", make_i2c, &mms->i2c[2], 0x4020c000, 0x1000 },
-                { "i2c3", make_i2c, &mms->i2c[3], 0x4020d000, 0x1000 },
+                { "i2c0", make_i2c, &mms->i2c[0], 0x40207000, 0x1000, {},
+                  { .i2c_internal = true /* touchscreen */ } },
+                { "i2c1", make_i2c, &mms->i2c[1], 0x40208000, 0x1000, {},
+                  { .i2c_internal = true /* audio conf */ } },
+                { "i2c2", make_i2c, &mms->i2c[2], 0x4020c000, 0x1000, {},
+                  { .i2c_internal = false /* shield 0 */ } },
+                { "i2c3", make_i2c, &mms->i2c[3], 0x4020d000, 0x1000, {},
+                  { .i2c_internal = false /* shield 1 */ } },
             },
         }, {
             .name = "apb_ppcexp2",
@@ -956,15 +1003,20 @@ static void mps2tz_common_init(MachineState *machine)
         }, {
             .name = "apb_ppcexp1",
             .ports = {
-                { "i2c0", make_i2c, &mms->i2c[0], 0x41200000, 0x1000 },
-                { "i2c1", make_i2c, &mms->i2c[1], 0x41201000, 0x1000 },
+                { "i2c0", make_i2c, &mms->i2c[0], 0x41200000, 0x1000, {},
+                  { .i2c_internal = true /* touchscreen */ } },
+                { "i2c1", make_i2c, &mms->i2c[1], 0x41201000, 0x1000, {},
+                  { .i2c_internal = true /* audio conf */ } },
                 { "spi0", make_spi, &mms->spi[0], 0x41202000, 0x1000, { 52 } },
                 { "spi1", make_spi, &mms->spi[1], 0x41203000, 0x1000, { 53 } },
                 { "spi2", make_spi, &mms->spi[2], 0x41204000, 0x1000, { 54 } },
-                { "i2c2", make_i2c, &mms->i2c[2], 0x41205000, 0x1000 },
-                { "i2c3", make_i2c, &mms->i2c[3], 0x41206000, 0x1000 },
+                { "i2c2", make_i2c, &mms->i2c[2], 0x41205000, 0x1000, {},
+                  { .i2c_internal = false /* shield 0 */ } },
+                { "i2c3", make_i2c, &mms->i2c[3], 0x41206000, 0x1000, {},
+                  { .i2c_internal = false /* shield 1 */ } },
                 { /* port 7 reserved */ },
-                { "i2c4", make_i2c, &mms->i2c[4], 0x41208000, 0x1000 },
+                { "i2c4", make_i2c, &mms->i2c[4], 0x41208000, 0x1000, {},
+                  { .i2c_internal = true /* DDR4 EEPROM */ } },
             },
         }, {
             .name = "apb_ppcexp2",
@@ -1006,15 +1058,20 @@ static void mps2tz_common_init(MachineState *machine)
         }, {
             .name = "apb_ppcexp1",
             .ports = {
-                { "i2c0", make_i2c, &mms->i2c[0], 0x49200000, 0x1000 },
-                { "i2c1", make_i2c, &mms->i2c[1], 0x49201000, 0x1000 },
+                { "i2c0", make_i2c, &mms->i2c[0], 0x49200000, 0x1000, {},
+                  { .i2c_internal = true /* touchscreen */ } },
+                { "i2c1", make_i2c, &mms->i2c[1], 0x49201000, 0x1000, {},
+                  { .i2c_internal = true /* audio conf */ } },
                 { "spi0", make_spi, &mms->spi[0], 0x49202000, 0x1000, { 53 } },
                 { "spi1", make_spi, &mms->spi[1], 0x49203000, 0x1000, { 54 } },
                 { "spi2", make_spi, &mms->spi[2], 0x49204000, 0x1000, { 55 } },
-                { "i2c2", make_i2c, &mms->i2c[2], 0x49205000, 0x1000 },
-                { "i2c3", make_i2c, &mms->i2c[3], 0x49206000, 0x1000 },
+                { "i2c2", make_i2c, &mms->i2c[2], 0x49205000, 0x1000, {},
+                  { .i2c_internal = false /* shield 0 */ } },
+                { "i2c3", make_i2c, &mms->i2c[3], 0x49206000, 0x1000, {},
+                  { .i2c_internal = false /* shield 1 */ } },
                 { /* port 7 reserved */ },
-                { "i2c4", make_i2c, &mms->i2c[4], 0x49208000, 0x1000 },
+                { "i2c4", make_i2c, &mms->i2c[4], 0x49208000, 0x1000, {},
+                  { .i2c_internal = true /* DDR4 EEPROM */ } },
             },
         }, {
             .name = "apb_ppcexp2",
@@ -1040,6 +1097,10 @@ static void mps2tz_common_init(MachineState *machine)
                 { "gpio1", make_unimp_dev, &mms->gpio[1], 0x41101000, 0x1000 },
                 { "gpio2", make_unimp_dev, &mms->gpio[2], 0x41102000, 0x1000 },
                 { "gpio3", make_unimp_dev, &mms->gpio[3], 0x41103000, 0x1000 },
+                { /* port 4 USER AHB interface 0 */ },
+                { /* port 5 USER AHB interface 1 */ },
+                { /* port 6 USER AHB interface 2 */ },
+                { /* port 7 USER AHB interface 3 */ },
                 { "eth-usb", make_eth_usb, NULL, 0x41400000, 0x200000, { 49 } },
             },
         },
@@ -1084,7 +1145,7 @@ static void mps2tz_common_init(MachineState *machine)
             }
 
             mr = pinfo->devfn(mms, pinfo->opaque, pinfo->name, pinfo->size,
-                              pinfo->irqs);
+                              pinfo->irqs, &pinfo->extradata);
             portname = g_strdup_printf("port[%d]", port);
             object_property_set_link(OBJECT(ppc), portname, OBJECT(mr),
                                      &error_fatal);
@@ -1155,7 +1216,7 @@ static void mps2tz_common_init(MachineState *machine)
     }
 
     armv7m_load_kernel(ARM_CPU(first_cpu), machine->kernel_filename,
-                       boot_ram_size(mms));
+                       0, boot_ram_size(mms));
 }
 
 static void mps2_tz_idau_check(IDAUInterface *ii, uint32_t address,
@@ -1163,7 +1224,7 @@ static void mps2_tz_idau_check(IDAUInterface *ii, uint32_t address,
 {
     /*
      * The MPS2 TZ FPGA images have IDAUs in them which are connected to
-     * the Master Security Controllers. Thes have the same logic as
+     * the Master Security Controllers. These have the same logic as
      * is used by the IoTKit for the IDAU connected to the CPU, except
      * that MSCs don't care about the NSC attribute.
      */
@@ -1197,7 +1258,7 @@ static void mps2_set_remap(Object *obj, const char *value, Error **errp)
     }
 }
 
-static void mps2_machine_reset(MachineState *machine)
+static void mps2_machine_reset(MachineState *machine, ShutdownCause reason)
 {
     MPS2TZMachineState *mms = MPS2TZ_MACHINE(machine);
 
@@ -1207,17 +1268,24 @@ static void mps2_machine_reset(MachineState *machine)
      * reset see the correct mapping.
      */
     remap_memory(mms, mms->remap);
-    qemu_devices_reset();
+    qemu_devices_reset(reason);
 }
 
 static void mps2tz_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     IDAUInterfaceClass *iic = IDAU_INTERFACE_CLASS(oc);
+    MPS2TZMachineClass *mmc = MPS2TZ_MACHINE_CLASS(oc);
 
     mc->init = mps2tz_common_init;
     mc->reset = mps2_machine_reset;
     iic->check = mps2_tz_idau_check;
+
+    /* Most machines leave these at the SSE defaults */
+    mmc->cpu0_mpu_ns = MPU_REGION_DEFAULT;
+    mmc->cpu0_mpu_s = MPU_REGION_DEFAULT;
+    mmc->cpu1_mpu_ns = MPU_REGION_DEFAULT;
+    mmc->cpu1_mpu_s = MPU_REGION_DEFAULT;
 }
 
 static void mps2tz_set_default_ram_info(MPS2TZMachineClass *mmc)
@@ -1244,6 +1312,10 @@ static void mps2tz_an505_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     MPS2TZMachineClass *mmc = MPS2TZ_MACHINE_CLASS(oc);
+    static const char * const valid_cpu_types[] = {
+        ARM_CPU_TYPE_NAME("cortex-m33"),
+        NULL
+    };
 
     mc->desc = "ARM MPS2 with AN505 FPGA image for Cortex-M33";
     mc->default_cpus = 1;
@@ -1251,6 +1323,7 @@ static void mps2tz_an505_class_init(ObjectClass *oc, void *data)
     mc->max_cpus = mc->default_cpus;
     mmc->fpga_type = FPGA_AN505;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-m33");
+    mc->valid_cpu_types = valid_cpu_types;
     mmc->scc_id = 0x41045050;
     mmc->sysclk_frq = 20 * 1000 * 1000; /* 20MHz */
     mmc->apb_periph_frq = mmc->sysclk_frq;
@@ -1273,6 +1346,10 @@ static void mps2tz_an521_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     MPS2TZMachineClass *mmc = MPS2TZ_MACHINE_CLASS(oc);
+    static const char * const valid_cpu_types[] = {
+        ARM_CPU_TYPE_NAME("cortex-m33"),
+        NULL
+    };
 
     mc->desc = "ARM MPS2 with AN521 FPGA image for dual Cortex-M33";
     mc->default_cpus = 2;
@@ -1280,6 +1357,7 @@ static void mps2tz_an521_class_init(ObjectClass *oc, void *data)
     mc->max_cpus = mc->default_cpus;
     mmc->fpga_type = FPGA_AN521;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-m33");
+    mc->valid_cpu_types = valid_cpu_types;
     mmc->scc_id = 0x41045210;
     mmc->sysclk_frq = 20 * 1000 * 1000; /* 20MHz */
     mmc->apb_periph_frq = mmc->sysclk_frq;
@@ -1302,6 +1380,10 @@ static void mps3tz_an524_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     MPS2TZMachineClass *mmc = MPS2TZ_MACHINE_CLASS(oc);
+    static const char * const valid_cpu_types[] = {
+        ARM_CPU_TYPE_NAME("cortex-m33"),
+        NULL
+    };
 
     mc->desc = "ARM MPS3 with AN524 FPGA image for dual Cortex-M33";
     mc->default_cpus = 2;
@@ -1309,6 +1391,7 @@ static void mps3tz_an524_class_init(ObjectClass *oc, void *data)
     mc->max_cpus = mc->default_cpus;
     mmc->fpga_type = FPGA_AN524;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-m33");
+    mc->valid_cpu_types = valid_cpu_types;
     mmc->scc_id = 0x41045240;
     mmc->sysclk_frq = 32 * 1000 * 1000; /* 32MHz */
     mmc->apb_periph_frq = mmc->sysclk_frq;
@@ -1336,6 +1419,10 @@ static void mps3tz_an547_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
     MPS2TZMachineClass *mmc = MPS2TZ_MACHINE_CLASS(oc);
+    static const char * const valid_cpu_types[] = {
+        ARM_CPU_TYPE_NAME("cortex-m55"),
+        NULL
+    };
 
     mc->desc = "ARM MPS3 with AN547 FPGA image for Cortex-M55";
     mc->default_cpus = 1;
@@ -1343,6 +1430,7 @@ static void mps3tz_an547_class_init(ObjectClass *oc, void *data)
     mc->max_cpus = mc->default_cpus;
     mmc->fpga_type = FPGA_AN547;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-m55");
+    mc->valid_cpu_types = valid_cpu_types;
     mmc->scc_id = 0x41055470;
     mmc->sysclk_frq = 32 * 1000 * 1000; /* 32MHz */
     mmc->apb_periph_frq = 25 * 1000 * 1000; /* 25MHz */
@@ -1354,6 +1442,7 @@ static void mps3tz_an547_class_init(ObjectClass *oc, void *data)
     mmc->numirq = 96;
     mmc->uart_overflow_irq = 48;
     mmc->init_svtor = 0x00000000;
+    mmc->cpu0_mpu_s = mmc->cpu0_mpu_ns = 16;
     mmc->sram_addr_width = 21;
     mmc->raminfo = an547_raminfo;
     mmc->armsse_type = TYPE_SSE300;

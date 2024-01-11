@@ -12,7 +12,7 @@
 #include "hw/sysbus.h"
 #include "migration/vmstate.h"
 #include "hw/irq.h"
-#include "hw/pci/pci.h"
+#include "hw/pci/pci_device.h"
 #include "hw/pci/pci_bus.h"
 #include "hw/pci/pci_host.h"
 #include "hw/qdev-properties.h"
@@ -147,7 +147,7 @@ static const VMStateDescription pci_vpb_vmstate = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = pci_vpb_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(imap, PCIVPBState, 3),
         VMSTATE_UINT32_ARRAY(smap, PCIVPBState, 3),
         VMSTATE_UINT32(selfid, PCIVPBState),
@@ -405,9 +405,9 @@ static void pci_vpb_realize(DeviceState *dev, Error **errp)
     memory_region_init(&s->pci_io_space, OBJECT(s), "pci_io", 4 * GiB);
     memory_region_init(&s->pci_mem_space, OBJECT(s), "pci_mem", 4 * GiB);
 
-    pci_root_bus_new_inplace(&s->pci_bus, sizeof(s->pci_bus), dev, "pci",
-                             &s->pci_mem_space, &s->pci_io_space,
-                             PCI_DEVFN(11, 0), TYPE_PCI_BUS);
+    pci_root_bus_init(&s->pci_bus, sizeof(s->pci_bus), dev, "pci",
+                      &s->pci_mem_space, &s->pci_io_space,
+                      PCI_DEVFN(11, 0), TYPE_PCI_BUS);
     h->bus = &s->pci_bus;
 
     object_initialize(&s->pci_dev, sizeof(s->pci_dev), TYPE_VERSATILE_PCI_HOST);
@@ -422,7 +422,8 @@ static void pci_vpb_realize(DeviceState *dev, Error **errp)
         mapfn = pci_vpb_map_irq;
     }
 
-    pci_bus_irqs(&s->pci_bus, pci_vpb_set_irq, mapfn, s->irq, 4);
+    pci_bus_irqs(&s->pci_bus, pci_vpb_set_irq, s->irq, 4);
+    pci_bus_map_irqs(&s->pci_bus, mapfn);
 
     /* Our memory regions are:
      * 0 : our control registers

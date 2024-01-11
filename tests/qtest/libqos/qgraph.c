@@ -17,7 +17,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "libqtest.h"
+#include "../libqtest.h"
 #include "qemu/queue.h"
 #include "qgraph_internal.h"
 #include "qgraph.h"
@@ -54,7 +54,7 @@ struct QOSStackElement {
     int length;
 };
 
-/* Each enty in these hash table will consist of <string, node/edge> pair. */
+/* Each entry in these hash table will consist of <string, node/edge> pair. */
 static GHashTable *edge_table;
 static GHashTable *node_table;
 
@@ -93,7 +93,7 @@ static void add_edge(const char *source, const char *dest,
     edge->type = type;
     edge->dest = g_strdup(dest);
     edge->edge_name = g_strdup(opts->edge_name ?: dest);
-    edge->arg = g_memdup(opts->arg, opts->size_arg);
+    edge->arg = g_memdup2(opts->arg, opts->size_arg);
 
     edge->before_cmd_line =
         opts->before_cmd_line ? g_strconcat(" ", opts->before_cmd_line, NULL) : NULL;
@@ -214,7 +214,7 @@ static QOSGraphEdge *search_list_edges(QOSGraphEdgeList *edgelist,
 /**
  * search_machine(): search for a machine @name in the node hash
  * table. A machine is the child of the root node.
- * This function forces the research in the childs of the root,
+ * This function forces the research in the children of the root,
  * to check the node is a proper machine
  *
  * Returns: on success: the %QOSGraphNode

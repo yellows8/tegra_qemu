@@ -350,7 +350,7 @@ static const VMStateDescription vmstate_ssi_sd = {
     .version_id = 7,
     .minimum_version_id = 7,
     .post_load = ssi_sd_post_load,
-    .fields = (VMStateField []) {
+    .fields = (const VMStateField []) {
         VMSTATE_UINT32(mode, ssi_sd_state),
         VMSTATE_INT32(cmd, ssi_sd_state),
         VMSTATE_UINT8_ARRAY(cmdarg, ssi_sd_state, 4),
@@ -368,37 +368,9 @@ static const VMStateDescription vmstate_ssi_sd = {
 
 static void ssi_sd_realize(SSIPeripheral *d, Error **errp)
 {
-    ERRP_GUARD();
     ssi_sd_state *s = SSI_SD(d);
-    DeviceState *carddev;
-    DriveInfo *dinfo;
 
-    qbus_create_inplace(&s->sdbus, sizeof(s->sdbus), TYPE_SD_BUS,
-                        DEVICE(d), "sd-bus");
-
-    /* Create and plug in the sd card */
-    /* FIXME use a qdev drive property instead of drive_get_next() */
-    dinfo = drive_get_next(IF_SD);
-    carddev = qdev_new(TYPE_SD_CARD);
-    if (dinfo) {
-        if (!qdev_prop_set_drive_err(carddev, "drive",
-                                     blk_by_legacy_dinfo(dinfo), errp)) {
-            goto fail;
-        }
-    }
-
-    if (!object_property_set_bool(OBJECT(carddev), "spi", true, errp)) {
-        goto fail;
-    }
-
-    if (!qdev_realize_and_unref(carddev, BUS(&s->sdbus), errp)) {
-        goto fail;
-    }
-
-    return;
-
-fail:
-    error_prepend(errp, "failed to init SD card: ");
+    qbus_init(&s->sdbus, sizeof(s->sdbus), TYPE_SD_BUS, DEVICE(d), "sd-bus");
 }
 
 static void ssi_sd_reset(DeviceState *dev)
@@ -427,20 +399,17 @@ static void ssi_sd_class_init(ObjectClass *klass, void *data)
     k->cs_polarity = SSI_CS_LOW;
     dc->vmsd = &vmstate_ssi_sd;
     dc->reset = ssi_sd_reset;
-    /* Reason: init() method uses drive_get_next() */
+    /* Reason: GPIO chip-select line should be wired up */
     dc->user_creatable = false;
 }
 
-static const TypeInfo ssi_sd_info = {
-    .name          = TYPE_SSI_SD,
-    .parent        = TYPE_SSI_PERIPHERAL,
-    .instance_size = sizeof(ssi_sd_state),
-    .class_init    = ssi_sd_class_init,
+static const TypeInfo ssi_sd_types[] = {
+    {
+        .name           = TYPE_SSI_SD,
+        .parent         = TYPE_SSI_PERIPHERAL,
+        .instance_size  = sizeof(ssi_sd_state),
+        .class_init     = ssi_sd_class_init,
+    },
 };
 
-static void ssi_sd_register_types(void)
-{
-    type_register_static(&ssi_sd_info);
-}
-
-type_init(ssi_sd_register_types)
+DEFINE_TYPES(ssi_sd_types)

@@ -7,11 +7,12 @@
  * See the COPYING file in the top-level directory.
  */
 
+/* header to be included in non-NVMM-specific code */
+
 #ifndef QEMU_NVMM_H
 #define QEMU_NVMM_H
 
-#include "config-host.h"
-#include "qemu-common.h"
+#ifdef NEED_CPU_H
 
 #ifdef CONFIG_NVMM
 
@@ -23,4 +24,6 @@ int nvmm_enabled(void);
 
 #endif /* CONFIG_NVMM */
 
-#endif /* CONFIG_NVMM */
+#endif /* NEED_CPU_H */
+
+#endif /* QEMU_NVMM_H */

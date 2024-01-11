@@ -32,7 +32,6 @@
 /* For crc32 */
 #include <zlib.h>
 
-#include "qemu-common.h"
 #include "hw/irq.h"
 #include "hw/qdev-clock.h"
 #include "hw/qdev-properties.h"
@@ -99,6 +98,8 @@ static const char *emc_reg_name(int regno)
 
 static void emc_reset(NPCM7xxEMCState *emc)
 {
+    uint32_t value;
+
     trace_npcm7xx_emc_reset(emc->emc_num);
 
     memset(&emc->regs[0], 0, sizeof(emc->regs));
@@ -113,6 +114,16 @@ static void emc_reset(NPCM7xxEMCState *emc)
 
     emc->tx_active = false;
     emc->rx_active = false;
+
+    /* Set the MAC address in the register space. */
+    value = (emc->conf.macaddr.a[0] << 24) |
+        (emc->conf.macaddr.a[1] << 16) |
+        (emc->conf.macaddr.a[2] << 8) |
+        emc->conf.macaddr.a[3];
+    emc->regs[REG_CAMM_BASE] = value;
+
+    value = (emc->conf.macaddr.a[4] << 24) | (emc->conf.macaddr.a[5] << 16);
+    emc->regs[REG_CAML_BASE] = value;
 }
 
 static void npcm7xx_emc_reset(DeviceState *dev)
@@ -200,7 +211,8 @@ static void emc_update_irq_from_reg_change(NPCM7xxEMCState *emc)
 
 static int emc_read_tx_desc(dma_addr_t addr, NPCM7xxEMCTxDesc *desc)
 {
-    if (dma_memory_read(&address_space_memory, addr, desc, sizeof(*desc))) {
+    if (dma_memory_read(&address_space_memory, addr, desc,
+                        sizeof(*desc), MEMTXATTRS_UNSPECIFIED)) {
         qemu_log_mask(LOG_GUEST_ERROR, "%s: Failed to read descriptor @ 0x%"
                       HWADDR_PRIx "\n", __func__, addr);
         return -1;
@@ -221,7 +233,7 @@ static int emc_write_tx_desc(const NPCM7xxEMCTxDesc *desc, dma_addr_t addr)
     le_desc.status_and_length = cpu_to_le32(desc->status_and_length);
     le_desc.ntxdsa = cpu_to_le32(desc->ntxdsa);
     if (dma_memory_write(&address_space_memory, addr, &le_desc,
-                         sizeof(le_desc))) {
+                         sizeof(le_desc), MEMTXATTRS_UNSPECIFIED)) {
         qemu_log_mask(LOG_GUEST_ERROR, "%s: Failed to write descriptor @ 0x%"
                       HWADDR_PRIx "\n", __func__, addr);
         return -1;
@@ -231,7 +243,8 @@ static int emc_write_tx_desc(const NPCM7xxEMCTxDesc *desc, dma_addr_t addr)
 
 static int emc_read_rx_desc(dma_addr_t addr, NPCM7xxEMCRxDesc *desc)
 {
-    if (dma_memory_read(&address_space_memory, addr, desc, sizeof(*desc))) {
+    if (dma_memory_read(&address_space_memory, addr, desc,
+                        sizeof(*desc), MEMTXATTRS_UNSPECIFIED)) {
         qemu_log_mask(LOG_GUEST_ERROR, "%s: Failed to read descriptor @ 0x%"
                       HWADDR_PRIx "\n", __func__, addr);
         return -1;
@@ -252,7 +265,7 @@ static int emc_write_rx_desc(const NPCM7xxEMCRxDesc *desc, dma_addr_t addr)
     le_desc.reserved = cpu_to_le32(desc->reserved);
     le_desc.nrxdsa = cpu_to_le32(desc->nrxdsa);
     if (dma_memory_write(&address_space_memory, addr, &le_desc,
-                         sizeof(le_desc))) {
+                         sizeof(le_desc), MEMTXATTRS_UNSPECIFIED)) {
         qemu_log_mask(LOG_GUEST_ERROR, "%s: Failed to write descriptor @ 0x%"
                       HWADDR_PRIx "\n", __func__, addr);
         return -1;
@@ -282,6 +295,12 @@ static void emc_halt_rx(NPCM7xxEMCState *emc, uint32_t mista_flag)
 {
     emc->rx_active = false;
     emc_set_mista(emc, mista_flag);
+}
+
+static void emc_enable_rx_and_flush(NPCM7xxEMCState *emc)
+{
+    emc->rx_active = true;
+    qemu_flush_queued_packets(qemu_get_queue(emc->nic));
 }
 
 static void emc_set_next_tx_descriptor(NPCM7xxEMCState *emc,
@@ -360,7 +379,8 @@ static void emc_try_send_next_packet(NPCM7xxEMCState *emc)
         buf = malloced_buf;
     }
 
-    if (dma_memory_read(&address_space_memory, next_buf_addr, buf, length)) {
+    if (dma_memory_read(&address_space_memory, next_buf_addr, buf,
+                        length, MEMTXATTRS_UNSPECIFIED)) {
         qemu_log_mask(LOG_GUEST_ERROR, "%s: Failed to read packet @ 0x%x\n",
                       __func__, next_buf_addr);
         emc_set_mista(emc, REG_MISTA_TXBERR);
@@ -424,13 +444,25 @@ static bool emc_receive_filter1(NPCM7xxEMCState *emc, const uint8_t *buf,
         }
     case ETH_PKT_UCAST: {
         bool matches;
+        uint32_t value;
+        struct MACAddr mac;
         if (emc->regs[REG_CAMCMR] & REG_CAMCMR_AUP) {
             return true;
         }
+
+        value = emc->regs[REG_CAMM_BASE];
+        mac.a[0] = value >> 24;
+        mac.a[1] = value >> 16;
+        mac.a[2] = value >> 8;
+        mac.a[3] = value >> 0;
+        value = emc->regs[REG_CAML_BASE];
+        mac.a[4] = value >> 24;
+        mac.a[5] = value >> 16;
+
         matches = ((emc->regs[REG_CAMCMR] & REG_CAMCMR_ECMP) &&
                    /* We only support one CAM register, CAM0. */
                    (emc->regs[REG_CAMEN] & (1 << 0)) &&
-                   memcmp(buf, emc->conf.macaddr.a, ETH_ALEN) == 0);
+                   memcmp(buf, mac.a, ETH_ALEN) == 0);
         if (emc->regs[REG_CAMCMR] & REG_CAMCMR_CCAM) {
             *fail_reason = "MACADDR matched, comparison complemented";
             return !matches;
@@ -545,10 +577,11 @@ static ssize_t emc_receive(NetClientState *nc, const uint8_t *buf, size_t len1)
 
     buf_addr = rx_desc.rxbsa;
     emc->regs[REG_CRXBSA] = buf_addr;
-    if (dma_memory_write(&address_space_memory, buf_addr, buf, len) ||
+    if (dma_memory_write(&address_space_memory, buf_addr, buf,
+                         len, MEMTXATTRS_UNSPECIFIED) ||
         (!(emc->regs[REG_MCMDR] & REG_MCMDR_SPCRC) &&
-         dma_memory_write(&address_space_memory, buf_addr + len, crc_ptr,
-                          4))) {
+         dma_memory_write(&address_space_memory, buf_addr + len,
+                          crc_ptr, 4, MEMTXATTRS_UNSPECIFIED))) {
         qemu_log_mask(LOG_GUEST_ERROR, "%s: Bus error writing packet\n",
                       __func__);
         emc_set_mista(emc, REG_MISTA_RXBERR);
@@ -579,13 +612,6 @@ static ssize_t emc_receive(NetClientState *nc, const uint8_t *buf, size_t len1)
     emc_update_rx_irq(emc);
     trace_npcm7xx_emc_rx_done(emc->regs[REG_CRXDSA]);
     return len;
-}
-
-static void emc_try_receive_next_packet(NPCM7xxEMCState *emc)
-{
-    if (emc_can_receive(qemu_get_queue(emc->nic))) {
-        qemu_flush_queued_packets(qemu_get_queue(emc->nic));
-    }
 }
 
 static uint64_t npcm7xx_emc_read(void *opaque, hwaddr offset, unsigned size)
@@ -659,15 +685,9 @@ static void npcm7xx_emc_write(void *opaque, hwaddr offset,
         break;
     case REG_CAMM_BASE + 0:
         emc->regs[reg] = value;
-        emc->conf.macaddr.a[0] = value >> 24;
-        emc->conf.macaddr.a[1] = value >> 16;
-        emc->conf.macaddr.a[2] = value >> 8;
-        emc->conf.macaddr.a[3] = value >> 0;
         break;
     case REG_CAML_BASE + 0:
         emc->regs[reg] = value;
-        emc->conf.macaddr.a[4] = value >> 24;
-        emc->conf.macaddr.a[5] = value >> 16;
         break;
     case REG_MCMDR: {
         uint32_t prev;
@@ -703,7 +723,7 @@ static void npcm7xx_emc_write(void *opaque, hwaddr offset,
             emc->regs[REG_MGSTA] |= REG_MGSTA_RXHA;
         }
         if (value & REG_MCMDR_RXON) {
-            emc->rx_active = true;
+            emc_enable_rx_and_flush(emc);
         } else {
             emc_halt_rx(emc, 0);
         }
@@ -739,8 +759,7 @@ static void npcm7xx_emc_write(void *opaque, hwaddr offset,
         break;
     case REG_RSDR:
         if (emc->regs[REG_MCMDR] & REG_MCMDR_RXON) {
-            emc->rx_active = true;
-            emc_try_receive_next_packet(emc);
+            emc_enable_rx_and_flush(emc);
         }
         break;
     case REG_MIIDA:
@@ -802,7 +821,8 @@ static void npcm7xx_emc_realize(DeviceState *dev, Error **errp)
 
     qemu_macaddr_default_if_unset(&emc->conf.macaddr);
     emc->nic = qemu_new_nic(&net_npcm7xx_emc_info, &emc->conf,
-                            object_get_typename(OBJECT(dev)), dev->id, emc);
+                            object_get_typename(OBJECT(dev)), dev->id,
+                            &dev->mem_reentrancy_guard, emc);
     qemu_format_nic_info_str(qemu_get_queue(emc->nic), emc->conf.macaddr.a);
 }
 
@@ -817,7 +837,7 @@ static const VMStateDescription vmstate_npcm7xx_emc = {
     .name = TYPE_NPCM7XX_EMC,
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(emc_num, NPCM7xxEMCState),
         VMSTATE_UINT32_ARRAY(regs, NPCM7xxEMCState, NPCM7XX_NUM_EMC_REGS),
         VMSTATE_BOOL(tx_active, NPCM7xxEMCState),

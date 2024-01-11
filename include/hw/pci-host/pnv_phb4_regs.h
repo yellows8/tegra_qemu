@@ -77,10 +77,12 @@
 #define   PEC_NEST_STK_BAR_EN_PHB               PPC_BIT(2)
 #define   PEC_NEST_STK_BAR_EN_INT               PPC_BIT(3)
 #define PEC_NEST_STK_DATA_FRZ_TYPE      0x15
-#define PEC_NEST_STK_PBCQ_TUN_BAR       0x16
+#define PEC_NEST_STK_PBCQ_SPARSE_PAGE   0x16 /* P10 */
+#define PEC_NEST_STK_PBCQ_CACHE_INJ     0x17 /* P10 */
 
 /* XSCOM PCI global registers */
 #define PEC_PCI_PBAIB_HW_CONFIG         0x00
+#define PEC_PCI_PBAIB_HW_OVR            0x01
 #define PEC_PCI_PBAIB_READ_STK_OVR      0x02
 
 /* XSCOM PCI per-stack registers */
@@ -220,11 +222,14 @@
 #define   PHB_PAPR_ERR_INJ_MASK_MMIO            PPC_BITMASK(16, 63)
 #define PHB_ETU_ERR_SUMMARY             0x2c8
 #define PHB_INT_NOTIFY_ADDR             0x300
+#define   PHB_INT_NOTIFY_ADDR_64K       PPC_BIT(1)   /* P10 */
 #define PHB_INT_NOTIFY_INDEX            0x308
 
 /* Fundamental register set B */
 #define PHB_VERSION                     0x800
 #define PHB_CTRLR                       0x810
+#define   PHB_CTRLR_IRQ_PQ_DISABLE      PPC_BIT(9)   /* P10 */
+#define   PHB_CTRLR_IRQ_ABT_MODE        PPC_BIT(10)  /* P10 */
 #define   PHB_CTRLR_IRQ_PGSZ_64K        PPC_BIT(11)
 #define   PHB_CTRLR_IRQ_STORE_EOI       PPC_BIT(12)
 #define   PHB_CTRLR_MMIO_RD_STRICT      PPC_BIT(13)

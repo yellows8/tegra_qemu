@@ -23,7 +23,6 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "qemu/datadir.h"
 #include "qapi/error.h"
 #include "ui/console.h"
@@ -345,7 +344,7 @@ static const VMStateDescription vmstate_tcx = {
     .version_id = 4,
     .minimum_version_id = 4,
     .post_load = vmstate_tcx_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT16(height, TCXState),
         VMSTATE_UINT16(width, TCXState),
         VMSTATE_UINT16(depth, TCXState),

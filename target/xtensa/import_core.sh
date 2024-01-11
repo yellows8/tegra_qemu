@@ -41,8 +41,7 @@ tar -xf "$OVERLAY" -O binutils/xtensa-modules.c | \
 cat <<EOF > "${TARGET}.c"
 #include "qemu/osdep.h"
 #include "cpu.h"
-#include "exec/gdbstub.h"
-#include "qemu-common.h"
+#include "gdbstub/helpers.h"
 #include "qemu/host-utils.h"
 
 #include "core-$NAME/core-isa.h"
@@ -66,3 +65,6 @@ static XtensaConfig $NAME __attribute__((unused)) = {
 
 REGISTER_CORE($NAME)
 EOF
+
+grep -qxf core-${NAME}.c "$BASE"/cores.list || \
+    echo core-${NAME}.c >> "$BASE"/cores.list

@@ -105,7 +105,7 @@ typedef struct {
     uint32_t lo;
 } TLBSet;
 
-typedef struct CPUCRISState {
+typedef struct CPUArchState {
 	uint32_t regs[16];
 	/* P0 - P15 are referred to as special registers in the docs.  */
 	uint32_t pregs[16];
@@ -173,37 +173,47 @@ typedef struct CPUCRISState {
  *
  * A CRIS CPU.
  */
-struct CRISCPU {
-    /*< private >*/
+struct ArchCPU {
     CPUState parent_obj;
-    /*< public >*/
 
-    CPUNegativeOffsetState neg;
     CPUCRISState env;
 };
 
+/**
+ * CRISCPUClass:
+ * @parent_realize: The parent class' realize handler.
+ * @parent_phases: The parent class' reset phase handlers.
+ * @vr: Version Register value.
+ *
+ * A CRIS CPU model.
+ */
+struct CRISCPUClass {
+    CPUClass parent_class;
+
+    DeviceRealize parent_realize;
+    ResettablePhases parent_phases;
+
+    uint32_t vr;
+};
 
 #ifndef CONFIG_USER_ONLY
 extern const VMStateDescription vmstate_cris_cpu;
-#endif
 
 void cris_cpu_do_interrupt(CPUState *cpu);
 void crisv10_cpu_do_interrupt(CPUState *cpu);
 bool cris_cpu_exec_interrupt(CPUState *cpu, int int_req);
 
-void cris_cpu_dump_state(CPUState *cs, FILE *f, int flags);
-
+bool cris_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
+                       MMUAccessType access_type, int mmu_idx,
+                       bool probe, uintptr_t retaddr);
 hwaddr cris_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
+#endif
+
+void cris_cpu_dump_state(CPUState *cs, FILE *f, int flags);
 
 int crisv10_cpu_gdb_read_register(CPUState *cpu, GByteArray *buf, int reg);
 int cris_cpu_gdb_read_register(CPUState *cpu, GByteArray *buf, int reg);
 int cris_cpu_gdb_write_register(CPUState *cpu, uint8_t *buf, int reg);
-
-/* you can call this signal handler from your SIGBUS and SIGSEGV
-   signal handlers to inform the virtual CPU of exceptions. non zero
-   is returned if the signal was handled by the virtual CPU.  */
-int cpu_cris_signal_handler(int host_signum, void *pinfo,
-                           void *puc);
 
 void cris_initialize_tcg(void);
 void cris_initialize_crisv10_tcg(void);
@@ -246,11 +256,7 @@ enum {
 /* CRIS uses 8k pages.  */
 #define MMAP_SHIFT TARGET_PAGE_BITS
 
-#define CRIS_CPU_TYPE_SUFFIX "-" TYPE_CRIS_CPU
-#define CRIS_CPU_TYPE_NAME(name) (name CRIS_CPU_TYPE_SUFFIX)
 #define CPU_RESOLVING_TYPE TYPE_CRIS_CPU
-
-#define cpu_signal_handler cpu_cris_signal_handler
 
 /* MMU modes definitions */
 #define MMU_USER_IDX 1
@@ -258,10 +264,6 @@ static inline int cpu_mmu_index (CPUCRISState *env, bool ifetch)
 {
 	return !!(env->pregs[PR_CCS] & U_FLAG);
 }
-
-bool cris_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
-                       MMUAccessType access_type, int mmu_idx,
-                       bool probe, uintptr_t retaddr);
 
 /* Support function regs.  */
 #define SFR_RW_GC_CFG      0][0
@@ -273,13 +275,10 @@ bool cris_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
 #define SFR_RW_MM_TLB_LO   env->pregs[PR_SRS]][5
 #define SFR_RW_MM_TLB_HI   env->pregs[PR_SRS]][6
 
-typedef CPUCRISState CPUArchState;
-typedef CRISCPU ArchCPU;
-
 #include "exec/cpu-all.h"
 
-static inline void cpu_get_tb_cpu_state(CPUCRISState *env, target_ulong *pc,
-                                        target_ulong *cs_base, uint32_t *flags)
+static inline void cpu_get_tb_cpu_state(CPUCRISState *env, vaddr *pc,
+                                        uint64_t *cs_base, uint32_t *flags)
 {
     *pc = env->pc;
     *cs_base = 0;
@@ -287,8 +286,5 @@ static inline void cpu_get_tb_cpu_state(CPUCRISState *env, target_ulong *pc,
             (env->pregs[PR_CCS] & (S_FLAG | P_FLAG | U_FLAG
 				     | X_FLAG | PFIX_FLAG));
 }
-
-#define cpu_list cris_cpu_list
-void cris_cpu_list(void);
 
 #endif

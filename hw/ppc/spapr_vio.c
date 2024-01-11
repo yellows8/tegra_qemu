@@ -574,12 +574,13 @@ SpaprVioBus *spapr_vio_bus_init(void)
 
     /* Create bridge device */
     dev = qdev_new(TYPE_SPAPR_VIO_BRIDGE);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
     /* Create bus on bridge device */
-    qbus = qbus_create(TYPE_SPAPR_VIO_BUS, dev, "spapr-vio");
+    qbus = qbus_new(TYPE_SPAPR_VIO_BUS, dev, "spapr-vio");
     bus = SPAPR_VIO_BUS(qbus);
     bus->next_reg = SPAPR_VIO_REG_BASE;
+
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
     /* hcall-vio */
     spapr_register_hypercall(H_VIO_SIGNAL, h_vio_signal);
@@ -615,7 +616,7 @@ const VMStateDescription vmstate_spapr_vio = {
     .name = "spapr_vio",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         /* Sanity check */
         VMSTATE_UINT32_EQUAL(reg, SpaprVioDevice, NULL),
         VMSTATE_UINT32_EQUAL(irq, SpaprVioDevice, NULL),
@@ -726,7 +727,7 @@ void spapr_dt_vdevice(SpaprVioBus *bus, void *fdt)
 gchar *spapr_vio_stdout_path(SpaprVioBus *bus)
 {
     SpaprVioDevice *dev;
-    char *name, *path;
+    g_autofree char *name = NULL;
 
     dev = spapr_vty_get_default(bus);
     if (!dev) {
@@ -734,8 +735,6 @@ gchar *spapr_vio_stdout_path(SpaprVioBus *bus)
     }
 
     name = spapr_vio_get_dev_name(DEVICE(dev));
-    path = g_strdup_printf("/vdevice/%s", name);
 
-    g_free(name);
-    return path;
+    return g_strdup_printf("/vdevice/%s", name);
 }

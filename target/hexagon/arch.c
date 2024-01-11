@@ -1,5 +1,5 @@
 /*
- *  Copyright(c) 2019-2021 Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright(c) 2019-2023 Qualcomm Innovation Center, Inc. All Rights Reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -224,6 +224,7 @@ void arch_fpop_start(CPUHexagonState *env)
 
 void arch_fpop_end(CPUHexagonState *env)
 {
+    const bool pkt_need_commit = true;
     int flags = get_float_exception_flags(&env->fp_status);
     if (flags != 0) {
         SOFTFLOAT_TEST_FLAG(float_flag_inexact, FPINPF, FPINPE);
@@ -298,8 +299,8 @@ int arch_sf_recip_common(float32 *Rs, float32 *Rt, float32 *Rd, int *adjust,
     } else {
         PeV = 0x00;
         /* Basic checks passed */
-        n_exp = float32_getexp(RsV);
-        d_exp = float32_getexp(RtV);
+        n_exp = float32_getexp_raw(RsV);
+        d_exp = float32_getexp_raw(RtV);
         if ((n_exp - d_exp + SF_BIAS) <= SF_MANTBITS) {
             /* Near quotient underflow / inexact Q */
             PeV = 0x80;

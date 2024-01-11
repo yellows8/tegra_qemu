@@ -18,8 +18,11 @@ from collections import OrderedDict
 import os
 import re
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
+    Mapping,
+    Match,
     Optional,
     Set,
     Union,
@@ -30,8 +33,25 @@ from .error import QAPISemError, QAPISourceError
 from .source import QAPISourceInfo
 
 
+if TYPE_CHECKING:
+    # pylint: disable=cyclic-import
+    # TODO: Remove cycle. [schema -> expr -> parser -> schema]
+    from .schema import QAPISchemaFeature, QAPISchemaMember
+
+
 # Return value alias for get_expr().
 _ExprValue = Union[List[object], Dict[str, object], str, bool]
+
+
+class QAPIExpression(Dict[str, object]):
+    # pylint: disable=too-few-public-methods
+    def __init__(self,
+                 data: Mapping[str, object],
+                 info: QAPISourceInfo,
+                 doc: Optional['QAPIDoc'] = None):
+        super().__init__(data)
+        self.info = info
+        self.doc: Optional['QAPIDoc'] = doc
 
 
 class QAPIParseError(QAPISourceError):
@@ -86,7 +106,7 @@ class QAPISchemaParser:
         self.line_pos = 0
 
         # Parser output:
-        self.exprs: List[Dict[str, object]] = []
+        self.exprs: List[QAPIExpression] = []
         self.docs: List[QAPIDoc] = []
 
         # Showtime!
@@ -133,8 +153,7 @@ class QAPISchemaParser:
                                        "value of 'include' must be a string")
                 incl_fname = os.path.join(os.path.dirname(self._fname),
                                           include)
-                self.exprs.append({'expr': {'include': incl_fname},
-                                   'info': info})
+                self._add_expr(OrderedDict({'include': incl_fname}), info)
                 exprs_include = self._include(include, info, incl_fname,
                                               self._included)
                 if exprs_include:
@@ -151,16 +170,17 @@ class QAPISchemaParser:
                 for name, value in pragma.items():
                     self._pragma(name, value, info)
             else:
-                expr_elem = {'expr': expr,
-                             'info': info}
-                if cur_doc:
-                    if not cur_doc.symbol:
-                        raise QAPISemError(
-                            cur_doc.info, "definition documentation required")
-                    expr_elem['doc'] = cur_doc
-                self.exprs.append(expr_elem)
+                if cur_doc and not cur_doc.symbol:
+                    raise QAPISemError(
+                        cur_doc.info, "definition documentation required")
+                self._add_expr(expr, info, cur_doc)
             cur_doc = None
         self.reject_expr_doc(cur_doc)
+
+    def _add_expr(self, expr: Mapping[str, object],
+                  info: QAPISourceInfo,
+                  doc: Optional['QAPIDoc'] = None) -> None:
+        self.exprs.append(QAPIExpression(expr, info, doc))
 
     @staticmethod
     def reject_expr_doc(doc: Optional['QAPIDoc']) -> None:
@@ -327,7 +347,7 @@ class QAPISchemaParser:
             elif not self.tok.isspace():
                 # Show up to next structural, whitespace or quote
                 # character
-                match = must_match('[^[\\]{}:,\\s\'"]+',
+                match = must_match('[^[\\]{}:,\\s\']+',
                                    self.src[self.cursor-1:])
                 raise QAPIParseError(self, "stray '%s'" % match.group(0))
 
@@ -447,63 +467,79 @@ class QAPIDoc:
     """
 
     class Section:
-        def __init__(self, parser, name=None, indent=0):
+        # pylint: disable=too-few-public-methods
+        def __init__(self, parser: QAPISchemaParser,
+                     name: Optional[str] = None):
             # parser, for error messages about indentation
             self._parser = parser
             # optional section name (argument/member or section name)
             self.name = name
+            # section text without section name
             self.text = ''
-            # the expected indent level of the text of this section
-            self._indent = indent
+            # indentation to strip (None means indeterminate)
+            self._indent = None if self.name else 0
 
-        def append(self, line):
-            # Strip leading spaces corresponding to the expected indent level
-            # Blank lines are always OK.
+        def append(self, line: str) -> None:
+            line = line.rstrip()
+
             if line:
                 indent = must_match(r'\s*', line).end()
-                if indent < self._indent:
+                if self._indent is None:
+                    # indeterminate indentation
+                    if self.text != '':
+                        # non-blank, non-first line determines indentation
+                        self._indent = indent
+                elif indent < self._indent:
                     raise QAPIParseError(
                         self._parser,
                         "unexpected de-indent (expected at least %d spaces)" %
                         self._indent)
                 line = line[self._indent:]
 
-            self.text += line.rstrip() + '\n'
+            self.text += line + '\n'
 
     class ArgSection(Section):
-        def __init__(self, parser, name, indent=0):
-            super().__init__(parser, name, indent)
-            self.member = None
+        def __init__(self, parser: QAPISchemaParser,
+                     name: str):
+            super().__init__(parser, name)
+            self.member: Optional['QAPISchemaMember'] = None
 
-        def connect(self, member):
+        def connect(self, member: 'QAPISchemaMember') -> None:
             self.member = member
 
-    def __init__(self, parser, info):
+    class NullSection(Section):
+        """
+        Immutable dummy section for use at the end of a doc block.
+        """
+        # pylint: disable=too-few-public-methods
+        def append(self, line: str) -> None:
+            assert False, "Text appended after end_comment() called."
+
+    def __init__(self, parser: QAPISchemaParser, info: QAPISourceInfo):
         # self._parser is used to report errors with QAPIParseError.  The
         # resulting error position depends on the state of the parser.
         # It happens to be the beginning of the comment.  More or less
         # servicable, but action at a distance.
         self._parser = parser
         self.info = info
-        self.symbol = None
+        self.symbol: Optional[str] = None
         self.body = QAPIDoc.Section(parser)
-        # dict mapping parameter name to ArgSection
-        self.args = OrderedDict()
-        self.features = OrderedDict()
-        # a list of Section
-        self.sections = []
+        # dicts mapping parameter/feature names to their ArgSection
+        self.args: Dict[str, QAPIDoc.ArgSection] = OrderedDict()
+        self.features: Dict[str, QAPIDoc.ArgSection] = OrderedDict()
+        self.sections: List[QAPIDoc.Section] = []
         # the current section
         self._section = self.body
         self._append_line = self._append_body_line
 
-    def has_section(self, name):
+    def has_section(self, name: str) -> bool:
         """Return True if we have a section with this name."""
         for i in self.sections:
             if i.name == name:
                 return True
         return False
 
-    def append(self, line):
+    def append(self, line: str) -> None:
         """
         Parse a comment line and add it to the documentation.
 
@@ -524,18 +560,18 @@ class QAPIDoc:
         line = line[1:]
         self._append_line(line)
 
-    def end_comment(self):
-        self._end_section()
+    def end_comment(self) -> None:
+        self._switch_section(QAPIDoc.NullSection(self._parser))
 
     @staticmethod
-    def _is_section_tag(name):
-        return name in ('Returns:', 'Since:',
-                        # those are often singular or plural
-                        'Note:', 'Notes:',
-                        'Example:', 'Examples:',
-                        'TODO:')
+    def _match_at_name_colon(string: str) -> Optional[Match[str]]:
+        return re.match(r'@([^:]*): *', string)
 
-    def _append_body_line(self, line):
+    @staticmethod
+    def _match_section_tag(string: str) -> Optional[Match[str]]:
+        return re.match(r'(Returns|Since|Notes?|Examples?|TODO): *', string)
+
+    def _append_body_line(self, line: str) -> None:
         """
         Process a line of documentation text in the body section.
 
@@ -549,24 +585,25 @@ class QAPIDoc:
 
         Else, append the line to the current section.
         """
-        name = line.split(' ', 1)[0]
         # FIXME not nice: things like '#  @foo:' and '# @foo: ' aren't
         # recognized, and get silently treated as ordinary text
         if not self.symbol and not self.body.text and line.startswith('@'):
             if not line.endswith(':'):
                 raise QAPIParseError(self._parser, "line should end with ':'")
             self.symbol = line[1:-1]
-            # FIXME invalid names other than the empty string aren't flagged
+            # Invalid names are not checked here, but the name provided MUST
+            # match the following definition, which *is* validated in expr.py.
             if not self.symbol:
-                raise QAPIParseError(self._parser, "invalid name")
+                raise QAPIParseError(
+                    self._parser, "name required after '@'")
         elif self.symbol:
             # This is a definition documentation block
-            if name.startswith('@') and name.endswith(':'):
+            if self._match_at_name_colon(line):
                 self._append_line = self._append_args_line
                 self._append_args_line(line)
             elif line == 'Features:':
                 self._append_line = self._append_features_line
-            elif self._is_section_tag(name):
+            elif self._match_section_tag(line):
                 self._append_line = self._append_various_line
                 self._append_various_line(line)
             else:
@@ -575,7 +612,7 @@ class QAPIDoc:
             # This is a free-form documentation block
             self._append_freeform(line)
 
-    def _append_args_line(self, line):
+    def _append_args_line(self, line: str) -> None:
         """
         Process a line of documentation text in an argument section.
 
@@ -587,25 +624,11 @@ class QAPIDoc:
         Else, append the line to the current section.
 
         """
-        name = line.split(' ', 1)[0]
-
-        if name.startswith('@') and name.endswith(':'):
-            # If line is "@arg:   first line of description", find
-            # the index of 'f', which is the indent we expect for any
-            # following lines.  We then remove the leading "@arg:"
-            # from line and replace it with spaces so that 'f' has the
-            # same index as it did in the original line and can be
-            # handled the same way we will handle following lines.
-            indent = must_match(r'@\S*:\s*', line).end()
-            line = line[indent:]
-            if not line:
-                # Line was just the "@arg:" header; following lines
-                # are not indented
-                indent = 0
-            else:
-                line = ' ' * indent + line
-            self._start_args_section(name[1:-1], indent)
-        elif self._is_section_tag(name):
+        match = self._match_at_name_colon(line)
+        if match:
+            line = line[match.end():]
+            self._start_args_section(match.group(1))
+        elif self._match_section_tag(line):
             self._append_line = self._append_various_line
             self._append_various_line(line)
             return
@@ -621,26 +644,12 @@ class QAPIDoc:
 
         self._append_freeform(line)
 
-    def _append_features_line(self, line):
-        name = line.split(' ', 1)[0]
-
-        if name.startswith('@') and name.endswith(':'):
-            # If line is "@arg:   first line of description", find
-            # the index of 'f', which is the indent we expect for any
-            # following lines.  We then remove the leading "@arg:"
-            # from line and replace it with spaces so that 'f' has the
-            # same index as it did in the original line and can be
-            # handled the same way we will handle following lines.
-            indent = must_match(r'@\S*:\s*', line).end()
-            line = line[indent:]
-            if not line:
-                # Line was just the "@arg:" header; following lines
-                # are not indented
-                indent = 0
-            else:
-                line = ' ' * indent + line
-            self._start_features_section(name[1:-1], indent)
-        elif self._is_section_tag(name):
+    def _append_features_line(self, line: str) -> None:
+        match = self._match_at_name_colon(line)
+        if match:
+            line = line[match.end():]
+            self._start_features_section(match.group(1))
+        elif self._match_section_tag(line):
             self._append_line = self._append_various_line
             self._append_various_line(line)
             return
@@ -653,7 +662,7 @@ class QAPIDoc:
 
         self._append_freeform(line)
 
-    def _append_various_line(self, line):
+    def _append_various_line(self, line: str) -> None:
         """
         Process a line of documentation text in an additional section.
 
@@ -664,32 +673,22 @@ class QAPIDoc:
 
         Else, append the line to the current section.
         """
-        name = line.split(' ', 1)[0]
-
-        if name.startswith('@') and name.endswith(':'):
+        match = self._match_at_name_colon(line)
+        if match:
             raise QAPIParseError(self._parser,
-                                 "'%s' can't follow '%s' section"
-                                 % (name, self.sections[0].name))
-        if self._is_section_tag(name):
-            # If line is "Section:   first line of description", find
-            # the index of 'f', which is the indent we expect for any
-            # following lines.  We then remove the leading "Section:"
-            # from line and replace it with spaces so that 'f' has the
-            # same index as it did in the original line and can be
-            # handled the same way we will handle following lines.
-            indent = must_match(r'\S*:\s*', line).end()
-            line = line[indent:]
-            if not line:
-                # Line was just the "Section:" header; following lines
-                # are not indented
-                indent = 0
-            else:
-                line = ' ' * indent + line
-            self._start_section(name[:-1], indent)
+                                 "description of '@%s:' follows a section"
+                                 % match.group(1))
+        match = self._match_section_tag(line)
+        if match:
+            line = line[match.end():]
+            self._start_section(match.group(1))
 
         self._append_freeform(line)
 
-    def _start_symbol_section(self, symbols_dict, name, indent):
+    def _start_symbol_section(
+            self,
+            symbols_dict: Dict[str, 'QAPIDoc.ArgSection'],
+            name: str) -> None:
         # FIXME invalid names other than the empty string aren't flagged
         if not name:
             raise QAPIParseError(self._parser, "invalid parameter name")
@@ -697,34 +696,40 @@ class QAPIDoc:
             raise QAPIParseError(self._parser,
                                  "'%s' parameter name duplicated" % name)
         assert not self.sections
-        self._end_section()
-        self._section = QAPIDoc.ArgSection(self._parser, name, indent)
-        symbols_dict[name] = self._section
+        new_section = QAPIDoc.ArgSection(self._parser, name)
+        self._switch_section(new_section)
+        symbols_dict[name] = new_section
 
-    def _start_args_section(self, name, indent):
-        self._start_symbol_section(self.args, name, indent)
+    def _start_args_section(self, name: str) -> None:
+        self._start_symbol_section(self.args, name)
 
-    def _start_features_section(self, name, indent):
-        self._start_symbol_section(self.features, name, indent)
+    def _start_features_section(self, name: str) -> None:
+        self._start_symbol_section(self.features, name)
 
-    def _start_section(self, name=None, indent=0):
+    def _start_section(self, name: Optional[str] = None) -> None:
         if name in ('Returns', 'Since') and self.has_section(name):
             raise QAPIParseError(self._parser,
                                  "duplicated '%s' section" % name)
-        self._end_section()
-        self._section = QAPIDoc.Section(self._parser, name, indent)
-        self.sections.append(self._section)
+        new_section = QAPIDoc.Section(self._parser, name)
+        self._switch_section(new_section)
+        self.sections.append(new_section)
 
-    def _end_section(self):
-        if self._section:
-            text = self._section.text = self._section.text.strip()
-            if self._section.name and (not text or text.isspace()):
-                raise QAPIParseError(
-                    self._parser,
-                    "empty doc section '%s'" % self._section.name)
-            self._section = None
+    def _switch_section(self, new_section: 'QAPIDoc.Section') -> None:
+        text = self._section.text = self._section.text.strip('\n')
 
-    def _append_freeform(self, line):
+        # Only the 'body' section is allowed to have an empty body.
+        # All other sections, including anonymous ones, must have text.
+        if self._section != self.body and not text:
+            # We do not create anonymous sections unless there is
+            # something to put in them; this is a parser bug.
+            assert self._section.name
+            raise QAPIParseError(
+                self._parser,
+                "empty doc section '%s'" % self._section.name)
+
+        self._section = new_section
+
+    def _append_freeform(self, line: str) -> None:
         match = re.match(r'(@\S+:)', line)
         if match:
             raise QAPIParseError(self._parser,
@@ -732,37 +737,41 @@ class QAPIDoc:
                                  % match.group(1))
         self._section.append(line)
 
-    def connect_member(self, member):
+    def connect_member(self, member: 'QAPISchemaMember') -> None:
         if member.name not in self.args:
             # Undocumented TODO outlaw
             self.args[member.name] = QAPIDoc.ArgSection(self._parser,
                                                         member.name)
         self.args[member.name].connect(member)
 
-    def connect_feature(self, feature):
+    def connect_feature(self, feature: 'QAPISchemaFeature') -> None:
         if feature.name not in self.features:
             raise QAPISemError(feature.info,
                                "feature '%s' lacks documentation"
                                % feature.name)
         self.features[feature.name].connect(feature)
 
-    def check_expr(self, expr):
+    def check_expr(self, expr: QAPIExpression) -> None:
         if self.has_section('Returns') and 'command' not in expr:
             raise QAPISemError(self.info,
                                "'Returns:' is only valid for commands")
 
-    def check(self):
+    def check(self) -> None:
 
-        def check_args_section(args, info, what):
+        def check_args_section(
+                args: Dict[str, QAPIDoc.ArgSection], what: str
+        ) -> None:
             bogus = [name for name, section in args.items()
                      if not section.member]
             if bogus:
                 raise QAPISemError(
                     self.info,
-                    "documented member%s '%s' %s not exist"
-                    % ("s" if len(bogus) > 1 else "",
-                       "', '".join(bogus),
-                       "do" if len(bogus) > 1 else "does"))
+                    "documented %s%s '%s' %s not exist" % (
+                        what,
+                        "s" if len(bogus) > 1 else "",
+                        "', '".join(bogus),
+                        "do" if len(bogus) > 1 else "does"
+                    ))
 
-        check_args_section(self.args, self.info, 'members')
-        check_args_section(self.features, self.info, 'features')
+        check_args_section(self.args, 'member')
+        check_args_section(self.features, 'feature')

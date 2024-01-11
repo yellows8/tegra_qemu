@@ -223,11 +223,11 @@ our $Sparse	= qr{
 our $Attribute	= qr{
 			const|
 			volatile|
-			QEMU_NORETURN|
-			QEMU_WARN_UNUSED_RESULT|
-			QEMU_SENTINEL|
+			G_NORETURN|
+			G_GNUC_WARN_UNUSED_RESULT|
+			G_GNUC_NULL_TERMINATED|
 			QEMU_PACKED|
-			GCC_FMT_ATTR
+			G_GNUC_PRINTF
 		  }x;
 our $Modifier;
 our $Inline	= qr{inline};
@@ -307,7 +307,6 @@ our @typeList = (
 	qr{target_(?:u)?long},
 	qr{hwaddr},
         # external libraries
-	qr{xml${Ident}},
 	qr{xen\w+_handle},
 	# Glib definitions
 	qr{gchar},
@@ -467,7 +466,7 @@ sub top_of_kernel_tree {
 	my @tree_check = (
 		"COPYING", "MAINTAINERS", "Makefile",
 		"README.rst", "docs", "VERSION",
-		"linux-user", "softmmu"
+		"linux-user", "system"
 	);
 
 	foreach my $check (@tree_check) {
@@ -1622,7 +1621,7 @@ sub process {
 				my $hex =
 					qr/%[-+ *.0-9]*([hljztL]|ll|hh)?(x|X|"\s*PRI[xX][^"]*"?)/;
 
-				# don't consider groups splitted by [.:/ ], like 2A.20:12ab
+				# don't consider groups split by [.:/ ], like 2A.20:12ab
 				my $tmpline = $rawline;
 				$tmpline =~ s/($hex[.:\/ ])+$hex//g;
 
@@ -1668,6 +1667,7 @@ sub process {
 # some scripts we imported from other projects.
 		next if ($realfile =~ /\.(s|S)$/);
 		next if ($realfile =~ /(checkpatch|get_maintainer)\.pl$/);
+		next if ($realfile =~ /^target\/hexagon\/imported\/*/);
 
 		if ($rawline =~ /^\+.*\t/) {
 			my $herevet = "$here\n" . cat_vet($rawline) . "\n";
@@ -1681,8 +1681,10 @@ sub process {
 # Block comment styles
 
 		# Block comments use /* on a line of its own
-		if ($rawline !~ m@^\+.*/\*.*\*/[ \t)}]*$@ &&	#inline /*...*/
-		    $rawline =~ m@^\+.*/\*\*?+[ \t]*[^ \t]@) { # /* or /** non-blank
+		my $commentline = $rawline;
+		while ($commentline =~ s@^(\+.*)/\*.*\*/@$1@o) { # remove inline /*...*/
+		}
+		if ($commentline =~ m@^\+.*/\*\*?+[ \t]*[^ \t]@) { # /* or /** non-blank
 			WARN("Block comments use a leading /* on a separate line\n" . $herecurr);
 		}
 
@@ -2832,8 +2834,8 @@ sub process {
 		}
 
 # check for pointless casting of g_malloc return
-		if ($line =~ /\*\s*\)\s*g_(try)?(m|re)alloc(0?)(_n)?\b/) {
-			if ($2 == 'm') {
+		if ($line =~ /\*\s*\)\s*g_(try|)(m|re)alloc(0?)(_n)?\b/) {
+			if ($2 eq 'm') {
 				ERROR("unnecessary cast may hide bugs, use g_$1new$3 instead\n" . $herecurr);
 			} else {
 				ERROR("unnecessary cast may hide bugs, use g_$1renew$3 instead\n" . $herecurr);
@@ -2850,6 +2852,11 @@ sub process {
 			WARN("consider using g_path_get_$1() in preference to g_strdup($1())\n" . $herecurr);
 		}
 
+# enforce g_memdup2() over g_memdup()
+		if ($line =~ /\bg_memdup\s*\(/) {
+			ERROR("use g_memdup2() instead of unsafe g_memdup()\n" . $herecurr);
+		}
+
 # recommend qemu_strto* over strto* for numeric conversions
 		if ($line =~ /\b(strto[^kd].*?)\s*\(/) {
 			ERROR("consider using qemu_$1 in preference to $1\n" . $herecurr);
@@ -2857,6 +2864,14 @@ sub process {
 # recommend sigaction over signal for portability, when establishing a handler
 		if ($line =~ /\bsignal\s*\(/ && !($line =~ /SIG_(?:IGN|DFL)/)) {
 			ERROR("use sigaction to establish signal handlers; signal is not portable\n" . $herecurr);
+		}
+# recommend qemu_bh_new_guarded instead of qemu_bh_new
+        if ($realfile =~ /.*\/hw\/.*/ && $line =~ /\bqemu_bh_new\s*\(/) {
+			ERROR("use qemu_bh_new_guarded() instead of qemu_bh_new() to avoid reentrancy problems\n" . $herecurr);
+		}
+# recommend aio_bh_new_guarded instead of aio_bh_new
+        if ($realfile =~ /.*\/hw\/.*/ && $line =~ /\baio_bh_new\s*\(/) {
+			ERROR("use aio_bh_new_guarded() instead of aio_bh_new() to avoid reentrancy problems\n" . $herecurr);
 		}
 # check for module_init(), use category-specific init macros explicitly please
 		if ($line =~ /^module_init\s*\(/) {
@@ -2878,6 +2893,7 @@ sub process {
 				SCSIBusInfo|
 				SCSIReqOps|
 				Spice[A-Z][a-zA-Z0-9]*Interface|
+				TypeInfo|
 				USBDesc[A-Z][a-zA-Z0-9]*|
 				VhostOps|
 				VMStateDescription|
@@ -2969,10 +2985,13 @@ sub process {
 			ERROR("use memset() instead of bzero()\n" . $herecurr);
 		}
 		if ($line =~ /\bgetpagesize\(\)/) {
-			ERROR("use qemu_real_host_page_size instead of getpagesize()\n" . $herecurr);
+			ERROR("use qemu_real_host_page_size() instead of getpagesize()\n" . $herecurr);
 		}
 		if ($line =~ /\bsysconf\(_SC_PAGESIZE\)/) {
-			ERROR("use qemu_real_host_page_size instead of sysconf(_SC_PAGESIZE)\n" . $herecurr);
+			ERROR("use qemu_real_host_page_size() instead of sysconf(_SC_PAGESIZE)\n" . $herecurr);
+		}
+		if ($line =~ /\b(g_)?assert\(0\)/) {
+			ERROR("use g_assert_not_reached() instead of assert(0)\n" . $herecurr);
 		}
 		my $non_exit_glib_asserts = qr{g_assert_cmpstr|
 						g_assert_cmpint|

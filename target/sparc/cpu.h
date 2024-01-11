@@ -4,6 +4,30 @@
 #include "qemu/bswap.h"
 #include "cpu-qom.h"
 #include "exec/cpu-defs.h"
+#include "qemu/cpu-float.h"
+
+/*
+ * From Oracle SPARC Architecture 2015:
+ *
+ *   Compatibility notes: The PSO memory model described in SPARC V8 and
+ *   SPARC V9 compatibility architecture specifications was never implemented
+ *   in a SPARC V9 implementation and is not included in the Oracle SPARC
+ *   Architecture specification.
+ *
+ *   The RMO memory model described in the SPARC V9 specification was
+ *   implemented in some non-Sun SPARC V9 implementations, but is not
+ *   directly supported in Oracle SPARC Architecture 2015 implementations.
+ *
+ * Therefore always use TSO in QEMU.
+ *
+ * D.5 Specification of Partial Store Order (PSO)
+ *   ... [loads] are followed by an implied MEMBAR #LoadLoad | #LoadStore.
+ *
+ * D.6 Specification of Total Store Order (TSO)
+ *   ... PSO with the additional requirement that all [stores] are followed
+ *   by an implied MEMBAR #StoreStore.
+ */
+#define TCG_GUEST_DEFAULT_MO  (TCG_MO_LD_LD | TCG_MO_LD_ST | TCG_MO_ST_ST)
 
 #if !defined(TARGET_SPARC64)
 #define TARGET_DPREGS 16
@@ -113,32 +137,6 @@ enum {
 #define PSR_CWP   0x1f
 #endif
 
-#define CC_SRC (env->cc_src)
-#define CC_SRC2 (env->cc_src2)
-#define CC_DST (env->cc_dst)
-#define CC_OP  (env->cc_op)
-
-/* Even though lazy evaluation of CPU condition codes tends to be less
- * important on RISC systems where condition codes are only updated
- * when explicitly requested, SPARC uses it to update 32-bit and 64-bit
- * condition codes.
- */
-enum {
-    CC_OP_DYNAMIC, /* must use dynamic code to get cc_op */
-    CC_OP_FLAGS,   /* all cc are back in status register */
-    CC_OP_DIV,     /* modify N, Z and V, C = 0*/
-    CC_OP_ADD,     /* modify all flags, CC_DST = res, CC_SRC = src1 */
-    CC_OP_ADDX,    /* modify all flags, CC_DST = res, CC_SRC = src1 */
-    CC_OP_TADD,    /* modify all flags, CC_DST = res, CC_SRC = src1 */
-    CC_OP_TADDTV,  /* modify all flags except V, CC_DST = res, CC_SRC = src1 */
-    CC_OP_SUB,     /* modify all flags, CC_DST = res, CC_SRC = src1 */
-    CC_OP_SUBX,    /* modify all flags, CC_DST = res, CC_SRC = src1 */
-    CC_OP_TSUB,    /* modify all flags, CC_DST = res, CC_SRC = src1 */
-    CC_OP_TSUBTV,  /* modify all flags except V, CC_DST = res, CC_SRC = src1 */
-    CC_OP_LOGIC,   /* modify N and Z, C = V = 0, CC_DST = res */
-    CC_OP_NB,
-};
-
 /* Trap base register */
 #define TBR_BASE_MASK 0xfffff000
 
@@ -196,8 +194,7 @@ enum {
 #define FSR_FTT2   (1ULL << 16)
 #define FSR_FTT1   (1ULL << 15)
 #define FSR_FTT0   (1ULL << 14)
-//gcc warns about constant overflow for ~FSR_FTT_MASK
-//#define FSR_FTT_MASK (FSR_FTT2 | FSR_FTT1 | FSR_FTT0)
+#define FSR_FTT_MASK (FSR_FTT2 | FSR_FTT1 | FSR_FTT0)
 #ifdef TARGET_SPARC64
 #define FSR_FTT_NMASK      0xfffffffffffe3fffULL
 #define FSR_FTT_CEXC_NMASK 0xfffffffffffe3fe0ULL
@@ -252,7 +249,7 @@ typedef struct trap_state {
 #endif
 #define TARGET_INSN_START_EXTRA_WORDS 1
 
-struct sparc_def_t {
+typedef struct sparc_def_t {
     const char *name;
     target_ulong iu_version;
     uint32_t fpu_version;
@@ -266,40 +263,29 @@ struct sparc_def_t {
     uint32_t features;
     uint32_t nwindows;
     uint32_t maxtl;
+} sparc_def_t;
+
+#define FEATURE(X)  CPU_FEATURE_BIT_##X,
+enum {
+#include "cpu-feature.h.inc"
 };
 
-#define CPU_FEATURE_FLOAT        (1 << 0)
-#define CPU_FEATURE_FLOAT128     (1 << 1)
-#define CPU_FEATURE_SWAP         (1 << 2)
-#define CPU_FEATURE_MUL          (1 << 3)
-#define CPU_FEATURE_DIV          (1 << 4)
-#define CPU_FEATURE_FLUSH        (1 << 5)
-#define CPU_FEATURE_FSQRT        (1 << 6)
-#define CPU_FEATURE_FMUL         (1 << 7)
-#define CPU_FEATURE_VIS1         (1 << 8)
-#define CPU_FEATURE_VIS2         (1 << 9)
-#define CPU_FEATURE_FSMULD       (1 << 10)
-#define CPU_FEATURE_HYPV         (1 << 11)
-#define CPU_FEATURE_CMT          (1 << 12)
-#define CPU_FEATURE_GL           (1 << 13)
-#define CPU_FEATURE_TA0_SHUTDOWN (1 << 14) /* Shutdown on "ta 0x0" */
-#define CPU_FEATURE_ASR17        (1 << 15)
-#define CPU_FEATURE_CACHE_CTRL   (1 << 16)
-#define CPU_FEATURE_POWERDOWN    (1 << 17)
-#define CPU_FEATURE_CASA         (1 << 18)
+#undef FEATURE
+#define FEATURE(X)  CPU_FEATURE_##X = 1u << CPU_FEATURE_BIT_##X,
+
+enum {
+#include "cpu-feature.h.inc"
+};
+
+#undef FEATURE
 
 #ifndef TARGET_SPARC64
-#define CPU_DEFAULT_FEATURES (CPU_FEATURE_FLOAT | CPU_FEATURE_SWAP |  \
-                              CPU_FEATURE_MUL | CPU_FEATURE_DIV |     \
-                              CPU_FEATURE_FLUSH | CPU_FEATURE_FSQRT | \
-                              CPU_FEATURE_FMUL | CPU_FEATURE_FSMULD)
+#define CPU_DEFAULT_FEATURES (CPU_FEATURE_MUL | CPU_FEATURE_DIV | \
+                              CPU_FEATURE_FSMULD)
 #else
-#define CPU_DEFAULT_FEATURES (CPU_FEATURE_FLOAT | CPU_FEATURE_SWAP |  \
-                              CPU_FEATURE_MUL | CPU_FEATURE_DIV |     \
-                              CPU_FEATURE_FLUSH | CPU_FEATURE_FSQRT | \
-                              CPU_FEATURE_FMUL | CPU_FEATURE_VIS1 |   \
-                              CPU_FEATURE_VIS2 | CPU_FEATURE_FSMULD | \
-                              CPU_FEATURE_CASA)
+#define CPU_DEFAULT_FEATURES (CPU_FEATURE_MUL | CPU_FEATURE_DIV | \
+                              CPU_FEATURE_FSMULD | CPU_FEATURE_CASA | \
+                              CPU_FEATURE_VIS1 | CPU_FEATURE_VIS2)
 enum {
     mmu_us_12, // Ultrasparc < III (64 entry TLB)
     mmu_us_3,  // Ultrasparc III (512 entry TLB)
@@ -420,7 +406,7 @@ struct CPUTimer
 
 typedef struct CPUTimer CPUTimer;
 
-typedef struct CPUSPARCState CPUSPARCState;
+typedef struct CPUArchState CPUSPARCState;
 #if defined(TARGET_SPARC64)
 typedef union {
    uint64_t mmuregs[16];
@@ -439,22 +425,42 @@ typedef union {
    };
 } SparcV9MMU;
 #endif
-struct CPUSPARCState {
+struct CPUArchState {
     target_ulong gregs[8]; /* general registers */
     target_ulong *regwptr; /* pointer to current register window */
     target_ulong pc;       /* program counter */
     target_ulong npc;      /* next program counter */
     target_ulong y;        /* multiply/divide register */
 
-    /* emulator internal flags handling */
-    target_ulong cc_src, cc_src2;
-    target_ulong cc_dst;
-    uint32_t cc_op;
+    /*
+     * Bit 31 is for icc, bit 63 for xcc.
+     * Other bits are garbage.
+     */
+    target_long cc_N;
+    target_long cc_V;
+
+    /*
+     * Z is represented as == 0; any non-zero value is !Z.
+     * For sparc64, the high 32-bits of icc.Z are garbage.
+     */
+    target_ulong icc_Z;
+#ifdef TARGET_SPARC64
+    target_ulong xcc_Z;
+#endif
+
+    /*
+     * For sparc32, icc.C is boolean.
+     * For sparc64, xcc.C is boolean;
+     *              icc.C is bit 32 with other bits garbage.
+     */
+    target_ulong icc_C;
+#ifdef TARGET_SPARC64
+    target_ulong xcc_C;
+#endif
 
     target_ulong cond; /* conditional branch result (XXX: save it in a
                           temporary register when possible) */
 
-    uint32_t psr;      /* processor state register */
     target_ulong fsr;      /* FPU state register */
     CPU_DoubleU fpr[TARGET_DPREGS];  /* floating point registers */
     uint32_t cwp;      /* index of current register window (extracted
@@ -510,7 +516,6 @@ struct CPUSPARCState {
 #define MAXTL_MAX 8
 #define MAXTL_MASK (MAXTL_MAX - 1)
     trap_state ts[MAXTL_MAX];
-    uint32_t xcc;               /* Extended integer condition codes */
     uint32_t asi;
     uint32_t pstate;
     uint32_t tl;
@@ -521,7 +526,7 @@ struct CPUSPARCState {
     uint64_t igregs[8]; /* interrupt general registers */
     uint64_t mgregs[8]; /* mmu general registers */
     uint64_t glregs[8 * MAXTL_MAX];
-    uint64_t fprs;
+    uint32_t fprs;
     uint64_t tick_cmpr, stick_cmpr;
     CPUTimer *tick, *stick;
 #define TICK_NPT_MASK        0x8000000000000000ULL
@@ -544,7 +549,7 @@ struct CPUSPARCState {
     sparc_def_t def;
 
     void *irq_manager;
-    void (*qemu_irq_ack)(CPUSPARCState *env, void *irq_manager, int intno);
+    void (*qemu_irq_ack)(CPUSPARCState *env, int intno);
 
     /* Leon3 cache control */
     uint32_t cache_control;
@@ -556,32 +561,42 @@ struct CPUSPARCState {
  *
  * A SPARC CPU.
  */
-struct SPARCCPU {
-    /*< private >*/
+struct ArchCPU {
     CPUState parent_obj;
-    /*< public >*/
 
-    CPUNegativeOffsetState neg;
     CPUSPARCState env;
 };
 
+/**
+ * SPARCCPUClass:
+ * @parent_realize: The parent class' realize handler.
+ * @parent_phases: The parent class' reset phase handlers.
+ *
+ * A SPARC CPU model.
+ */
+struct SPARCCPUClass {
+    CPUClass parent_class;
+
+    DeviceRealize parent_realize;
+    ResettablePhases parent_phases;
+    sparc_def_t *cpu_def;
+};
 
 #ifndef CONFIG_USER_ONLY
 extern const VMStateDescription vmstate_sparc_cpu;
+
+hwaddr sparc_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
 #endif
 
 void sparc_cpu_do_interrupt(CPUState *cpu);
-void sparc_cpu_dump_state(CPUState *cpu, FILE *f, int flags);
-hwaddr sparc_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
 int sparc_cpu_gdb_read_register(CPUState *cpu, GByteArray *buf, int reg);
 int sparc_cpu_gdb_write_register(CPUState *cpu, uint8_t *buf, int reg);
-void QEMU_NORETURN sparc_cpu_do_unaligned_access(CPUState *cpu, vaddr addr,
-                                                 MMUAccessType access_type,
-                                                 int mmu_idx,
-                                                 uintptr_t retaddr);
-void cpu_raise_exception_ra(CPUSPARCState *, int, uintptr_t) QEMU_NORETURN;
+G_NORETURN void sparc_cpu_do_unaligned_access(CPUState *cpu, vaddr addr,
+                                              MMUAccessType access_type,
+                                              int mmu_idx,
+                                              uintptr_t retaddr);
+G_NORETURN void cpu_raise_exception_ra(CPUSPARCState *, int, uintptr_t);
 
-#ifndef NO_CPU_IO_DEFS
 /* cpu_init.c */
 void cpu_sparc_set_id(CPUSPARCState *env, unsigned int cpu);
 void sparc_cpu_list(void);
@@ -600,12 +615,16 @@ int sparc_cpu_memory_rw_debug(CPUState *cpu, vaddr addr,
 
 /* translate.c */
 void sparc_tcg_init(void);
+void sparc_restore_state_to_opc(CPUState *cs,
+                                const TranslationBlock *tb,
+                                const uint64_t *data);
 
 /* cpu-exec.c */
 
 /* win_helper.c */
 target_ulong cpu_get_psr(CPUSPARCState *env1);
 void cpu_put_psr(CPUSPARCState *env1, target_ulong val);
+void cpu_put_psr_icc(CPUSPARCState *env1, target_ulong val);
 void cpu_put_psr_raw(CPUSPARCState *env1, target_ulong val);
 #ifdef TARGET_SPARC64
 void cpu_change_pstate(CPUSPARCState *env1, uint32_t new_pstate);
@@ -635,7 +654,6 @@ static inline int tlb_compare_context(const SparcTLBEntry *tlb,
 }
 
 #endif
-#endif
 
 /* cpu-exec.c */
 #if !defined(CONFIG_USER_ONLY)
@@ -649,13 +667,9 @@ hwaddr cpu_get_phys_page_nofault(CPUSPARCState *env, target_ulong addr,
                                            int mmu_idx);
 #endif
 #endif
-int cpu_sparc_signal_handler(int host_signum, void *pinfo, void *puc);
 
-#define SPARC_CPU_TYPE_SUFFIX "-" TYPE_SPARC_CPU
-#define SPARC_CPU_TYPE_NAME(model) model SPARC_CPU_TYPE_SUFFIX
 #define CPU_RESOLVING_TYPE TYPE_SPARC_CPU
 
-#define cpu_signal_handler cpu_sparc_signal_handler
 #define cpu_list sparc_cpu_list
 
 /* MMU modes definitions */
@@ -746,9 +760,6 @@ static inline int cpu_pil_allowed(CPUSPARCState *env1, int pil)
 #endif
 }
 
-typedef CPUSPARCState CPUArchState;
-typedef SPARCCPU ArchCPU;
-
 #include "exec/cpu-all.h"
 
 #ifdef TARGET_SPARC64
@@ -766,8 +777,8 @@ trap_state* cpu_tsptr(CPUSPARCState* env);
 #define TB_FLAG_HYPER        (1 << 7)
 #define TB_FLAG_ASI_SHIFT    24
 
-static inline void cpu_get_tb_cpu_state(CPUSPARCState *env, target_ulong *pc,
-                                        target_ulong *cs_base, uint32_t *pflags)
+static inline void cpu_get_tb_cpu_state(CPUSPARCState *env, vaddr *pc,
+                                        uint64_t *cs_base, uint32_t *pflags)
 {
     uint32_t flags;
     *pc = env->pc;
@@ -787,14 +798,12 @@ static inline void cpu_get_tb_cpu_state(CPUSPARCState *env, target_ulong *pc,
     if (env->pstate & PS_AM) {
         flags |= TB_FLAG_AM_ENABLED;
     }
-    if ((env->def.features & CPU_FEATURE_FLOAT)
-        && (env->pstate & PS_PEF)
-        && (env->fprs & FPRS_FEF)) {
+    if ((env->pstate & PS_PEF) && (env->fprs & FPRS_FEF)) {
         flags |= TB_FLAG_FPU_ENABLED;
     }
     flags |= env->asi << TB_FLAG_ASI_SHIFT;
 #else
-    if ((env->def.features & CPU_FEATURE_FLOAT) && env->psref) {
+    if (env->psref) {
         flags |= TB_FLAG_FPU_ENABLED;
     }
 #endif

@@ -19,6 +19,7 @@
  */
 #include "qemu/osdep.h"
 #include "qemu.h"
+#include "user-internals.h"
 #include "signal-common.h"
 #include "linux-user/trace.h"
 
@@ -38,15 +39,12 @@ struct target_sigcontext {
     target_ulong m0;
     target_ulong m1;
     target_ulong usr;
-    target_ulong p3_0;
     target_ulong gp;
     target_ulong ugp;
     target_ulong pc;
     target_ulong cause;
     target_ulong badva;
-    target_ulong pad1;
-    target_ulong pad2;
-    target_ulong pad3;
+    target_ulong pred[NUM_PREGS];
 };
 
 struct target_ucontext {
@@ -117,10 +115,14 @@ static void setup_sigcontext(struct target_sigcontext *sc, CPUHexagonState *env)
     __put_user(env->gpr[HEX_REG_M0], &sc->m0);
     __put_user(env->gpr[HEX_REG_M1], &sc->m1);
     __put_user(env->gpr[HEX_REG_USR], &sc->usr);
-    __put_user(env->gpr[HEX_REG_P3_0], &sc->p3_0);
     __put_user(env->gpr[HEX_REG_GP], &sc->gp);
     __put_user(env->gpr[HEX_REG_UGP], &sc->ugp);
     __put_user(env->gpr[HEX_REG_PC], &sc->pc);
+
+    int i;
+    for (i = 0; i < NUM_PREGS; i++) {
+        __put_user(env->pred[i], &(sc->pred[i]));
+    }
 }
 
 static void setup_ucontext(struct target_ucontext *uc,
@@ -161,6 +163,11 @@ void setup_rt_frame(int sig, struct target_sigaction *ka,
 
     setup_ucontext(&frame->uc, env, set);
     tswap_siginfo(&frame->info, info);
+    /*
+     * The on-stack signal trampoline is no longer executed;
+     * however, the libgcc signal frame unwinding code checks
+     * for the presence of these two numeric magic values.
+     */
     install_sigtramp(frame->tramp);
 
     env->gpr[HEX_REG_PC] = ka->_sa_handler;
@@ -170,8 +177,7 @@ void setup_rt_frame(int sig, struct target_sigaction *ka,
         frame_addr + offsetof(struct target_rt_sigframe, info);
     env->gpr[HEX_REG_R02] =
         frame_addr + offsetof(struct target_rt_sigframe, uc);
-    env->gpr[HEX_REG_LR] =
-        frame_addr + offsetof(struct target_rt_sigframe, tramp);
+    env->gpr[HEX_REG_LR] = default_rt_sigreturn;
 
     return;
 
@@ -225,10 +231,14 @@ static void restore_sigcontext(CPUHexagonState *env,
     __get_user(env->gpr[HEX_REG_M0], &sc->m0);
     __get_user(env->gpr[HEX_REG_M1], &sc->m1);
     __get_user(env->gpr[HEX_REG_USR], &sc->usr);
-    __get_user(env->gpr[HEX_REG_P3_0], &sc->p3_0);
     __get_user(env->gpr[HEX_REG_GP], &sc->gp);
     __get_user(env->gpr[HEX_REG_UGP], &sc->ugp);
     __get_user(env->gpr[HEX_REG_PC], &sc->pc);
+
+    int i;
+    for (i = 0; i < NUM_PREGS; i++) {
+        __get_user(env->pred[i], &(sc->pred[i]));
+    }
 }
 
 static void restore_ucontext(CPUHexagonState *env, struct target_ucontext *uc)
@@ -263,10 +273,21 @@ long do_rt_sigreturn(CPUHexagonState *env)
     target_restore_altstack(&frame->uc.uc_stack, env);
 
     unlock_user_struct(frame, frame_addr, 0);
-    return -TARGET_QEMU_ESIGRETURN;
+    return -QEMU_ESIGRETURN;
 
 badframe:
     unlock_user_struct(frame, frame_addr, 0);
     force_sig(TARGET_SIGSEGV);
     return 0;
+}
+
+void setup_sigtramp(abi_ulong sigtramp_page)
+{
+    uint32_t *tramp = lock_user(VERIFY_WRITE, sigtramp_page, 4 * 2, 0);
+    assert(tramp != NULL);
+
+    default_rt_sigreturn = sigtramp_page;
+    install_sigtramp(tramp);
+
+    unlock_user(tramp, sigtramp_page, 4 * 2);
 }

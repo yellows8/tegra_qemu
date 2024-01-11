@@ -26,6 +26,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "block/block-io.h"
 #include "block/block_int.h"
 #include "qemu/job.h"
 #include "qemu/main-loop.h"
@@ -45,6 +46,7 @@ static int coroutine_fn blockdev_amend_run(Job *job, Error **errp)
 {
     BlockdevAmendJob *s = container_of(job, BlockdevAmendJob, common);
     int ret;
+    GRAPH_RDLOCK_GUARD();
 
     job_progress_set_remaining(&s->common, 1);
     ret = s->bs->drv->bdrv_co_amend(s->bs, s->opts, s->force, errp);
@@ -53,10 +55,34 @@ static int coroutine_fn blockdev_amend_run(Job *job, Error **errp)
     return ret;
 }
 
+static int GRAPH_RDLOCK
+blockdev_amend_pre_run(BlockdevAmendJob *s, Error **errp)
+{
+    if (s->bs->drv->bdrv_amend_pre_run) {
+        return s->bs->drv->bdrv_amend_pre_run(s->bs, errp);
+    }
+
+    return 0;
+}
+
+static void blockdev_amend_free(Job *job)
+{
+    BlockdevAmendJob *s = container_of(job, BlockdevAmendJob, common);
+
+    bdrv_graph_rdlock_main_loop();
+    if (s->bs->drv->bdrv_amend_clean) {
+        s->bs->drv->bdrv_amend_clean(s->bs);
+    }
+    bdrv_graph_rdunlock_main_loop();
+
+    bdrv_unref(s->bs);
+}
+
 static const JobDriver blockdev_amend_job_driver = {
     .instance_size = sizeof(BlockdevAmendJob),
     .job_type      = JOB_TYPE_AMEND,
     .run           = blockdev_amend_run,
+    .free          = blockdev_amend_free,
 };
 
 void qmp_x_blockdev_amend(const char *job_id,
@@ -70,6 +96,8 @@ void qmp_x_blockdev_amend(const char *job_id,
     const char *fmt = BlockdevDriver_str(options->driver);
     BlockDriver *drv = bdrv_find_format(fmt);
     BlockDriverState *bs;
+
+    GRAPH_RDLOCK_GUARD_MAINLOOP();
 
     bs = bdrv_lookup_bs(NULL, node_name, errp);
     if (!bs) {
@@ -110,8 +138,15 @@ void qmp_x_blockdev_amend(const char *job_id,
         return;
     }
 
+    bdrv_ref(bs);
     s->bs = bs,
     s->opts = QAPI_CLONE(BlockdevAmendOptions, options),
     s->force = has_force ? force : false;
+
+    if (blockdev_amend_pre_run(s, errp)) {
+        job_early_fail(&s->common);
+        return;
+    }
+
     job_start(&s->common);
 }

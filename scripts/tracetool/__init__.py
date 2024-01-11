@@ -18,7 +18,6 @@ import weakref
 
 import tracetool.format
 import tracetool.backend
-import tracetool.transform
 
 
 def error_write(*lines):
@@ -87,14 +86,12 @@ ALLOWED_TYPES = [
     "ssize_t",
     "uintptr_t",
     "ptrdiff_t",
-    # Magic substitution is done by tracetool
-    "TCGv",
 ]
 
 def validate_type(name):
     bits = name.split(" ")
     for bit in bits:
-        bit = re.sub("\*", "", bit)
+        bit = re.sub(r"\*", "", bit)
         if bit == "":
             continue
         if bit == "const":
@@ -192,18 +189,6 @@ class Arguments:
         """List of argument names casted to their type."""
         return ["(%s)%s" % (type_, name) for type_, name in self._args]
 
-    def transform(self, *trans):
-        """Return a new Arguments instance with transformed types.
-
-        The types in the resulting Arguments instance are transformed according
-        to tracetool.transform.transform_type.
-        """
-        res = []
-        for type_, name in self._args:
-            res.append((tracetool.transform.transform_type(type_, *trans),
-                        name))
-        return Arguments(res)
-
 
 class Event(object):
     """Event description.
@@ -225,14 +210,14 @@ class Event(object):
 
     """
 
-    _CRE = re.compile("((?P<props>[\w\s]+)\s+)?"
-                      "(?P<name>\w+)"
-                      "\((?P<args>[^)]*)\)"
-                      "\s*"
-                      "(?:(?:(?P<fmt_trans>\".+),)?\s*(?P<fmt>\".+))?"
-                      "\s*")
+    _CRE = re.compile(r"((?P<props>[\w\s]+)\s+)?"
+                      r"(?P<name>\w+)"
+                      r"\((?P<args>[^)]*)\)"
+                      r"\s*"
+                      r"(?:(?:(?P<fmt_trans>\".+),)?\s*(?P<fmt>\".+))?"
+                      r"\s*")
 
-    _VALID_PROPS = set(["disable", "tcg", "tcg-trans", "tcg-exec", "vcpu"])
+    _VALID_PROPS = set(["disable", "vcpu"])
 
     def __init__(self, name, props, fmt, args, lineno, filename, orig=None,
                  event_trans=None, event_exec=None):
@@ -321,15 +306,6 @@ class Event(object):
             fmt = [fmt_trans, fmt]
         args = Arguments.build(groups["args"])
 
-        if "tcg-trans" in props:
-            raise ValueError("Invalid property 'tcg-trans'")
-        if "tcg-exec" in props:
-            raise ValueError("Invalid property 'tcg-exec'")
-        if "tcg" not in props and not isinstance(fmt, str):
-            raise ValueError("Only events with 'tcg' property can have two format strings")
-        if "tcg" in props and isinstance(fmt, str):
-            raise ValueError("Events with 'tcg' property must have two format strings")
-
         event = Event(name, props, fmt, args, lineno, filename)
 
         # add implicit arguments when using the 'vcpu' property
@@ -350,7 +326,7 @@ class Event(object):
                                           fmt)
     # Star matching on PRI is dangerous as one might have multiple
     # arguments with that format, hence the non-greedy version of it.
-    _FMT = re.compile("(%[\d\.]*\w+|%.*?PRI\S+)")
+    _FMT = re.compile(r"(%[\d\.]*\w+|%.*?PRI\S+)")
 
     def formats(self):
         """List conversion specifiers in the argument print format string."""
@@ -368,16 +344,6 @@ class Event(object):
         if fmt is None:
             fmt = Event.QEMU_TRACE
         return fmt % {"name": self.name, "NAME": self.name.upper()}
-
-    def transform(self, *trans):
-        """Return a new Event with transformed Arguments."""
-        return Event(self.name,
-                     list(self.properties),
-                     self.fmt,
-                     self.args.transform(*trans),
-                     self.lineno,
-                     self.filename,
-                     self)
 
 
 def read_events(fobj, fname):
@@ -409,33 +375,7 @@ def read_events(fobj, fname):
             e.args = (arg0,) + e.args[1:]
             raise
 
-        # transform TCG-enabled events
-        if "tcg" not in event.properties:
-            events.append(event)
-        else:
-            event_trans = event.copy()
-            event_trans.name += "_trans"
-            event_trans.properties += ["tcg-trans"]
-            event_trans.fmt = event.fmt[0]
-            # ignore TCG arguments
-            args_trans = []
-            for atrans, aorig in zip(
-                    event_trans.transform(tracetool.transform.TCG_2_HOST).args,
-                    event.args):
-                if atrans == aorig:
-                    args_trans.append(atrans)
-            event_trans.args = Arguments(args_trans)
-
-            event_exec = event.copy()
-            event_exec.name += "_exec"
-            event_exec.properties += ["tcg-exec"]
-            event_exec.fmt = event.fmt[1]
-            event_exec.args = event_exec.args.transform(tracetool.transform.TCG_2_HOST)
-
-            new_event = [event_trans, event_exec]
-            event.event_trans, event.event_exec = new_event
-
-            events.extend(new_event)
+        events.append(event)
 
     return events
 

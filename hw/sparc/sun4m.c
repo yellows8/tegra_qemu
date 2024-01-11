@@ -26,7 +26,6 @@
 #include "qemu/units.h"
 #include "qapi/error.h"
 #include "qemu/datadir.h"
-#include "qemu-common.h"
 #include "cpu.h"
 #include "hw/sysbus.h"
 #include "qemu/error-report.h"
@@ -578,12 +577,9 @@ static void idreg_realize(DeviceState *ds, Error **errp)
 {
     IDRegState *s = MACIO_ID_REGISTER(ds);
     SysBusDevice *dev = SYS_BUS_DEVICE(ds);
-    Error *local_err = NULL;
 
-    memory_region_init_ram_nomigrate(&s->mem, OBJECT(ds), "sun4m.idreg",
-                                     sizeof(idreg_data), &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
+    if (!memory_region_init_ram_nomigrate(&s->mem, OBJECT(ds), "sun4m.idreg",
+                                          sizeof(idreg_data), errp)) {
         return;
     }
 
@@ -632,12 +628,9 @@ static void afx_realize(DeviceState *ds, Error **errp)
 {
     AFXState *s = TCX_AFX(ds);
     SysBusDevice *dev = SYS_BUS_DEVICE(ds);
-    Error *local_err = NULL;
 
-    memory_region_init_ram_nomigrate(&s->mem, OBJECT(ds), "sun4m.afx", 4,
-                                     &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
+    if (!memory_region_init_ram_nomigrate(&s->mem, OBJECT(ds), "sun4m.afx",
+                                          4, errp)) {
         return;
     }
 
@@ -716,12 +709,9 @@ static void prom_realize(DeviceState *ds, Error **errp)
 {
     PROMState *s = OPENPROM(ds);
     SysBusDevice *dev = SYS_BUS_DEVICE(ds);
-    Error *local_err = NULL;
 
-    memory_region_init_ram_nomigrate(&s->prom, OBJECT(ds), "sun4m.prom",
-                                     PROM_SIZE_MAX, &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
+    if (!memory_region_init_ram_nomigrate(&s->prom, OBJECT(ds), "sun4m.prom",
+                                          PROM_SIZE_MAX, errp)) {
         return;
     }
 
@@ -803,11 +793,11 @@ static void cpu_devinit(const char *cpu_type, unsigned int id,
     cpu = SPARC_CPU(object_new(cpu_type));
     env = &cpu->env;
 
-    cpu_sparc_set_id(env, id);
     qemu_register_reset(sun4m_cpu_reset, cpu);
     object_property_set_bool(OBJECT(cpu), "start-powered-off", id != 0,
-                             &error_fatal);
+                             &error_abort);
     qdev_realize_and_unref(DEVICE(cpu), NULL, &error_fatal);
+    cpu_sparc_set_id(env, id);
     *cpu_irqs = qemu_allocate_irqs(cpu_set_irq, cpu, MAX_PILS);
     env->prom_addr = prom_addr;
 }
@@ -832,8 +822,7 @@ static void sun4m_hw_init(MachineState *machine)
     SysBusDevice *s;
     unsigned int smp_cpus = machine->smp.cpus;
     unsigned int max_cpus = machine->smp.max_cpus;
-    Object *ram_memdev = object_resolve_path_type(machine->ram_memdev_id,
-                                                  TYPE_MEMORY_BACKEND, NULL);
+    HostMemoryBackend *ram_memdev = machine->memdev;
     NICInfo *nd = &nd_table[0];
 
     if (machine->ram_size > hwdef->max_mem) {
@@ -853,7 +842,7 @@ static void sun4m_hw_init(MachineState *machine)
 
     /* Create and map RAM frontend */
     dev = qdev_new("memory");
-    object_property_set_link(OBJECT(dev), "memdev", ram_memdev, &error_fatal);
+    object_property_set_link(OBJECT(dev), "memdev", OBJECT(ram_memdev), &error_fatal);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, 0);
 
@@ -921,6 +910,7 @@ static void sun4m_hw_init(MachineState *machine)
             /* sbus irq 5 */
             cg3_init(hwdef->tcx_base, slavio_irq[11], 0x00100000,
                      graphic_width, graphic_height, graphic_depth);
+            vga_interface_created = true;
         } else {
             /* If no display specified, default to TCX */
             if (graphic_depth != 8 && graphic_depth != 24) {
@@ -936,6 +926,7 @@ static void sun4m_hw_init(MachineState *machine)
 
             tcx_init(hwdef->tcx_base, slavio_irq[11], 0x00100000,
                      graphic_width, graphic_height, graphic_depth);
+            vga_interface_created = true;
         }
     }
 
@@ -982,7 +973,7 @@ static void sun4m_hw_init(MachineState *machine)
     qdev_realize_and_unref(ms_kb_orgate, NULL, &error_fatal);
     sysbus_connect_irq(s, 0, qdev_get_gpio_in(ms_kb_orgate, 0));
     sysbus_connect_irq(s, 1, qdev_get_gpio_in(ms_kb_orgate, 1));
-    qdev_connect_gpio_out(DEVICE(ms_kb_orgate), 0, slavio_irq[14]);
+    qdev_connect_gpio_out(ms_kb_orgate, 0, slavio_irq[14]);
 
     dev = qdev_new(TYPE_ESCC);
     qdev_prop_set_uint32(dev, "disabled", 0);
@@ -1004,7 +995,7 @@ static void sun4m_hw_init(MachineState *machine)
     qdev_realize_and_unref(serial_orgate, NULL, &error_fatal);
     sysbus_connect_irq(s, 0, qdev_get_gpio_in(serial_orgate, 0));
     sysbus_connect_irq(s, 1, qdev_get_gpio_in(serial_orgate, 1));
-    qdev_connect_gpio_out(DEVICE(serial_orgate), 0, slavio_irq[15]);
+    qdev_connect_gpio_out(serial_orgate, 0, slavio_irq[15]);
 
     if (hwdef->apc_base) {
         apc_init(hwdef->apc_base, qemu_allocate_irq(cpu_halt_signal, NULL, 0));
@@ -1049,7 +1040,7 @@ static void sun4m_hw_init(MachineState *machine)
                                     machine->ram_size, &initrd_size);
 
     nvram_init(nvram, (uint8_t *)&nd->macaddr, machine->kernel_cmdline,
-               machine->boot_order, machine->ram_size, kernel_size,
+               machine->boot_config.order, machine->ram_size, kernel_size,
                graphic_width, graphic_height, graphic_depth,
                hwdef->nvram_machine_id, "Sun4m");
 
@@ -1090,7 +1081,7 @@ static void sun4m_hw_init(MachineState *machine)
     }
     fw_cfg_add_i32(fw_cfg, FW_CFG_INITRD_ADDR, INITRD_LOAD_ADDR);
     fw_cfg_add_i32(fw_cfg, FW_CFG_INITRD_SIZE, initrd_size);
-    fw_cfg_add_i16(fw_cfg, FW_CFG_BOOT_DEVICE, machine->boot_order[0]);
+    fw_cfg_add_i16(fw_cfg, FW_CFG_BOOT_DEVICE, machine->boot_config.order[0]);
     qemu_register_boot_set(fw_cfg_boot_set, fw_cfg);
 }
 

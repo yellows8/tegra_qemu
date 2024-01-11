@@ -121,20 +121,20 @@ uint32_t qemu_fdt_get_phandle(void *fdt, const char *path);
 uint32_t qemu_fdt_alloc_phandle(void *fdt);
 int qemu_fdt_nop_node(void *fdt, const char *node_path);
 int qemu_fdt_add_subnode(void *fdt, const char *name);
+int qemu_fdt_add_path(void *fdt, const char *path);
 
 #define qemu_fdt_setprop_cells(fdt, node_path, property, ...)                 \
     do {                                                                      \
         uint32_t qdt_tmp[] = { __VA_ARGS__ };                                 \
-        int i;                                                                \
-                                                                              \
-        for (i = 0; i < ARRAY_SIZE(qdt_tmp); i++) {                           \
-            qdt_tmp[i] = cpu_to_be32(qdt_tmp[i]);                             \
+        for (unsigned i_ = 0; i_ < ARRAY_SIZE(qdt_tmp); i_++) {               \
+            qdt_tmp[i_] = cpu_to_be32(qdt_tmp[i_]);                           \
         }                                                                     \
         qemu_fdt_setprop(fdt, node_path, property, qdt_tmp,                   \
                          sizeof(qdt_tmp));                                    \
     } while (0)
 
 void qemu_fdt_dumpdtb(void *fdt, int size);
+void hmp_dumpdtb(Monitor *mon, const QDict *qdict);
 
 /**
  * qemu_fdt_setprop_sized_cells_from_array:
@@ -194,6 +194,15 @@ int qemu_fdt_setprop_sized_cells_from_array(void *fdt,
                                                 ARRAY_SIZE(qdt_tmp) / 2,  \
                                                 qdt_tmp);                 \
     })
+
+
+/**
+ * qemu_fdt_randomize_seeds:
+ * @fdt: device tree blob
+ *
+ * Re-randomize all "rng-seed" properties with new seeds.
+ */
+void qemu_fdt_randomize_seeds(void *fdt);
 
 #define FDT_PCI_RANGE_RELOCATABLE          0x80000000
 #define FDT_PCI_RANGE_PREFETCHABLE         0x40000000

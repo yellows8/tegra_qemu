@@ -63,16 +63,6 @@ void helper_store_purr(CPUPPCState *env, target_ulong val)
 }
 #endif
 
-target_ulong helper_load_601_rtcl(CPUPPCState *env)
-{
-    return cpu_ppc601_load_rtcl(env);
-}
-
-target_ulong helper_load_601_rtcu(CPUPPCState *env)
-{
-    return cpu_ppc601_load_rtcu(env);
-}
-
 #if !defined(CONFIG_USER_ONLY)
 void helper_store_tbl(CPUPPCState *env, target_ulong val)
 {
@@ -92,16 +82,6 @@ void helper_store_atbl(CPUPPCState *env, target_ulong val)
 void helper_store_atbu(CPUPPCState *env, target_ulong val)
 {
     cpu_ppc_store_atbu(env, val);
-}
-
-void helper_store_601_rtcl(CPUPPCState *env, target_ulong val)
-{
-    cpu_ppc601_store_rtcl(env, val);
-}
-
-void helper_store_601_rtcu(CPUPPCState *env, target_ulong val)
-{
-    cpu_ppc601_store_rtcu(env, val);
 }
 
 target_ulong helper_load_decr(CPUPPCState *env)
@@ -144,6 +124,16 @@ void helper_store_40x_pit(CPUPPCState *env, target_ulong val)
     store_40x_pit(env, val);
 }
 
+void helper_store_40x_tcr(CPUPPCState *env, target_ulong val)
+{
+    store_40x_tcr(env, val);
+}
+
+void helper_store_40x_tsr(CPUPPCState *env, target_ulong val)
+{
+    store_40x_tsr(env, val);
+}
+
 void helper_store_booke_tcr(CPUPPCState *env, target_ulong val)
 {
     store_booke_tcr(env, val);
@@ -152,6 +142,18 @@ void helper_store_booke_tcr(CPUPPCState *env, target_ulong val)
 void helper_store_booke_tsr(CPUPPCState *env, target_ulong val)
 {
     store_booke_tsr(env, val);
+}
+
+#if defined(TARGET_PPC64)
+/* POWER processor Timebase Facility */
+target_ulong helper_load_tfmr(CPUPPCState *env)
+{
+    return env->spr[SPR_TFMR];
+}
+
+void helper_store_tfmr(CPUPPCState *env, target_ulong val)
+{
+    env->spr[SPR_TFMR] = val;
 }
 #endif
 
@@ -171,15 +173,15 @@ target_ulong helper_load_dcr(CPUPPCState *env, target_ulong dcrn)
     } else {
         int ret;
 
-        qemu_mutex_lock_iothread();
+        bql_lock();
         ret = ppc_dcr_read(env->dcr_env, (uint32_t)dcrn, &val);
-        qemu_mutex_unlock_iothread();
+        bql_unlock();
         if (unlikely(ret != 0)) {
             qemu_log_mask(LOG_GUEST_ERROR, "DCR read error %d %03x\n",
                           (uint32_t)dcrn, (uint32_t)dcrn);
             raise_exception_err_ra(env, POWERPC_EXCP_PROGRAM,
                                    POWERPC_EXCP_INVAL |
-                                   POWERPC_EXCP_PRIV_REG, GETPC());
+                                   POWERPC_EXCP_INVAL_INVAL, GETPC());
         }
     }
     return val;
@@ -194,15 +196,16 @@ void helper_store_dcr(CPUPPCState *env, target_ulong dcrn, target_ulong val)
                                POWERPC_EXCP_INVAL_INVAL, GETPC());
     } else {
         int ret;
-        qemu_mutex_lock_iothread();
+        bql_lock();
         ret = ppc_dcr_write(env->dcr_env, (uint32_t)dcrn, (uint32_t)val);
-        qemu_mutex_unlock_iothread();
+        bql_unlock();
         if (unlikely(ret != 0)) {
             qemu_log_mask(LOG_GUEST_ERROR, "DCR write error %d %03x\n",
                           (uint32_t)dcrn, (uint32_t)dcrn);
             raise_exception_err_ra(env, POWERPC_EXCP_PROGRAM,
                                    POWERPC_EXCP_INVAL |
-                                   POWERPC_EXCP_PRIV_REG, GETPC());
+                                   POWERPC_EXCP_INVAL_INVAL, GETPC());
         }
     }
 }
+#endif

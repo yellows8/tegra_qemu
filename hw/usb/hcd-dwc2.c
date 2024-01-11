@@ -272,8 +272,8 @@ static void dwc2_handle_packet(DWC2State *s, uint32_t devadr, USBDevice *dev,
 
         if (pid != USB_TOKEN_IN) {
             trace_usb_dwc2_memory_read(hcdma, tlen);
-            if (dma_memory_read(&s->dma_as, hcdma,
-                                s->usb_buf[chan], tlen) != MEMTX_OK) {
+            if (dma_memory_read(&s->dma_as, hcdma, s->usb_buf[chan], tlen,
+                                MEMTXATTRS_UNSPECIFIED) != MEMTX_OK) {
                 qemu_log_mask(LOG_GUEST_ERROR, "%s: dma_memory_read failed\n",
                               __func__);
             }
@@ -328,8 +328,8 @@ babble:
 
         if (pid == USB_TOKEN_IN) {
             trace_usb_dwc2_memory_write(hcdma, actual);
-            if (dma_memory_write(&s->dma_as, hcdma, s->usb_buf[chan],
-                                 actual) != MEMTX_OK) {
+            if (dma_memory_write(&s->dma_as, hcdma, s->usb_buf[chan], actual,
+                                 MEMTXATTRS_UNSPECIFIED) != MEMTX_OK) {
                 qemu_log_mask(LOG_GUEST_ERROR, "%s: dma_memory_write failed\n",
                               __func__);
             }
@@ -1364,7 +1364,8 @@ static void dwc2_realize(DeviceState *dev, Error **errp)
     s->fi = USB_FRMINTVL - 1;
     s->eof_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dwc2_frame_boundary, s);
     s->frame_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dwc2_work_timer, s);
-    s->async_bh = qemu_bh_new(dwc2_work_bh, s);
+    s->async_bh = qemu_bh_new_guarded(dwc2_work_bh, s,
+                                      &dev->mem_reentrancy_guard);
 
     sysbus_init_irq(sbd, &s->irq);
 }
@@ -1390,7 +1391,7 @@ static const VMStateDescription vmstate_dwc2_state_packet = {
     .name = "dwc2/packet",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(devadr, DWC2Packet),
         VMSTATE_UINT32(epnum, DWC2Packet),
         VMSTATE_UINT32(epdir, DWC2Packet),
@@ -1410,7 +1411,7 @@ const VMStateDescription vmstate_dwc2_state = {
     .name = "dwc2",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(glbreg, DWC2State,
                              DWC2_GLBREG_SIZE / sizeof(uint32_t)),
         VMSTATE_UINT32_ARRAY(fszreg, DWC2State,

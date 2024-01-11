@@ -18,12 +18,14 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/log.h"
 #include "cpu.h"
 #include "exec/exec-all.h"
 #include "exec/helper-proto.h"
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
 #include "mmu-book3s-v3.h"
+#include "hw/ppc/ppc.h"
 
 #include "helper_regs.h"
 
@@ -40,6 +42,52 @@ void helper_store_dump_spr(CPUPPCState *env, uint32_t sprn)
     qemu_log("Write SPR %d %03x <= " TARGET_FMT_lx "\n", sprn, sprn,
              env->spr[sprn]);
 }
+
+void helper_spr_core_write_generic(CPUPPCState *env, uint32_t sprn,
+                                   target_ulong val)
+{
+    CPUState *cs = env_cpu(env);
+    CPUState *ccs;
+    uint32_t nr_threads = cs->nr_threads;
+    uint32_t core_id = env->spr[SPR_PIR] & ~(nr_threads - 1);
+
+    assert(core_id == env->spr[SPR_PIR] - env->spr[SPR_TIR]);
+
+    if (nr_threads == 1) {
+        env->spr[sprn] = val;
+        return;
+    }
+
+    THREAD_SIBLING_FOREACH(cs, ccs) {
+        CPUPPCState *cenv = &POWERPC_CPU(ccs)->env;
+        cenv->spr[sprn] = val;
+    }
+}
+
+void helper_spr_write_CTRL(CPUPPCState *env, uint32_t sprn,
+                           target_ulong val)
+{
+    CPUState *cs = env_cpu(env);
+    CPUState *ccs;
+    uint32_t run = val & 1;
+    uint32_t ts, ts_mask;
+
+    assert(sprn == SPR_CTRL);
+
+    env->spr[sprn] &= ~1U;
+    env->spr[sprn] |= run;
+
+    ts_mask = ~(1U << (8 + env->spr[SPR_TIR]));
+    ts = run << (8 + env->spr[SPR_TIR]);
+
+    THREAD_SIBLING_FOREACH(cs, ccs) {
+        CPUPPCState *cenv = &POWERPC_CPU(ccs)->env;
+
+        cenv->spr[sprn] &= ts_mask;
+        cenv->spr[sprn] |= ts;
+    }
+}
+
 
 #ifdef TARGET_PPC64
 static void raise_hv_fu_exception(CPUPPCState *env, uint32_t bit,
@@ -72,7 +120,7 @@ void helper_hfscr_facility_check(CPUPPCState *env, uint32_t bit,
                                  const char *caller, uint32_t cause)
 {
 #ifdef TARGET_PPC64
-    if ((env->msr_mask & MSR_HVB) && !msr_hv &&
+    if ((env->msr_mask & MSR_HVB) && !FIELD_EX64(env->msr, MSR, HV) &&
                                      !(env->spr[SPR_HFSCR] & (1UL << bit))) {
         raise_hv_fu_exception(env, bit, caller, cause, GETPC());
     }
@@ -151,20 +199,56 @@ void helper_store_pcr(CPUPPCState *env, target_ulong value)
     env->spr[SPR_PCR] = value & pcc->pcr_mask;
 }
 
+void helper_store_ciabr(CPUPPCState *env, target_ulong value)
+{
+    ppc_store_ciabr(env, value);
+}
+
+void helper_store_dawr0(CPUPPCState *env, target_ulong value)
+{
+    ppc_store_dawr0(env, value);
+}
+
+void helper_store_dawrx0(CPUPPCState *env, target_ulong value)
+{
+    ppc_store_dawrx0(env, value);
+}
+
 /*
  * DPDES register is shared. Each bit reflects the state of the
  * doorbell interrupt of a thread of the same core.
  */
 target_ulong helper_load_dpdes(CPUPPCState *env)
 {
+    CPUState *cs = env_cpu(env);
+    CPUState *ccs;
+    uint32_t nr_threads = cs->nr_threads;
     target_ulong dpdes = 0;
 
     helper_hfscr_facility_check(env, HFSCR_MSGP, "load DPDES", HFSCR_IC_MSGP);
 
-    /* TODO: TCG supports only one thread */
-    if (env->pending_interrupts & (1 << PPC_INTERRUPT_DOORBELL)) {
-        dpdes = 1;
+    if (!(env->flags & POWERPC_FLAG_SMT_1LPAR)) {
+        nr_threads = 1; /* DPDES behaves as 1-thread in LPAR-per-thread mode */
     }
+
+    if (nr_threads == 1) {
+        if (env->pending_interrupts & PPC_INTERRUPT_DOORBELL) {
+            dpdes = 1;
+        }
+        return dpdes;
+    }
+
+    bql_lock();
+    THREAD_SIBLING_FOREACH(cs, ccs) {
+        PowerPCCPU *ccpu = POWERPC_CPU(ccs);
+        CPUPPCState *cenv = &ccpu->env;
+        uint32_t thread_id = ppc_cpu_tir(ccpu);
+
+        if (cenv->pending_interrupts & PPC_INTERRUPT_DOORBELL) {
+            dpdes |= (0x1 << thread_id);
+        }
+    }
+    bql_unlock();
 
     return dpdes;
 }
@@ -172,35 +256,48 @@ target_ulong helper_load_dpdes(CPUPPCState *env)
 void helper_store_dpdes(CPUPPCState *env, target_ulong val)
 {
     PowerPCCPU *cpu = env_archcpu(env);
-    CPUState *cs = CPU(cpu);
+    CPUState *cs = env_cpu(env);
+    CPUState *ccs;
+    uint32_t nr_threads = cs->nr_threads;
 
     helper_hfscr_facility_check(env, HFSCR_MSGP, "store DPDES", HFSCR_IC_MSGP);
 
-    /* TODO: TCG supports only one thread */
-    if (val & ~0x1) {
+    if (!(env->flags & POWERPC_FLAG_SMT_1LPAR)) {
+        nr_threads = 1; /* DPDES behaves as 1-thread in LPAR-per-thread mode */
+    }
+
+    if (val & ~(nr_threads - 1)) {
         qemu_log_mask(LOG_GUEST_ERROR, "Invalid DPDES register value "
                       TARGET_FMT_lx"\n", val);
+        val &= (nr_threads - 1); /* Ignore the invalid bits */
+    }
+
+    if (nr_threads == 1) {
+        ppc_set_irq(cpu, PPC_INTERRUPT_DOORBELL, val & 0x1);
         return;
     }
 
-    if (val & 0x1) {
-        env->pending_interrupts |= 1 << PPC_INTERRUPT_DOORBELL;
-        cpu_interrupt(cs, CPU_INTERRUPT_HARD);
-    } else {
-        env->pending_interrupts &= ~(1 << PPC_INTERRUPT_DOORBELL);
+    /* Does iothread need to be locked for walking CPU list? */
+    bql_lock();
+    THREAD_SIBLING_FOREACH(cs, ccs) {
+        PowerPCCPU *ccpu = POWERPC_CPU(ccs);
+        uint32_t thread_id = ppc_cpu_tir(ccpu);
+
+        ppc_set_irq(cpu, PPC_INTERRUPT_DOORBELL, val & (0x1 << thread_id));
     }
+    bql_unlock();
 }
 #endif /* defined(TARGET_PPC64) */
 
 void helper_store_pidr(CPUPPCState *env, target_ulong val)
 {
-    env->spr[SPR_BOOKS_PID] = val;
+    env->spr[SPR_BOOKS_PID] = (uint32_t)val;
     tlb_flush(env_cpu(env));
 }
 
 void helper_store_lpidr(CPUPPCState *env, target_ulong val)
 {
-    env->spr[SPR_LPIDR] = val;
+    env->spr[SPR_LPIDR] = (uint32_t)val;
 
     /*
      * We need to flush the TLB on LPID changes as we only tag HV vs
@@ -209,30 +306,6 @@ void helper_store_lpidr(CPUPPCState *env, target_ulong val)
      * well.
      */
     tlb_flush(env_cpu(env));
-}
-
-void helper_store_hid0_601(CPUPPCState *env, target_ulong val)
-{
-    target_ulong hid0;
-
-    hid0 = env->spr[SPR_HID0];
-    env->spr[SPR_HID0] = (uint32_t)val;
-
-    if ((val ^ hid0) & 0x00000008) {
-        /* Change current endianness */
-        hreg_compute_hflags(env);
-        qemu_log("%s: set endianness to %c => %08x\n", __func__,
-                 val & 0x8 ? 'l' : 'b', env->hflags);
-    }
-}
-
-void helper_store_403_pbr(CPUPPCState *env, uint32_t num, target_ulong value)
-{
-    if (likely(env->pb[num] != value)) {
-        env->pb[num] = value;
-        /* Should be optimized */
-        tlb_flush(env_cpu(env));
-    }
 }
 
 void helper_store_40x_dbcr0(CPUPPCState *env, target_ulong val)
@@ -248,31 +321,6 @@ void helper_store_40x_sler(CPUPPCState *env, target_ulong val)
     store_40x_sler(env, val);
 }
 #endif
-/*****************************************************************************/
-/* PowerPC 601 specific instructions (POWER bridge) */
-
-target_ulong helper_clcs(CPUPPCState *env, uint32_t arg)
-{
-    switch (arg) {
-    case 0x0CUL:
-        /* Instruction cache line size */
-        return env->icache_line_size;
-    case 0x0DUL:
-        /* Data cache line size */
-        return env->dcache_line_size;
-    case 0x0EUL:
-        /* Minimum cache line size */
-        return (env->icache_line_size < env->dcache_line_size) ?
-            env->icache_line_size : env->dcache_line_size;
-    case 0x0FUL:
-        /* Maximum cache line size */
-        return (env->icache_line_size > env->dcache_line_size) ?
-            env->icache_line_size : env->dcache_line_size;
-    default:
-        /* Undefined */
-        return 0;
-    }
-}
 
 /*****************************************************************************/
 /* Special registers manipulation */

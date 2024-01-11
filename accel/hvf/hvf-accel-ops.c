@@ -52,6 +52,7 @@
 #include "qemu/main-loop.h"
 #include "exec/address-spaces.h"
 #include "exec/exec-all.h"
+#include "exec/gdbstub.h"
 #include "sysemu/cpus.h"
 #include "sysemu/hvf.h"
 #include "sysemu/hvf_int.h"
@@ -59,6 +60,10 @@
 #include "qemu/guest-random.h"
 
 HVFState *hvf_state;
+
+#ifdef __aarch64__
+#define HV_VM_DEFAULT NULL
+#endif
 
 /* Memory slots */
 
@@ -116,11 +121,12 @@ static void hvf_set_phys_mem(MemoryRegionSection *section, bool add)
 {
     hvf_slot *mem;
     MemoryRegion *area = section->mr;
-    bool writeable = !area->readonly && !area->rom_device;
+    bool writable = !area->readonly && !area->rom_device;
     hv_memory_flags_t flags;
+    uint64_t page_size = qemu_real_host_page_size();
 
     if (!memory_region_is_ram(area)) {
-        if (writeable) {
+        if (writable) {
             return;
         } else if (!memory_region_is_romd(area)) {
             /*
@@ -129,6 +135,12 @@ static void hvf_set_phys_mem(MemoryRegionSection *section, bool add)
              */
              add = false;
         }
+    }
+
+    if (!QEMU_IS_ALIGNED(int128_get64(section->size), page_size) ||
+        !QEMU_IS_ALIGNED(section->offset_within_address_space, page_size)) {
+        /* Not page aligned, so we can not map as RAM */
+        add = false;
     }
 
     mem = hvf_find_overlap_slot(
@@ -239,12 +251,12 @@ static void hvf_set_dirty_tracking(MemoryRegionSection *section, bool on)
     if (on) {
         slot->flags |= HVF_SLOT_LOG;
         hv_vm_protect((uintptr_t)slot->start, (size_t)slot->size,
-                      HV_MEMORY_READ);
+                      HV_MEMORY_READ | HV_MEMORY_EXEC);
     /* stop tracking region*/
     } else {
         slot->flags &= ~HVF_SLOT_LOG;
         hv_vm_protect((uintptr_t)slot->start, (size_t)slot->size,
-                      HV_MEMORY_READ | HV_MEMORY_WRITE);
+                      HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC);
     }
 }
 
@@ -291,7 +303,8 @@ static void hvf_region_del(MemoryListener *listener,
 }
 
 static MemoryListener hvf_memory_listener = {
-    .priority = 10,
+    .name = "hvf",
+    .priority = MEMORY_LISTENER_PRIORITY_ACCEL,
     .region_add = hvf_region_add,
     .region_del = hvf_region_del,
     .log_start = hvf_log_start,
@@ -316,15 +329,23 @@ static int hvf_accel_init(MachineState *ms)
 
     s = g_new0(HVFState, 1);
 
-    s->num_slots = 32;
+    s->num_slots = ARRAY_SIZE(s->slots);
     for (x = 0; x < s->num_slots; ++x) {
         s->slots[x].size = 0;
         s->slots[x].slot_id = x;
     }
 
+    QTAILQ_INIT(&s->hvf_sw_breakpoints);
+
     hvf_state = s;
     memory_listener_register(&hvf_memory_listener, &address_space_memory);
-    return 0;
+
+    return hvf_arch_init();
+}
+
+static inline int hvf_gdbstub_sstep_flags(void)
+{
+    return SSTEP_ENABLE | SSTEP_NOIRQ;
 }
 
 static void hvf_accel_class_init(ObjectClass *oc, void *data)
@@ -333,6 +354,7 @@ static void hvf_accel_class_init(ObjectClass *oc, void *data)
     ac->name = "HVF";
     ac->init_machine = hvf_accel_init;
     ac->allowed = &hvf_allowed;
+    ac->gdbstub_supported_sstep_flags = hvf_gdbstub_sstep_flags;
 }
 
 static const TypeInfo hvf_accel_type = {
@@ -350,34 +372,40 @@ type_init(hvf_type_init);
 
 static void hvf_vcpu_destroy(CPUState *cpu)
 {
-    hv_return_t ret = hv_vcpu_destroy(cpu->hvf->fd);
+    hv_return_t ret = hv_vcpu_destroy(cpu->accel->fd);
     assert_hvf_ok(ret);
 
     hvf_arch_vcpu_destroy(cpu);
-    g_free(cpu->hvf);
-    cpu->hvf = NULL;
+    g_free(cpu->accel);
+    cpu->accel = NULL;
 }
 
 static int hvf_init_vcpu(CPUState *cpu)
 {
     int r;
 
-    cpu->hvf = g_malloc0(sizeof(*cpu->hvf));
+    cpu->accel = g_new0(AccelCPUState, 1);
 
     /* init cpu signals */
-    sigset_t set;
     struct sigaction sigact;
 
     memset(&sigact, 0, sizeof(sigact));
     sigact.sa_handler = dummy_signal;
     sigaction(SIG_IPI, &sigact, NULL);
 
-    pthread_sigmask(SIG_BLOCK, NULL, &set);
-    sigdelset(&set, SIG_IPI);
+    pthread_sigmask(SIG_BLOCK, NULL, &cpu->accel->unblock_ipi_mask);
+    sigdelset(&cpu->accel->unblock_ipi_mask, SIG_IPI);
 
-    r = hv_vcpu_create((hv_vcpuid_t *)&cpu->hvf->fd, HV_VCPU_DEFAULT);
+#ifdef __aarch64__
+    r = hv_vcpu_create(&cpu->accel->fd,
+                       (hv_vcpu_exit_t **)&cpu->accel->exit, NULL);
+#else
+    r = hv_vcpu_create((hv_vcpuid_t *)&cpu->accel->fd, HV_VCPU_DEFAULT);
+#endif
     cpu->vcpu_dirty = 1;
     assert_hvf_ok(r);
+
+    cpu->accel->guest_debug_enabled = false;
 
     return hvf_arch_init_vcpu(cpu);
 }
@@ -396,11 +424,11 @@ static void *hvf_cpu_thread_fn(void *arg)
 
     rcu_register_thread();
 
-    qemu_mutex_lock_iothread();
+    bql_lock();
     qemu_thread_get_self(cpu->thread);
 
     cpu->thread_id = qemu_get_thread_id();
-    cpu->can_do_io = 1;
+    cpu->neg.can_do_io = true;
     current_cpu = cpu;
 
     hvf_init_vcpu(cpu);
@@ -421,7 +449,7 @@ static void *hvf_cpu_thread_fn(void *arg)
 
     hvf_vcpu_destroy(cpu);
     cpu_thread_signal_destroyed(cpu);
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
     rcu_unregister_thread();
     return NULL;
 }
@@ -446,16 +474,125 @@ static void hvf_start_vcpu_thread(CPUState *cpu)
                        cpu, QEMU_THREAD_JOINABLE);
 }
 
+static int hvf_insert_breakpoint(CPUState *cpu, int type, vaddr addr, vaddr len)
+{
+    struct hvf_sw_breakpoint *bp;
+    int err;
+
+    if (type == GDB_BREAKPOINT_SW) {
+        bp = hvf_find_sw_breakpoint(cpu, addr);
+        if (bp) {
+            bp->use_count++;
+            return 0;
+        }
+
+        bp = g_new(struct hvf_sw_breakpoint, 1);
+        bp->pc = addr;
+        bp->use_count = 1;
+        err = hvf_arch_insert_sw_breakpoint(cpu, bp);
+        if (err) {
+            g_free(bp);
+            return err;
+        }
+
+        QTAILQ_INSERT_HEAD(&hvf_state->hvf_sw_breakpoints, bp, entry);
+    } else {
+        err = hvf_arch_insert_hw_breakpoint(addr, len, type);
+        if (err) {
+            return err;
+        }
+    }
+
+    CPU_FOREACH(cpu) {
+        err = hvf_update_guest_debug(cpu);
+        if (err) {
+            return err;
+        }
+    }
+    return 0;
+}
+
+static int hvf_remove_breakpoint(CPUState *cpu, int type, vaddr addr, vaddr len)
+{
+    struct hvf_sw_breakpoint *bp;
+    int err;
+
+    if (type == GDB_BREAKPOINT_SW) {
+        bp = hvf_find_sw_breakpoint(cpu, addr);
+        if (!bp) {
+            return -ENOENT;
+        }
+
+        if (bp->use_count > 1) {
+            bp->use_count--;
+            return 0;
+        }
+
+        err = hvf_arch_remove_sw_breakpoint(cpu, bp);
+        if (err) {
+            return err;
+        }
+
+        QTAILQ_REMOVE(&hvf_state->hvf_sw_breakpoints, bp, entry);
+        g_free(bp);
+    } else {
+        err = hvf_arch_remove_hw_breakpoint(addr, len, type);
+        if (err) {
+            return err;
+        }
+    }
+
+    CPU_FOREACH(cpu) {
+        err = hvf_update_guest_debug(cpu);
+        if (err) {
+            return err;
+        }
+    }
+    return 0;
+}
+
+static void hvf_remove_all_breakpoints(CPUState *cpu)
+{
+    struct hvf_sw_breakpoint *bp, *next;
+    CPUState *tmpcpu;
+
+    QTAILQ_FOREACH_SAFE(bp, &hvf_state->hvf_sw_breakpoints, entry, next) {
+        if (hvf_arch_remove_sw_breakpoint(cpu, bp) != 0) {
+            /* Try harder to find a CPU that currently sees the breakpoint. */
+            CPU_FOREACH(tmpcpu)
+            {
+                if (hvf_arch_remove_sw_breakpoint(tmpcpu, bp) == 0) {
+                    break;
+                }
+            }
+        }
+        QTAILQ_REMOVE(&hvf_state->hvf_sw_breakpoints, bp, entry);
+        g_free(bp);
+    }
+    hvf_arch_remove_all_hw_breakpoints();
+
+    CPU_FOREACH(cpu) {
+        hvf_update_guest_debug(cpu);
+    }
+}
+
 static void hvf_accel_ops_class_init(ObjectClass *oc, void *data)
 {
     AccelOpsClass *ops = ACCEL_OPS_CLASS(oc);
 
     ops->create_vcpu_thread = hvf_start_vcpu_thread;
+    ops->kick_vcpu_thread = hvf_kick_vcpu_thread;
 
     ops->synchronize_post_reset = hvf_cpu_synchronize_post_reset;
     ops->synchronize_post_init = hvf_cpu_synchronize_post_init;
     ops->synchronize_state = hvf_cpu_synchronize_state;
     ops->synchronize_pre_loadvm = hvf_cpu_synchronize_pre_loadvm;
+
+    ops->insert_breakpoint = hvf_insert_breakpoint;
+    ops->remove_breakpoint = hvf_remove_breakpoint;
+    ops->remove_all_breakpoints = hvf_remove_all_breakpoints;
+    ops->update_guest_debug = hvf_update_guest_debug;
+    ops->supports_guest_debug = hvf_arch_supports_guest_debug;
 };
 static const TypeInfo hvf_accel_ops_type = {
     .name = ACCEL_OPS_NAME("hvf"),

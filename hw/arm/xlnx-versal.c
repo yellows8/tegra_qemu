@@ -12,6 +12,7 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
+#include "qapi/qmp/qlist.h"
 #include "qemu/module.h"
 #include "hw/sysbus.h"
 #include "net/net.h"
@@ -21,24 +22,32 @@
 #include "kvm_arm.h"
 #include "hw/misc/unimp.h"
 #include "hw/arm/xlnx-versal.h"
+#include "qemu/log.h"
 
 #define XLNX_VERSAL_ACPU_TYPE ARM_CPU_TYPE_NAME("cortex-a72")
+#define XLNX_VERSAL_RCPU_TYPE ARM_CPU_TYPE_NAME("cortex-r5f")
 #define GEM_REVISION        0x40070106
+
+#define VERSAL_NUM_PMC_APB_IRQS 18
+#define NUM_OSPI_IRQ_LINES 3
 
 static void versal_create_apu_cpus(Versal *s)
 {
     int i;
 
+    object_initialize_child(OBJECT(s), "apu-cluster", &s->fpd.apu.cluster,
+                            TYPE_CPU_CLUSTER);
+    qdev_prop_set_uint32(DEVICE(&s->fpd.apu.cluster), "cluster-id", 0);
+
     for (i = 0; i < ARRAY_SIZE(s->fpd.apu.cpu); i++) {
         Object *obj;
 
-        object_initialize_child(OBJECT(s), "apu-cpu[*]", &s->fpd.apu.cpu[i],
+        object_initialize_child(OBJECT(&s->fpd.apu.cluster),
+                                "apu-cpu[*]", &s->fpd.apu.cpu[i],
                                 XLNX_VERSAL_ACPU_TYPE);
         obj = OBJECT(&s->fpd.apu.cpu[i]);
-        object_property_set_int(obj, "psci-conduit", s->cfg.psci_conduit,
-                                &error_abort);
         if (i) {
-            /* Secondary CPUs start in PSCI powered-down state */
+            /* Secondary CPUs start in powered-down state */
             object_property_set_bool(obj, "start-powered-off", true,
                                      &error_abort);
         }
@@ -49,6 +58,8 @@ static void versal_create_apu_cpus(Versal *s)
                                  &error_abort);
         qdev_realize(DEVICE(obj), NULL, &error_fatal);
     }
+
+    qdev_realize(DEVICE(&s->fpd.apu.cluster), NULL, &error_fatal);
 }
 
 static void versal_create_apu_gic(Versal *s, qemu_irq *pic)
@@ -59,6 +70,7 @@ static void versal_create_apu_gic(Versal *s, qemu_irq *pic)
     };
     SysBusDevice *gicbusdev;
     DeviceState *gicdev;
+    QList *redist_region_count;
     int nr_apu_cpus = ARRAY_SIZE(s->fpd.apu.cpu);
     int i;
 
@@ -69,8 +81,11 @@ static void versal_create_apu_gic(Versal *s, qemu_irq *pic)
     qdev_prop_set_uint32(gicdev, "revision", 3);
     qdev_prop_set_uint32(gicdev, "num-cpu", nr_apu_cpus);
     qdev_prop_set_uint32(gicdev, "num-irq", XLNX_VERSAL_NR_IRQS + 32);
-    qdev_prop_set_uint32(gicdev, "len-redist-region-count", 1);
-    qdev_prop_set_uint32(gicdev, "redist-region-count[0]", nr_apu_cpus);
+
+    redist_region_count = qlist_new();
+    qlist_append_int(redist_region_count, nr_apu_cpus);
+    qdev_prop_set_array(gicdev, "redist-region-count", redist_region_count);
+
     qdev_prop_set_bit(gicdev, "has-security-extensions", true);
 
     sysbus_realize(SYS_BUS_DEVICE(&s->fpd.apu.gic), &error_fatal);
@@ -120,6 +135,35 @@ static void versal_create_apu_gic(Versal *s, qemu_irq *pic)
     }
 }
 
+static void versal_create_rpu_cpus(Versal *s)
+{
+    int i;
+
+    object_initialize_child(OBJECT(s), "rpu-cluster", &s->lpd.rpu.cluster,
+                            TYPE_CPU_CLUSTER);
+    qdev_prop_set_uint32(DEVICE(&s->lpd.rpu.cluster), "cluster-id", 1);
+
+    for (i = 0; i < ARRAY_SIZE(s->lpd.rpu.cpu); i++) {
+        Object *obj;
+
+        object_initialize_child(OBJECT(&s->lpd.rpu.cluster),
+                                "rpu-cpu[*]", &s->lpd.rpu.cpu[i],
+                                XLNX_VERSAL_RCPU_TYPE);
+        obj = OBJECT(&s->lpd.rpu.cpu[i]);
+        object_property_set_bool(obj, "start-powered-off", true,
+                                 &error_abort);
+
+        object_property_set_int(obj, "mp-affinity", 0x100 | i, &error_abort);
+        object_property_set_int(obj, "core-count", ARRAY_SIZE(s->lpd.rpu.cpu),
+                                &error_abort);
+        object_property_set_link(obj, "memory", OBJECT(&s->lpd.rpu.mr),
+                                 &error_abort);
+        qdev_realize(DEVICE(obj), NULL, &error_fatal);
+    }
+
+    qdev_realize(DEVICE(&s->lpd.rpu.cluster), NULL, &error_fatal);
+}
+
 static void versal_create_uarts(Versal *s, qemu_irq *pic)
 {
     int i;
@@ -141,6 +185,38 @@ static void versal_create_uarts(Versal *s, qemu_irq *pic)
         memory_region_add_subregion(&s->mr_ps, addrs[i], mr);
 
         sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, pic[irqs[i]]);
+        g_free(name);
+    }
+}
+
+static void versal_create_canfds(Versal *s, qemu_irq *pic)
+{
+    int i;
+    uint32_t irqs[] = { VERSAL_CANFD0_IRQ_0, VERSAL_CANFD1_IRQ_0};
+    uint64_t addrs[] = { MM_CANFD0, MM_CANFD1 };
+
+    for (i = 0; i < ARRAY_SIZE(s->lpd.iou.canfd); i++) {
+        char *name = g_strdup_printf("canfd%d", i);
+        SysBusDevice *sbd;
+        MemoryRegion *mr;
+
+        object_initialize_child(OBJECT(s), name, &s->lpd.iou.canfd[i],
+                                TYPE_XILINX_CANFD);
+        sbd = SYS_BUS_DEVICE(&s->lpd.iou.canfd[i]);
+
+        object_property_set_int(OBJECT(&s->lpd.iou.canfd[i]), "ext_clk_freq",
+                                XLNX_VERSAL_CANFD_REF_CLK , &error_abort);
+
+        object_property_set_link(OBJECT(&s->lpd.iou.canfd[i]), "canfdbus",
+                                 OBJECT(s->lpd.iou.canbus[i]),
+                                 &error_abort);
+
+        sysbus_realize(sbd, &error_fatal);
+
+        mr = sysbus_mmio_get_region(sbd, 0);
+        memory_region_add_subregion(&s->mr_ps, addrs[i], mr);
+
+        sysbus_connect_irq(sbd, 0, pic[irqs[i]]);
         g_free(name);
     }
 }
@@ -218,6 +294,8 @@ static void versal_create_admas(Versal *s, qemu_irq *pic)
                                 TYPE_XLNX_ZDMA);
         dev = DEVICE(&s->lpd.iou.adma[i]);
         object_property_set_int(OBJECT(dev), "bus-width", 128, &error_abort);
+        object_property_set_link(OBJECT(dev), "dma",
+                                 OBJECT(get_system_memory()), &error_fatal);
         sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
 
         mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0);
@@ -258,6 +336,27 @@ static void versal_create_sds(Versal *s, qemu_irq *pic)
     }
 }
 
+static void versal_create_pmc_apb_irq_orgate(Versal *s, qemu_irq *pic)
+{
+    DeviceState *orgate;
+
+    /*
+     * The VERSAL_PMC_APB_IRQ is an 'or' of the interrupts from the following
+     * models:
+     *  - RTC
+     *  - BBRAM
+     *  - PMC SLCR
+     *  - CFRAME regs (input 3 - 17 to the orgate)
+     */
+    object_initialize_child(OBJECT(s), "pmc-apb-irq-orgate",
+                            &s->pmc.apb_irq_orgate, TYPE_OR_IRQ);
+    orgate = DEVICE(&s->pmc.apb_irq_orgate);
+    object_property_set_int(OBJECT(orgate),
+                            "num-lines", VERSAL_NUM_PMC_APB_IRQS, &error_fatal);
+    qdev_realize(orgate, NULL, &error_fatal);
+    qdev_connect_gpio_out(orgate, 0, pic[VERSAL_PMC_APB_IRQ]);
+}
+
 static void versal_create_rtc(Versal *s, qemu_irq *pic)
 {
     SysBusDevice *sbd;
@@ -266,7 +365,7 @@ static void versal_create_rtc(Versal *s, qemu_irq *pic)
     object_initialize_child(OBJECT(s), "rtc", &s->pmc.rtc,
                             TYPE_XLNX_ZYNQMP_RTC);
     sbd = SYS_BUS_DEVICE(&s->pmc.rtc);
-    sysbus_realize(SYS_BUS_DEVICE(sbd), &error_fatal);
+    sysbus_realize(sbd, &error_fatal);
 
     mr = sysbus_mmio_get_region(sbd, 0);
     memory_region_add_subregion(&s->mr_ps, MM_PMC_RTC, mr);
@@ -275,7 +374,23 @@ static void versal_create_rtc(Versal *s, qemu_irq *pic)
      * TODO: Connect the ALARM and SECONDS interrupts once our RTC model
      * supports them.
      */
-    sysbus_connect_irq(sbd, 1, pic[VERSAL_RTC_APB_ERR_IRQ]);
+    sysbus_connect_irq(sbd, 1,
+                       qdev_get_gpio_in(DEVICE(&s->pmc.apb_irq_orgate), 0));
+}
+
+static void versal_create_trng(Versal *s, qemu_irq *pic)
+{
+    SysBusDevice *sbd;
+    MemoryRegion *mr;
+
+    object_initialize_child(OBJECT(s), "trng", &s->pmc.trng,
+                            TYPE_XLNX_VERSAL_TRNG);
+    sbd = SYS_BUS_DEVICE(&s->pmc.trng);
+    sysbus_realize(sbd, &error_fatal);
+
+    mr = sysbus_mmio_get_region(sbd, 0);
+    memory_region_add_subregion(&s->mr_ps, MM_PMC_TRNG, mr);
+    sysbus_connect_irq(sbd, 0, pic[VERSAL_TRNG_IRQ]);
 }
 
 static void versal_create_xrams(Versal *s, qemu_irq *pic)
@@ -310,6 +425,372 @@ static void versal_create_xrams(Versal *s, qemu_irq *pic)
 
         sysbus_connect_irq(sbd, 0, qdev_get_gpio_in(orgate, i));
     }
+}
+
+static void versal_create_bbram(Versal *s, qemu_irq *pic)
+{
+    SysBusDevice *sbd;
+
+    object_initialize_child_with_props(OBJECT(s), "bbram", &s->pmc.bbram,
+                                       sizeof(s->pmc.bbram), TYPE_XLNX_BBRAM,
+                                       &error_fatal,
+                                       "crc-zpads", "0",
+                                       NULL);
+    sbd = SYS_BUS_DEVICE(&s->pmc.bbram);
+
+    sysbus_realize(sbd, &error_fatal);
+    memory_region_add_subregion(&s->mr_ps, MM_PMC_BBRAM_CTRL,
+                                sysbus_mmio_get_region(sbd, 0));
+    sysbus_connect_irq(sbd, 0,
+                       qdev_get_gpio_in(DEVICE(&s->pmc.apb_irq_orgate), 1));
+}
+
+static void versal_realize_efuse_part(Versal *s, Object *dev, hwaddr base)
+{
+    SysBusDevice *part = SYS_BUS_DEVICE(dev);
+
+    object_property_set_link(OBJECT(part), "efuse",
+                             OBJECT(&s->pmc.efuse), &error_abort);
+
+    sysbus_realize(part, &error_abort);
+    memory_region_add_subregion(&s->mr_ps, base,
+                                sysbus_mmio_get_region(part, 0));
+}
+
+static void versal_create_efuse(Versal *s, qemu_irq *pic)
+{
+    Object *bits = OBJECT(&s->pmc.efuse);
+    Object *ctrl = OBJECT(&s->pmc.efuse_ctrl);
+    Object *cache = OBJECT(&s->pmc.efuse_cache);
+
+    object_initialize_child(OBJECT(s), "efuse-ctrl", &s->pmc.efuse_ctrl,
+                            TYPE_XLNX_VERSAL_EFUSE_CTRL);
+
+    object_initialize_child(OBJECT(s), "efuse-cache", &s->pmc.efuse_cache,
+                            TYPE_XLNX_VERSAL_EFUSE_CACHE);
+
+    object_initialize_child_with_props(ctrl, "xlnx-efuse@0", bits,
+                                       sizeof(s->pmc.efuse),
+                                       TYPE_XLNX_EFUSE, &error_abort,
+                                       "efuse-nr", "3",
+                                       "efuse-size", "8192",
+                                       NULL);
+
+    qdev_realize(DEVICE(bits), NULL, &error_abort);
+    versal_realize_efuse_part(s, ctrl, MM_PMC_EFUSE_CTRL);
+    versal_realize_efuse_part(s, cache, MM_PMC_EFUSE_CACHE);
+
+    sysbus_connect_irq(SYS_BUS_DEVICE(ctrl), 0, pic[VERSAL_EFUSE_IRQ]);
+}
+
+static void versal_create_pmc_iou_slcr(Versal *s, qemu_irq *pic)
+{
+    SysBusDevice *sbd;
+
+    object_initialize_child(OBJECT(s), "versal-pmc-iou-slcr", &s->pmc.iou.slcr,
+                            TYPE_XILINX_VERSAL_PMC_IOU_SLCR);
+
+    sbd = SYS_BUS_DEVICE(&s->pmc.iou.slcr);
+    sysbus_realize(sbd, &error_fatal);
+
+    memory_region_add_subregion(&s->mr_ps, MM_PMC_PMC_IOU_SLCR,
+                                sysbus_mmio_get_region(sbd, 0));
+
+    sysbus_connect_irq(sbd, 0,
+                       qdev_get_gpio_in(DEVICE(&s->pmc.apb_irq_orgate), 2));
+}
+
+static void versal_create_ospi(Versal *s, qemu_irq *pic)
+{
+    SysBusDevice *sbd;
+    MemoryRegion *mr_dac;
+    qemu_irq ospi_mux_sel;
+    DeviceState *orgate;
+
+    memory_region_init(&s->pmc.iou.ospi.linear_mr, OBJECT(s),
+                       "versal-ospi-linear-mr" , MM_PMC_OSPI_DAC_SIZE);
+
+    object_initialize_child(OBJECT(s), "versal-ospi", &s->pmc.iou.ospi.ospi,
+                            TYPE_XILINX_VERSAL_OSPI);
+
+    mr_dac = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->pmc.iou.ospi.ospi), 1);
+    memory_region_add_subregion(&s->pmc.iou.ospi.linear_mr, 0x0, mr_dac);
+
+    /* Create the OSPI destination DMA */
+    object_initialize_child(OBJECT(s), "versal-ospi-dma-dst",
+                            &s->pmc.iou.ospi.dma_dst,
+                            TYPE_XLNX_CSU_DMA);
+
+    object_property_set_link(OBJECT(&s->pmc.iou.ospi.dma_dst),
+                            "dma", OBJECT(get_system_memory()),
+                             &error_abort);
+
+    sbd = SYS_BUS_DEVICE(&s->pmc.iou.ospi.dma_dst);
+    sysbus_realize(sbd, &error_fatal);
+
+    memory_region_add_subregion(&s->mr_ps, MM_PMC_OSPI_DMA_DST,
+                                sysbus_mmio_get_region(sbd, 0));
+
+    /* Create the OSPI source DMA */
+    object_initialize_child(OBJECT(s), "versal-ospi-dma-src",
+                            &s->pmc.iou.ospi.dma_src,
+                            TYPE_XLNX_CSU_DMA);
+
+    object_property_set_bool(OBJECT(&s->pmc.iou.ospi.dma_src), "is-dst",
+                             false, &error_abort);
+
+    object_property_set_link(OBJECT(&s->pmc.iou.ospi.dma_src),
+                            "dma", OBJECT(mr_dac), &error_abort);
+
+    object_property_set_link(OBJECT(&s->pmc.iou.ospi.dma_src),
+                            "stream-connected-dma",
+                             OBJECT(&s->pmc.iou.ospi.dma_dst),
+                             &error_abort);
+
+    sbd = SYS_BUS_DEVICE(&s->pmc.iou.ospi.dma_src);
+    sysbus_realize(sbd, &error_fatal);
+
+    memory_region_add_subregion(&s->mr_ps, MM_PMC_OSPI_DMA_SRC,
+                                sysbus_mmio_get_region(sbd, 0));
+
+    /* Realize the OSPI */
+    object_property_set_link(OBJECT(&s->pmc.iou.ospi.ospi), "dma-src",
+                             OBJECT(&s->pmc.iou.ospi.dma_src), &error_abort);
+
+    sbd = SYS_BUS_DEVICE(&s->pmc.iou.ospi.ospi);
+    sysbus_realize(sbd, &error_fatal);
+
+    memory_region_add_subregion(&s->mr_ps, MM_PMC_OSPI,
+                                sysbus_mmio_get_region(sbd, 0));
+
+    memory_region_add_subregion(&s->mr_ps, MM_PMC_OSPI_DAC,
+                                &s->pmc.iou.ospi.linear_mr);
+
+    /* ospi_mux_sel */
+    ospi_mux_sel = qdev_get_gpio_in_named(DEVICE(&s->pmc.iou.ospi.ospi),
+                                          "ospi-mux-sel", 0);
+    qdev_connect_gpio_out_named(DEVICE(&s->pmc.iou.slcr), "ospi-mux-sel", 0,
+                                ospi_mux_sel);
+
+    /* OSPI irq */
+    object_initialize_child(OBJECT(s), "ospi-irq-orgate",
+                            &s->pmc.iou.ospi.irq_orgate, TYPE_OR_IRQ);
+    object_property_set_int(OBJECT(&s->pmc.iou.ospi.irq_orgate),
+                            "num-lines", NUM_OSPI_IRQ_LINES, &error_fatal);
+
+    orgate = DEVICE(&s->pmc.iou.ospi.irq_orgate);
+    qdev_realize(orgate, NULL, &error_fatal);
+
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->pmc.iou.ospi.ospi), 0,
+                       qdev_get_gpio_in(orgate, 0));
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->pmc.iou.ospi.dma_src), 0,
+                       qdev_get_gpio_in(orgate, 1));
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->pmc.iou.ospi.dma_dst), 0,
+                       qdev_get_gpio_in(orgate, 2));
+
+    qdev_connect_gpio_out(orgate, 0, pic[VERSAL_OSPI_IRQ]);
+}
+
+static void versal_create_cfu(Versal *s, qemu_irq *pic)
+{
+    SysBusDevice *sbd;
+    DeviceState *dev;
+    int i;
+    const struct {
+        uint64_t reg_base;
+        uint64_t fdri_base;
+    } cframe_addr[] = {
+        { MM_PMC_CFRAME0_REG, MM_PMC_CFRAME0_FDRI },
+        { MM_PMC_CFRAME1_REG, MM_PMC_CFRAME1_FDRI },
+        { MM_PMC_CFRAME2_REG, MM_PMC_CFRAME2_FDRI },
+        { MM_PMC_CFRAME3_REG, MM_PMC_CFRAME3_FDRI },
+        { MM_PMC_CFRAME4_REG, MM_PMC_CFRAME4_FDRI },
+        { MM_PMC_CFRAME5_REG, MM_PMC_CFRAME5_FDRI },
+        { MM_PMC_CFRAME6_REG, MM_PMC_CFRAME6_FDRI },
+        { MM_PMC_CFRAME7_REG, MM_PMC_CFRAME7_FDRI },
+        { MM_PMC_CFRAME8_REG, MM_PMC_CFRAME8_FDRI },
+        { MM_PMC_CFRAME9_REG, MM_PMC_CFRAME9_FDRI },
+        { MM_PMC_CFRAME10_REG, MM_PMC_CFRAME10_FDRI },
+        { MM_PMC_CFRAME11_REG, MM_PMC_CFRAME11_FDRI },
+        { MM_PMC_CFRAME12_REG, MM_PMC_CFRAME12_FDRI },
+        { MM_PMC_CFRAME13_REG, MM_PMC_CFRAME13_FDRI },
+        { MM_PMC_CFRAME14_REG, MM_PMC_CFRAME14_FDRI },
+    };
+    const struct {
+        uint32_t blktype0_frames;
+        uint32_t blktype1_frames;
+        uint32_t blktype2_frames;
+        uint32_t blktype3_frames;
+        uint32_t blktype4_frames;
+        uint32_t blktype5_frames;
+        uint32_t blktype6_frames;
+    } cframe_cfg[] = {
+        [0] = { 34111, 3528, 12800, 11, 5, 1, 1 },
+        [1] = { 38498, 3841, 15361, 13, 7, 3, 1 },
+        [2] = { 38498, 3841, 15361, 13, 7, 3, 1 },
+        [3] = { 38498, 3841, 15361, 13, 7, 3, 1 },
+    };
+
+    /* CFU FDRO */
+    object_initialize_child(OBJECT(s), "cfu-fdro", &s->pmc.cfu_fdro,
+                            TYPE_XLNX_VERSAL_CFU_FDRO);
+    sbd = SYS_BUS_DEVICE(&s->pmc.cfu_fdro);
+
+    sysbus_realize(sbd, &error_fatal);
+    memory_region_add_subregion(&s->mr_ps, MM_PMC_CFU_FDRO,
+                                sysbus_mmio_get_region(sbd, 0));
+
+    /* CFRAME REG */
+    for (i = 0; i < ARRAY_SIZE(s->pmc.cframe); i++) {
+        g_autofree char *name = g_strdup_printf("cframe%d", i);
+
+        object_initialize_child(OBJECT(s), name, &s->pmc.cframe[i],
+                                TYPE_XLNX_VERSAL_CFRAME_REG);
+
+        sbd = SYS_BUS_DEVICE(&s->pmc.cframe[i]);
+        dev = DEVICE(&s->pmc.cframe[i]);
+
+        if (i < ARRAY_SIZE(cframe_cfg)) {
+            object_property_set_int(OBJECT(dev), "blktype0-frames",
+                                    cframe_cfg[i].blktype0_frames,
+                                    &error_abort);
+            object_property_set_int(OBJECT(dev), "blktype1-frames",
+                                    cframe_cfg[i].blktype1_frames,
+                                    &error_abort);
+            object_property_set_int(OBJECT(dev), "blktype2-frames",
+                                    cframe_cfg[i].blktype2_frames,
+                                    &error_abort);
+            object_property_set_int(OBJECT(dev), "blktype3-frames",
+                                    cframe_cfg[i].blktype3_frames,
+                                    &error_abort);
+            object_property_set_int(OBJECT(dev), "blktype4-frames",
+                                    cframe_cfg[i].blktype4_frames,
+                                    &error_abort);
+            object_property_set_int(OBJECT(dev), "blktype5-frames",
+                                    cframe_cfg[i].blktype5_frames,
+                                    &error_abort);
+            object_property_set_int(OBJECT(dev), "blktype6-frames",
+                                    cframe_cfg[i].blktype6_frames,
+                                    &error_abort);
+        }
+        object_property_set_link(OBJECT(dev), "cfu-fdro",
+                                 OBJECT(&s->pmc.cfu_fdro), &error_fatal);
+
+        sysbus_realize(SYS_BUS_DEVICE(dev), &error_fatal);
+
+        memory_region_add_subregion(&s->mr_ps, cframe_addr[i].reg_base,
+                                    sysbus_mmio_get_region(sbd, 0));
+        memory_region_add_subregion(&s->mr_ps, cframe_addr[i].fdri_base,
+                                    sysbus_mmio_get_region(sbd, 1));
+        sysbus_connect_irq(sbd, 0,
+                           qdev_get_gpio_in(DEVICE(&s->pmc.apb_irq_orgate),
+                                            3 + i));
+    }
+
+    /* CFRAME BCAST */
+    object_initialize_child(OBJECT(s), "cframe_bcast", &s->pmc.cframe_bcast,
+                            TYPE_XLNX_VERSAL_CFRAME_BCAST_REG);
+
+    sbd = SYS_BUS_DEVICE(&s->pmc.cframe_bcast);
+    dev = DEVICE(&s->pmc.cframe_bcast);
+
+    for (i = 0; i < ARRAY_SIZE(s->pmc.cframe); i++) {
+        g_autofree char *propname = g_strdup_printf("cframe%d", i);
+        object_property_set_link(OBJECT(dev), propname,
+                                 OBJECT(&s->pmc.cframe[i]), &error_fatal);
+    }
+
+    sysbus_realize(sbd, &error_fatal);
+
+    memory_region_add_subregion(&s->mr_ps, MM_PMC_CFRAME_BCAST_REG,
+                                sysbus_mmio_get_region(sbd, 0));
+    memory_region_add_subregion(&s->mr_ps, MM_PMC_CFRAME_BCAST_FDRI,
+                                sysbus_mmio_get_region(sbd, 1));
+
+    /* CFU APB */
+    object_initialize_child(OBJECT(s), "cfu-apb", &s->pmc.cfu_apb,
+                            TYPE_XLNX_VERSAL_CFU_APB);
+    sbd = SYS_BUS_DEVICE(&s->pmc.cfu_apb);
+    dev = DEVICE(&s->pmc.cfu_apb);
+
+    for (i = 0; i < ARRAY_SIZE(s->pmc.cframe); i++) {
+        g_autofree char *propname = g_strdup_printf("cframe%d", i);
+        object_property_set_link(OBJECT(dev), propname,
+                                 OBJECT(&s->pmc.cframe[i]), &error_fatal);
+    }
+
+    sysbus_realize(sbd, &error_fatal);
+    memory_region_add_subregion(&s->mr_ps, MM_PMC_CFU_APB,
+                                sysbus_mmio_get_region(sbd, 0));
+    memory_region_add_subregion(&s->mr_ps, MM_PMC_CFU_STREAM,
+                                sysbus_mmio_get_region(sbd, 1));
+    memory_region_add_subregion(&s->mr_ps, MM_PMC_CFU_STREAM_2,
+                                sysbus_mmio_get_region(sbd, 2));
+    sysbus_connect_irq(sbd, 0, pic[VERSAL_CFU_IRQ_0]);
+
+    /* CFU SFR */
+    object_initialize_child(OBJECT(s), "cfu-sfr", &s->pmc.cfu_sfr,
+                            TYPE_XLNX_VERSAL_CFU_SFR);
+
+    sbd = SYS_BUS_DEVICE(&s->pmc.cfu_sfr);
+
+    object_property_set_link(OBJECT(&s->pmc.cfu_sfr),
+                            "cfu", OBJECT(&s->pmc.cfu_apb), &error_abort);
+
+    sysbus_realize(sbd, &error_fatal);
+    memory_region_add_subregion(&s->mr_ps, MM_PMC_CFU_SFR,
+                                sysbus_mmio_get_region(sbd, 0));
+}
+
+static void versal_create_crl(Versal *s, qemu_irq *pic)
+{
+    SysBusDevice *sbd;
+    int i;
+
+    object_initialize_child(OBJECT(s), "crl", &s->lpd.crl,
+                            TYPE_XLNX_VERSAL_CRL);
+    sbd = SYS_BUS_DEVICE(&s->lpd.crl);
+
+    for (i = 0; i < ARRAY_SIZE(s->lpd.rpu.cpu); i++) {
+        g_autofree gchar *name = g_strdup_printf("cpu_r5[%d]", i);
+
+        object_property_set_link(OBJECT(&s->lpd.crl),
+                                 name, OBJECT(&s->lpd.rpu.cpu[i]),
+                                 &error_abort);
+    }
+
+    for (i = 0; i < ARRAY_SIZE(s->lpd.iou.gem); i++) {
+        g_autofree gchar *name = g_strdup_printf("gem[%d]", i);
+
+        object_property_set_link(OBJECT(&s->lpd.crl),
+                                 name, OBJECT(&s->lpd.iou.gem[i]),
+                                 &error_abort);
+    }
+
+    for (i = 0; i < ARRAY_SIZE(s->lpd.iou.adma); i++) {
+        g_autofree gchar *name = g_strdup_printf("adma[%d]", i);
+
+        object_property_set_link(OBJECT(&s->lpd.crl),
+                                 name, OBJECT(&s->lpd.iou.adma[i]),
+                                 &error_abort);
+    }
+
+    for (i = 0; i < ARRAY_SIZE(s->lpd.iou.uart); i++) {
+        g_autofree gchar *name = g_strdup_printf("uart[%d]", i);
+
+        object_property_set_link(OBJECT(&s->lpd.crl),
+                                 name, OBJECT(&s->lpd.iou.uart[i]),
+                                 &error_abort);
+    }
+
+    object_property_set_link(OBJECT(&s->lpd.crl),
+                             "usb", OBJECT(&s->lpd.iou.usb),
+                             &error_abort);
+
+    sysbus_realize(sbd, &error_fatal);
+    memory_region_add_subregion(&s->mr_ps, MM_CRL,
+                                sysbus_mmio_get_region(sbd, 0));
+    sysbus_connect_irq(sbd, 0, pic[VERSAL_CRL_IRQ]);
 }
 
 /* This takes the board allocated linear DDR memory and creates aliases
@@ -368,20 +849,68 @@ static void versal_unimp_area(Versal *s, const char *name,
     memory_region_add_subregion(mr, base, mr_dev);
 }
 
+static void versal_unimp_sd_emmc_sel(void *opaque, int n, int level)
+{
+    qemu_log_mask(LOG_UNIMP,
+                  "Selecting between enabling SD mode or eMMC mode on "
+                  "controller %d is not yet implemented\n", n);
+}
+
+static void versal_unimp_qspi_ospi_mux_sel(void *opaque, int n, int level)
+{
+    qemu_log_mask(LOG_UNIMP,
+                  "Selecting between enabling the QSPI or OSPI linear address "
+                  "region is not yet implemented\n");
+}
+
+static void versal_unimp_irq_parity_imr(void *opaque, int n, int level)
+{
+    qemu_log_mask(LOG_UNIMP,
+                  "PMC SLCR parity interrupt behaviour "
+                  "is not yet implemented\n");
+}
+
 static void versal_unimp(Versal *s)
 {
+    qemu_irq gpio_in;
+
     versal_unimp_area(s, "psm", &s->mr_ps,
                         MM_PSM_START, MM_PSM_END - MM_PSM_START);
-    versal_unimp_area(s, "crl", &s->mr_ps,
-                        MM_CRL, MM_CRL_SIZE);
     versal_unimp_area(s, "crf", &s->mr_ps,
                         MM_FPD_CRF, MM_FPD_CRF_SIZE);
+    versal_unimp_area(s, "apu", &s->mr_ps,
+                        MM_FPD_FPD_APU, MM_FPD_FPD_APU_SIZE);
     versal_unimp_area(s, "crp", &s->mr_ps,
                         MM_PMC_CRP, MM_PMC_CRP_SIZE);
     versal_unimp_area(s, "iou-scntr", &s->mr_ps,
                         MM_IOU_SCNTR, MM_IOU_SCNTR_SIZE);
     versal_unimp_area(s, "iou-scntr-seucre", &s->mr_ps,
                         MM_IOU_SCNTRS, MM_IOU_SCNTRS_SIZE);
+
+    qdev_init_gpio_in_named(DEVICE(s), versal_unimp_sd_emmc_sel,
+                            "sd-emmc-sel-dummy", 2);
+    qdev_init_gpio_in_named(DEVICE(s), versal_unimp_qspi_ospi_mux_sel,
+                            "qspi-ospi-mux-sel-dummy", 1);
+    qdev_init_gpio_in_named(DEVICE(s), versal_unimp_irq_parity_imr,
+                            "irq-parity-imr-dummy", 1);
+
+    gpio_in = qdev_get_gpio_in_named(DEVICE(s), "sd-emmc-sel-dummy", 0);
+    qdev_connect_gpio_out_named(DEVICE(&s->pmc.iou.slcr), "sd-emmc-sel", 0,
+                                gpio_in);
+
+    gpio_in = qdev_get_gpio_in_named(DEVICE(s), "sd-emmc-sel-dummy", 1);
+    qdev_connect_gpio_out_named(DEVICE(&s->pmc.iou.slcr), "sd-emmc-sel", 1,
+                                gpio_in);
+
+    gpio_in = qdev_get_gpio_in_named(DEVICE(s), "qspi-ospi-mux-sel-dummy", 0);
+    qdev_connect_gpio_out_named(DEVICE(&s->pmc.iou.slcr),
+                                "qspi-ospi-mux-sel", 0,
+                                gpio_in);
+
+    gpio_in = qdev_get_gpio_in_named(DEVICE(s), "irq-parity-imr-dummy", 0);
+    qdev_connect_gpio_out_named(DEVICE(&s->pmc.iou.slcr),
+                                SYSBUS_DEVICE_GPIO_IRQ, 0,
+                                gpio_in);
 }
 
 static void versal_realize(DeviceState *dev, Error **errp)
@@ -391,13 +920,23 @@ static void versal_realize(DeviceState *dev, Error **errp)
 
     versal_create_apu_cpus(s);
     versal_create_apu_gic(s, pic);
+    versal_create_rpu_cpus(s);
     versal_create_uarts(s, pic);
+    versal_create_canfds(s, pic);
     versal_create_usbs(s, pic);
     versal_create_gems(s, pic);
     versal_create_admas(s, pic);
     versal_create_sds(s, pic);
+    versal_create_pmc_apb_irq_orgate(s, pic);
     versal_create_rtc(s, pic);
+    versal_create_trng(s, pic);
     versal_create_xrams(s, pic);
+    versal_create_bbram(s, pic);
+    versal_create_efuse(s, pic);
+    versal_create_pmc_iou_slcr(s, pic);
+    versal_create_ospi(s, pic);
+    versal_create_crl(s, pic);
+    versal_create_cfu(s, pic);
     versal_map_ddr(s);
     versal_unimp(s);
 
@@ -407,6 +946,8 @@ static void versal_realize(DeviceState *dev, Error **errp)
 
     memory_region_add_subregion_overlap(&s->mr_ps, MM_OCM, &s->lpd.mr_ocm, 0);
     memory_region_add_subregion_overlap(&s->fpd.apu.mr, 0, &s->mr_ps, 0);
+    memory_region_add_subregion_overlap(&s->lpd.rpu.mr, 0,
+                                        &s->lpd.rpu.mr_ps_alias, 0);
 }
 
 static void versal_init(Object *obj)
@@ -414,13 +955,19 @@ static void versal_init(Object *obj)
     Versal *s = XLNX_VERSAL(obj);
 
     memory_region_init(&s->fpd.apu.mr, obj, "mr-apu", UINT64_MAX);
+    memory_region_init(&s->lpd.rpu.mr, obj, "mr-rpu", UINT64_MAX);
     memory_region_init(&s->mr_ps, obj, "mr-ps-switch", UINT64_MAX);
+    memory_region_init_alias(&s->lpd.rpu.mr_ps_alias, OBJECT(s),
+                             "mr-rpu-ps-alias", &s->mr_ps, 0, UINT64_MAX);
 }
 
 static Property versal_properties[] = {
     DEFINE_PROP_LINK("ddr", Versal, cfg.mr_ddr, TYPE_MEMORY_REGION,
                      MemoryRegion *),
-    DEFINE_PROP_UINT32("psci-conduit", Versal, cfg.psci_conduit, 0),
+    DEFINE_PROP_LINK("canbus0", Versal, lpd.iou.canbus[0],
+                      TYPE_CAN_BUS, CanBusState *),
+    DEFINE_PROP_LINK("canbus1", Versal, lpd.iou.canbus[1],
+                      TYPE_CAN_BUS, CanBusState *),
     DEFINE_PROP_END_OF_LIST()
 };
 

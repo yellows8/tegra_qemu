@@ -17,6 +17,7 @@
 #include "hw/ppc/spapr_drc.h"
 #include "qom/object.h"
 #include "migration/vmstate.h"
+#include "qapi/qapi-events-qdev.h"
 #include "qapi/visitor.h"
 #include "qemu/error-report.h"
 #include "hw/ppc/spapr.h" /* for RTAS return codes */
@@ -167,13 +168,14 @@ static uint32_t drc_unisolate_logical(SpaprDrc *drc)
             }
 
             drc->unplug_requested = false;
-            error_report("Device hotunplug rejected by the guest "
-                         "for device %s", drc->dev->id);
 
-            /*
-             * TODO: send a QAPI DEVICE_UNPLUG_ERROR event when
-             * it is implemented.
-             */
+            if (drc->dev->id) {
+                error_report("Device hotunplug rejected by the guest "
+                             "for device %s", drc->dev->id);
+            }
+
+            qapi_event_send_device_unplug_guest_error(drc->dev->id,
+                                                      drc->dev->canonical_path);
         }
 
         return RTAS_OUT_SUCCESS; /* Nothing to do */
@@ -339,7 +341,7 @@ static void prop_get_fdt(Object *obj, Visitor *v, const char *name,
     fdt_depth = 0;
 
     do {
-        const char *name = NULL;
+        const char *dt_name = NULL;
         const struct fdt_property *prop = NULL;
         int prop_len = 0, name_len = 0;
         uint32_t tag;
@@ -349,8 +351,8 @@ static void prop_get_fdt(Object *obj, Visitor *v, const char *name,
         switch (tag) {
         case FDT_BEGIN_NODE:
             fdt_depth++;
-            name = fdt_get_name(fdt, fdt_offset, &name_len);
-            if (!visit_start_struct(v, name, NULL, 0, errp)) {
+            dt_name = fdt_get_name(fdt, fdt_offset, &name_len);
+            if (!visit_start_struct(v, dt_name, NULL, 0, errp)) {
                 return;
             }
             break;
@@ -367,8 +369,8 @@ static void prop_get_fdt(Object *obj, Visitor *v, const char *name,
         case FDT_PROP: {
             int i;
             prop = fdt_get_property_by_offset(fdt, fdt_offset, &prop_len);
-            name = fdt_string(fdt, fdt32_to_cpu(prop->nameoff));
-            if (!visit_start_list(v, name, NULL, 0, errp)) {
+            dt_name = fdt_string(fdt, fdt32_to_cpu(prop->nameoff));
+            if (!visit_start_list(v, dt_name, NULL, 0, errp)) {
                 return;
             }
             for (i = 0; i < prop_len; i++) {
@@ -469,7 +471,7 @@ static const VMStateDescription vmstate_spapr_drc_unplug_requested = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = spapr_drc_unplug_requested_needed,
-    .fields  = (VMStateField []) {
+    .fields  = (const VMStateField []) {
         VMSTATE_BOOL(unplug_requested, SpaprDrc),
         VMSTATE_END_OF_LIST()
     }
@@ -502,11 +504,11 @@ static const VMStateDescription vmstate_spapr_drc = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = spapr_drc_needed,
-    .fields  = (VMStateField []) {
+    .fields  = (const VMStateField []) {
         VMSTATE_UINT32(state, SpaprDrc),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription * []) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_spapr_drc_unplug_requested,
         NULL
     }
@@ -515,8 +517,8 @@ static const VMStateDescription vmstate_spapr_drc = {
 static void drc_realize(DeviceState *d, Error **errp)
 {
     SpaprDrc *drc = SPAPR_DR_CONNECTOR(d);
+    g_autofree gchar *link_name = g_strdup_printf("%x", spapr_drc_index(drc));
     Object *root_container;
-    gchar *link_name;
     const char *child_name;
 
     trace_spapr_drc_realize(spapr_drc_index(drc));
@@ -528,12 +530,10 @@ static void drc_realize(DeviceState *d, Error **errp)
      * existing in the composition tree
      */
     root_container = container_get(object_get_root(), DRC_CONTAINER_PATH);
-    link_name = g_strdup_printf("%x", spapr_drc_index(drc));
     child_name = object_get_canonical_path_component(OBJECT(drc));
     trace_spapr_drc_realize_child(spapr_drc_index(drc), child_name);
     object_property_add_alias(root_container, link_name,
                               drc->owner, child_name);
-    g_free(link_name);
     vmstate_register(VMSTATE_IF(drc), spapr_drc_index(drc), &vmstate_spapr_drc,
                      drc);
     trace_spapr_drc_realize_complete(spapr_drc_index(drc));
@@ -542,22 +542,20 @@ static void drc_realize(DeviceState *d, Error **errp)
 static void drc_unrealize(DeviceState *d)
 {
     SpaprDrc *drc = SPAPR_DR_CONNECTOR(d);
+    g_autofree gchar *name = g_strdup_printf("%x", spapr_drc_index(drc));
     Object *root_container;
-    gchar *name;
 
     trace_spapr_drc_unrealize(spapr_drc_index(drc));
     vmstate_unregister(VMSTATE_IF(drc), &vmstate_spapr_drc, drc);
     root_container = container_get(object_get_root(), DRC_CONTAINER_PATH);
-    name = g_strdup_printf("%x", spapr_drc_index(drc));
     object_property_del(root_container, name);
-    g_free(name);
 }
 
 SpaprDrc *spapr_dr_connector_new(Object *owner, const char *type,
                                          uint32_t id)
 {
     SpaprDrc *drc = SPAPR_DR_CONNECTOR(object_new(type));
-    char *prop_name;
+    g_autofree char *prop_name = NULL;
 
     drc->id = id;
     drc->owner = owner;
@@ -566,7 +564,6 @@ SpaprDrc *spapr_dr_connector_new(Object *owner, const char *type,
     object_property_add_child(owner, prop_name, OBJECT(drc));
     object_unref(OBJECT(drc));
     qdev_realize(DEVICE(drc), NULL, NULL);
-    g_free(prop_name);
 
     return drc;
 }
@@ -614,7 +611,7 @@ static const VMStateDescription vmstate_spapr_drc_physical = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = drc_physical_needed,
-    .fields  = (VMStateField []) {
+    .fields  = (const VMStateField []) {
         VMSTATE_UINT32(dr_indicator, SpaprDrcPhysical),
         VMSTATE_END_OF_LIST()
     }
@@ -799,11 +796,9 @@ static const TypeInfo spapr_drc_pmem_info = {
 SpaprDrc *spapr_drc_by_index(uint32_t index)
 {
     Object *obj;
-    gchar *name;
-
-    name = g_strdup_printf("%s/%x", DRC_CONTAINER_PATH, index);
+    g_autofree gchar *name = g_strdup_printf("%s/%x", DRC_CONTAINER_PATH,
+                                             index);
     obj = object_resolve_path(name, NULL);
-    g_free(name);
 
     return !obj ? NULL : SPAPR_DR_CONNECTOR(obj);
 }
@@ -837,8 +832,14 @@ int spapr_dt_drc(void *fdt, int offset, Object *owner, uint32_t drc_type_mask)
     ObjectProperty *prop;
     ObjectPropertyIterator iter;
     uint32_t drc_count = 0;
-    GArray *drc_indexes, *drc_power_domains;
-    GString *drc_names, *drc_types;
+    g_autoptr(GArray) drc_indexes = g_array_new(false, true,
+                                                sizeof(uint32_t));
+    g_autoptr(GArray) drc_power_domains = g_array_new(false, true,
+                                                      sizeof(uint32_t));
+    g_autoptr(GString) drc_names = g_string_set_size(g_string_new(NULL),
+                                                     sizeof(uint32_t));
+    g_autoptr(GString) drc_types = g_string_set_size(g_string_new(NULL),
+                                                     sizeof(uint32_t));
     int ret;
 
     /*
@@ -853,12 +854,8 @@ int spapr_dt_drc(void *fdt, int offset, Object *owner, uint32_t drc_type_mask)
      * reserve the space now and set the offsets accordingly so we
      * can fill them in later.
      */
-    drc_indexes = g_array_new(false, true, sizeof(uint32_t));
     drc_indexes = g_array_set_size(drc_indexes, 1);
-    drc_power_domains = g_array_new(false, true, sizeof(uint32_t));
     drc_power_domains = g_array_set_size(drc_power_domains, 1);
-    drc_names = g_string_set_size(g_string_new(NULL), sizeof(uint32_t));
-    drc_types = g_string_set_size(g_string_new(NULL), sizeof(uint32_t));
 
     /* aliases for all DRConnector objects will be rooted in QOM
      * composition tree at DRC_CONTAINER_PATH
@@ -870,7 +867,7 @@ int spapr_dt_drc(void *fdt, int offset, Object *owner, uint32_t drc_type_mask)
         Object *obj;
         SpaprDrc *drc;
         SpaprDrcClass *drck;
-        char *drc_name = NULL;
+        g_autofree char *drc_name = NULL;
         uint32_t drc_index, drc_power_domain;
 
         if (!strstart(prop->type, "link<", NULL)) {
@@ -904,7 +901,6 @@ int spapr_dt_drc(void *fdt, int offset, Object *owner, uint32_t drc_type_mask)
         drc_name = spapr_drc_name(drc);
         drc_names = g_string_append(drc_names, drc_name);
         drc_names = g_string_insert_len(drc_names, -1, "\0", 1);
-        g_free(drc_name);
 
         /* ibm,drc-types */
         drc_types = g_string_append(drc_types, drck->typename);
@@ -924,7 +920,7 @@ int spapr_dt_drc(void *fdt, int offset, Object *owner, uint32_t drc_type_mask)
                       drc_indexes->len * sizeof(uint32_t));
     if (ret) {
         error_report("Couldn't create ibm,drc-indexes property");
-        goto out;
+        return ret;
     }
 
     ret = fdt_setprop(fdt, offset, "ibm,drc-power-domains",
@@ -932,28 +928,21 @@ int spapr_dt_drc(void *fdt, int offset, Object *owner, uint32_t drc_type_mask)
                       drc_power_domains->len * sizeof(uint32_t));
     if (ret) {
         error_report("Couldn't finalize ibm,drc-power-domains property");
-        goto out;
+        return ret;
     }
 
     ret = fdt_setprop(fdt, offset, "ibm,drc-names",
                       drc_names->str, drc_names->len);
     if (ret) {
         error_report("Couldn't finalize ibm,drc-names property");
-        goto out;
+        return ret;
     }
 
     ret = fdt_setprop(fdt, offset, "ibm,drc-types",
                       drc_types->str, drc_types->len);
     if (ret) {
         error_report("Couldn't finalize ibm,drc-types property");
-        goto out;
     }
-
-out:
-    g_array_free(drc_indexes, true);
-    g_array_free(drc_power_domains, true);
-    g_string_free(drc_names, true);
-    g_string_free(drc_types, true);
 
     return ret;
 }
@@ -1248,8 +1237,6 @@ static void rtas_ibm_configure_connector(PowerPCCPU *cpu,
         case FDT_END_NODE:
             drc->ccs_depth--;
             if (drc->ccs_depth == 0) {
-                uint32_t drc_index = spapr_drc_index(drc);
-
                 /* done sending the device tree, move to configured state */
                 trace_spapr_drc_set_configured(drc_index);
                 drc->state = drck->ready_state;

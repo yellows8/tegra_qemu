@@ -520,7 +520,7 @@ static inline QEMUTimer *timer_new_full(QEMUTimerListGroup *timer_list_group,
                                         int scale, int attributes,
                                         QEMUTimerCB *cb, void *opaque)
 {
-    QEMUTimer *ts = g_malloc0(sizeof(QEMUTimer));
+    QEMUTimer *ts = g_new0(QEMUTimer, 1);
     timer_init_full(ts, timer_list_group, type, scale, attributes, cb, opaque);
     return ts;
 }
@@ -979,6 +979,28 @@ static inline int64_t cpu_get_host_ticks(void)
     return cur - ofs;
 }
 
+#elif defined(__riscv) && __riscv_xlen == 32
+static inline int64_t cpu_get_host_ticks(void)
+{
+    uint32_t lo, hi, tmph;
+    do {
+        asm volatile("RDTIMEH %0\n\t"
+                     "RDTIME %1\n\t"
+                     "RDTIMEH %2"
+                     : "=r"(hi), "=r"(lo), "=r"(tmph));
+    } while (unlikely(tmph != hi));
+    return lo | (uint64_t)hi << 32;
+}
+
+#elif defined(__riscv) && __riscv_xlen > 32
+static inline int64_t cpu_get_host_ticks(void)
+{
+    int64_t val;
+
+    asm volatile("RDTIME %0" : "=r"(val));
+    return val;
+}
+
 #else
 /* The host CPU doesn't have an easily accessible cycle counter.
    Just return a monotonically increasing value.  This will be
@@ -987,15 +1009,6 @@ static inline int64_t cpu_get_host_ticks(void)
 {
     return get_clock();
 }
-#endif
-
-#ifdef CONFIG_PROFILER
-static inline int64_t profile_getclock(void)
-{
-    return get_clock();
-}
-
-extern int64_t dev_time;
 #endif
 
 #endif

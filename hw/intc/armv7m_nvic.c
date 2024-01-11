@@ -18,8 +18,10 @@
 #include "hw/intc/armv7m_nvic.h"
 #include "hw/irq.h"
 #include "hw/qdev-properties.h"
+#include "sysemu/tcg.h"
 #include "sysemu/runstate.h"
 #include "target/arm/cpu.h"
+#include "target/arm/cpu-features.h"
 #include "exec/exec-all.h"
 #include "exec/memop.h"
 #include "qemu/log.h"
@@ -389,7 +391,7 @@ static inline int nvic_exec_prio(NVICState *s)
     return MIN(running, s->exception_prio);
 }
 
-bool armv7m_nvic_neg_prio_requested(void *opaque, bool secure)
+bool armv7m_nvic_neg_prio_requested(NVICState *s, bool secure)
 {
     /* Return true if the requested execution priority is negative
      * for the specified security state, ie that security state
@@ -399,8 +401,6 @@ bool armv7m_nvic_neg_prio_requested(void *opaque, bool secure)
      * mean we don't allow FAULTMASK_NS to actually make the execution
      * priority negative). Compare pseudocode IsReqExcPriNeg().
      */
-    NVICState *s = opaque;
-
     if (s->cpu->env.v7m.faultmask[secure]) {
         return true;
     }
@@ -418,17 +418,13 @@ bool armv7m_nvic_neg_prio_requested(void *opaque, bool secure)
     return false;
 }
 
-bool armv7m_nvic_can_take_pending_exception(void *opaque)
+bool armv7m_nvic_can_take_pending_exception(NVICState *s)
 {
-    NVICState *s = opaque;
-
     return nvic_exec_prio(s) > nvic_pending_prio(s);
 }
 
-int armv7m_nvic_raw_execution_priority(void *opaque)
+int armv7m_nvic_raw_execution_priority(NVICState *s)
 {
-    NVICState *s = opaque;
-
     return s->exception_prio;
 }
 
@@ -506,9 +502,8 @@ static void nvic_irq_update(NVICState *s)
  * if @secure is true and @irq does not specify one of the fixed set
  * of architecturally banked exceptions.
  */
-static void armv7m_nvic_clear_pending(void *opaque, int irq, bool secure)
+static void armv7m_nvic_clear_pending(NVICState *s, int irq, bool secure)
 {
-    NVICState *s = (NVICState *)opaque;
     VecInfo *vec;
 
     assert(irq > ARMV7M_EXCP_RESET && irq < s->num_irq);
@@ -584,7 +579,7 @@ static void do_armv7m_nvic_set_pending(void *opaque, int irq, bool secure,
              * which saves having to have an extra argument is_terminal
              * that we'd only use in one place.
              */
-            cpu_abort(&s->cpu->parent_obj,
+            cpu_abort(CPU(s->cpu),
                       "Lockup: can't take terminal derived exception "
                       "(original exception priority %d)\n",
                       s->vectpending_prio);
@@ -650,7 +645,7 @@ static void do_armv7m_nvic_set_pending(void *opaque, int irq, bool secure,
                  * Lockup condition due to a guest bug. We don't model
                  * Lockup, so report via cpu_abort() instead.
                  */
-                cpu_abort(&s->cpu->parent_obj,
+                cpu_abort(CPU(s->cpu),
                           "Lockup: can't escalate %d to HardFault "
                           "(current priority %d)\n", irq, running);
             }
@@ -666,17 +661,17 @@ static void do_armv7m_nvic_set_pending(void *opaque, int irq, bool secure,
     }
 }
 
-void armv7m_nvic_set_pending(void *opaque, int irq, bool secure)
+void armv7m_nvic_set_pending(NVICState *s, int irq, bool secure)
 {
-    do_armv7m_nvic_set_pending(opaque, irq, secure, false);
+    do_armv7m_nvic_set_pending(s, irq, secure, false);
 }
 
-void armv7m_nvic_set_pending_derived(void *opaque, int irq, bool secure)
+void armv7m_nvic_set_pending_derived(NVICState *s, int irq, bool secure)
 {
-    do_armv7m_nvic_set_pending(opaque, irq, secure, true);
+    do_armv7m_nvic_set_pending(s, irq, secure, true);
 }
 
-void armv7m_nvic_set_pending_lazyfp(void *opaque, int irq, bool secure)
+void armv7m_nvic_set_pending_lazyfp(NVICState *s, int irq, bool secure)
 {
     /*
      * Pend an exception during lazy FP stacking. This differs
@@ -684,7 +679,6 @@ void armv7m_nvic_set_pending_lazyfp(void *opaque, int irq, bool secure)
      * whether we should escalate depends on the saved context
      * in the FPCCR register, not on the current state of the CPU/NVIC.
      */
-    NVICState *s = (NVICState *)opaque;
     bool banked = exc_is_banked(irq);
     VecInfo *vec;
     bool targets_secure;
@@ -749,7 +743,7 @@ void armv7m_nvic_set_pending_lazyfp(void *opaque, int irq, bool secure)
              * We want to escalate to HardFault but the context the
              * FP state belongs to prevents the exception pre-empting.
              */
-            cpu_abort(&s->cpu->parent_obj,
+            cpu_abort(CPU(s->cpu),
                       "Lockup: can't escalate to HardFault during "
                       "lazy FP register stacking\n");
         }
@@ -773,9 +767,8 @@ void armv7m_nvic_set_pending_lazyfp(void *opaque, int irq, bool secure)
 }
 
 /* Make pending IRQ active.  */
-void armv7m_nvic_acknowledge_irq(void *opaque)
+void armv7m_nvic_acknowledge_irq(NVICState *s)
 {
-    NVICState *s = (NVICState *)opaque;
     CPUARMState *env = &s->cpu->env;
     const int pending = s->vectpending;
     const int running = nvic_exec_prio(s);
@@ -814,10 +807,9 @@ static bool vectpending_targets_secure(NVICState *s)
         exc_targets_secure(s, s->vectpending);
 }
 
-void armv7m_nvic_get_pending_irq_info(void *opaque,
+void armv7m_nvic_get_pending_irq_info(NVICState *s,
                                       int *pirq, bool *ptargets_secure)
 {
-    NVICState *s = (NVICState *)opaque;
     const int pending = s->vectpending;
     bool targets_secure;
 
@@ -831,9 +823,8 @@ void armv7m_nvic_get_pending_irq_info(void *opaque,
     *pirq = pending;
 }
 
-int armv7m_nvic_complete_irq(void *opaque, int irq, bool secure)
+int armv7m_nvic_complete_irq(NVICState *s, int irq, bool secure)
 {
-    NVICState *s = (NVICState *)opaque;
     VecInfo *vec = NULL;
     int ret = 0;
 
@@ -904,7 +895,7 @@ int armv7m_nvic_complete_irq(void *opaque, int irq, bool secure)
     vec->active = 0;
     if (vec->level) {
         /* Re-pend the exception if it's still held high; only
-         * happens for extenal IRQs
+         * happens for external IRQs
          */
         assert(irq >= NVIC_FIRST_IRQ);
         vec->pending = 1;
@@ -915,7 +906,7 @@ int armv7m_nvic_complete_irq(void *opaque, int irq, bool secure)
     return ret;
 }
 
-bool armv7m_nvic_get_ready_status(void *opaque, int irq, bool secure)
+bool armv7m_nvic_get_ready_status(NVICState *s, int irq, bool secure)
 {
     /*
      * Return whether an exception is "ready", i.e. it is enabled and is
@@ -926,7 +917,6 @@ bool armv7m_nvic_get_ready_status(void *opaque, int irq, bool secure)
      * for non-banked exceptions secure is always false; for banked exceptions
      * it indicates which of the exceptions is required.
      */
-    NVICState *s = (NVICState *)opaque;
     bool banked = exc_is_banked(irq);
     VecInfo *vec;
     int running = nvic_exec_prio(s);
@@ -2389,8 +2379,15 @@ static MemTxResult nvic_sysreg_write(void *opaque, hwaddr addr,
         startvec = 8 * (offset - 0x280) + NVIC_FIRST_IRQ; /* vector # */
 
         for (i = 0, end = size * 8; i < end && startvec + i < s->num_irq; i++) {
+            /*
+             * Note that if the input line is still held high and the interrupt
+             * is not active then rule R_CVJS requires that the Pending state
+             * remains set; in that case we mustn't let it be cleared.
+             */
             if (value & (1 << i) &&
-                (attrs.secure || s->itns[startvec + i])) {
+                (attrs.secure || s->itns[startvec + i]) &&
+                !(setval == 0 && s->vectors[startvec + i].level &&
+                  !s->vectors[startvec + i].active)) {
                 s->vectors[startvec + i].pending = setval;
             }
         }
@@ -2459,8 +2456,10 @@ static MemTxResult nvic_sysreg_write(void *opaque, hwaddr addr,
     /* This is UNPREDICTABLE; treat as RAZ/WI */
 
  exit_ok:
-    /* Ensure any changes made are reflected in the cached hflags.  */
-    arm_rebuild_hflags(&s->cpu->env);
+    if (tcg_enabled()) {
+        /* Ensure any changes made are reflected in the cached hflags. */
+        arm_rebuild_hflags(&s->cpu->env);
+    }
     return MEMTX_OK;
 }
 
@@ -2468,172 +2467,6 @@ static const MemoryRegionOps nvic_sysreg_ops = {
     .read_with_attrs = nvic_sysreg_read,
     .write_with_attrs = nvic_sysreg_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
-};
-
-static MemTxResult nvic_sysreg_ns_write(void *opaque, hwaddr addr,
-                                        uint64_t value, unsigned size,
-                                        MemTxAttrs attrs)
-{
-    MemoryRegion *mr = opaque;
-
-    if (attrs.secure) {
-        /* S accesses to the alias act like NS accesses to the real region */
-        attrs.secure = 0;
-        return memory_region_dispatch_write(mr, addr, value,
-                                            size_memop(size) | MO_TE, attrs);
-    } else {
-        /* NS attrs are RAZ/WI for privileged, and BusFault for user */
-        if (attrs.user) {
-            return MEMTX_ERROR;
-        }
-        return MEMTX_OK;
-    }
-}
-
-static MemTxResult nvic_sysreg_ns_read(void *opaque, hwaddr addr,
-                                       uint64_t *data, unsigned size,
-                                       MemTxAttrs attrs)
-{
-    MemoryRegion *mr = opaque;
-
-    if (attrs.secure) {
-        /* S accesses to the alias act like NS accesses to the real region */
-        attrs.secure = 0;
-        return memory_region_dispatch_read(mr, addr, data,
-                                           size_memop(size) | MO_TE, attrs);
-    } else {
-        /* NS attrs are RAZ/WI for privileged, and BusFault for user */
-        if (attrs.user) {
-            return MEMTX_ERROR;
-        }
-        *data = 0;
-        return MEMTX_OK;
-    }
-}
-
-static const MemoryRegionOps nvic_sysreg_ns_ops = {
-    .read_with_attrs = nvic_sysreg_ns_read,
-    .write_with_attrs = nvic_sysreg_ns_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
-};
-
-static MemTxResult nvic_systick_write(void *opaque, hwaddr addr,
-                                      uint64_t value, unsigned size,
-                                      MemTxAttrs attrs)
-{
-    NVICState *s = opaque;
-    MemoryRegion *mr;
-
-    /* Direct the access to the correct systick */
-    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->systick[attrs.secure]), 0);
-    return memory_region_dispatch_write(mr, addr, value,
-                                        size_memop(size) | MO_TE, attrs);
-}
-
-static MemTxResult nvic_systick_read(void *opaque, hwaddr addr,
-                                     uint64_t *data, unsigned size,
-                                     MemTxAttrs attrs)
-{
-    NVICState *s = opaque;
-    MemoryRegion *mr;
-
-    /* Direct the access to the correct systick */
-    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->systick[attrs.secure]), 0);
-    return memory_region_dispatch_read(mr, addr, data, size_memop(size) | MO_TE,
-                                       attrs);
-}
-
-static const MemoryRegionOps nvic_systick_ops = {
-    .read_with_attrs = nvic_systick_read,
-    .write_with_attrs = nvic_systick_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
-};
-
-
-static MemTxResult ras_read(void *opaque, hwaddr addr,
-                            uint64_t *data, unsigned size,
-                            MemTxAttrs attrs)
-{
-    if (attrs.user) {
-        return MEMTX_ERROR;
-    }
-
-    switch (addr) {
-    case 0xe10: /* ERRIIDR */
-        /* architect field = Arm; product/variant/revision 0 */
-        *data = 0x43b;
-        break;
-    case 0xfc8: /* ERRDEVID */
-        /* Minimal RAS: we implement 0 error record indexes */
-        *data = 0;
-        break;
-    default:
-        qemu_log_mask(LOG_UNIMP, "Read RAS register offset 0x%x\n",
-                      (uint32_t)addr);
-        *data = 0;
-        break;
-    }
-    return MEMTX_OK;
-}
-
-static MemTxResult ras_write(void *opaque, hwaddr addr,
-                             uint64_t value, unsigned size,
-                             MemTxAttrs attrs)
-{
-    if (attrs.user) {
-        return MEMTX_ERROR;
-    }
-
-    switch (addr) {
-    default:
-        qemu_log_mask(LOG_UNIMP, "Write to RAS register offset 0x%x\n",
-                      (uint32_t)addr);
-        break;
-    }
-    return MEMTX_OK;
-}
-
-static const MemoryRegionOps ras_ops = {
-    .read_with_attrs = ras_read,
-    .write_with_attrs = ras_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
-};
-
-/*
- * Unassigned portions of the PPB space are RAZ/WI for privileged
- * accesses, and fault for non-privileged accesses.
- */
-static MemTxResult ppb_default_read(void *opaque, hwaddr addr,
-                                    uint64_t *data, unsigned size,
-                                    MemTxAttrs attrs)
-{
-    qemu_log_mask(LOG_UNIMP, "Read of unassigned area of PPB: offset 0x%x\n",
-                  (uint32_t)addr);
-    if (attrs.user) {
-        return MEMTX_ERROR;
-    }
-    *data = 0;
-    return MEMTX_OK;
-}
-
-static MemTxResult ppb_default_write(void *opaque, hwaddr addr,
-                                     uint64_t value, unsigned size,
-                                     MemTxAttrs attrs)
-{
-    qemu_log_mask(LOG_UNIMP, "Write of unassigned area of PPB: offset 0x%x\n",
-                  (uint32_t)addr);
-    if (attrs.user) {
-        return MEMTX_ERROR;
-    }
-    return MEMTX_OK;
-}
-
-static const MemoryRegionOps ppb_default_ops = {
-    .read_with_attrs = ppb_default_read,
-    .write_with_attrs = ppb_default_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
-    .valid.min_access_size = 1,
-    .valid.max_access_size = 8,
 };
 
 static int nvic_post_load(void *opaque, int version_id)
@@ -2665,7 +2498,7 @@ static const VMStateDescription vmstate_VecInfo = {
     .name = "armv7m_nvic_info",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_INT16(prio, VecInfo),
         VMSTATE_UINT8(enabled, VecInfo),
         VMSTATE_UINT8(pending, VecInfo),
@@ -2710,7 +2543,7 @@ static const VMStateDescription vmstate_nvic_security = {
     .minimum_version_id = 1,
     .needed = nvic_security_needed,
     .post_load = &nvic_security_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT_ARRAY(sec_vectors, NVICState, NVIC_INTERNAL_VECTORS, 1,
                              vmstate_VecInfo, VecInfo),
         VMSTATE_UINT32(prigroup[M_REG_S], NVICState),
@@ -2724,13 +2557,13 @@ static const VMStateDescription vmstate_nvic = {
     .version_id = 4,
     .minimum_version_id = 4,
     .post_load = &nvic_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT_ARRAY(vectors, NVICState, NVIC_MAX_VECTORS, 1,
                              vmstate_VecInfo, VecInfo),
         VMSTATE_UINT32(prigroup[M_REG_NS], NVICState),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription*[]) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_nvic_security,
         NULL
     }
@@ -2739,6 +2572,11 @@ static const VMStateDescription vmstate_nvic = {
 static Property props_nvic[] = {
     /* Number of external IRQ lines (so excluding the 16 internal exceptions) */
     DEFINE_PROP_UINT32("num-irq", NVICState, num_irq, 64),
+    /*
+     * Number of the maximum priority bits that can be used. 0 means
+     * to use a reasonable default.
+     */
+    DEFINE_PROP_UINT8("num-prio-bits", NVICState, num_prio_bits, 0),
     DEFINE_PROP_END_OF_LIST()
 };
 
@@ -2807,11 +2645,14 @@ static void armv7m_nvic_reset(DeviceState *dev)
         }
     }
 
-    /*
-     * We updated state that affects the CPU's MMUidx and thus its hflags;
-     * and we can't guarantee that we run before the CPU reset function.
-     */
-    arm_rebuild_hflags(&s->cpu->env);
+    if (tcg_enabled()) {
+        /*
+         * We updated state that affects the CPU's MMUidx and thus its
+         * hflags; and we can't guarantee that we run before the CPU
+         * reset function.
+         */
+        arm_rebuild_hflags(&s->cpu->env);
+    }
 }
 
 static void nvic_systick_trigger(void *opaque, int n, int level)
@@ -2849,110 +2690,32 @@ static void armv7m_nvic_realize(DeviceState *dev, Error **errp)
     /* include space for internal exception vectors */
     s->num_irq += NVIC_FIRST_IRQ;
 
-    s->num_prio_bits = arm_feature(&s->cpu->env, ARM_FEATURE_V7) ? 8 : 2;
-
-    if (!sysbus_realize(SYS_BUS_DEVICE(&s->systick[M_REG_NS]), errp)) {
-        return;
-    }
-    sysbus_connect_irq(SYS_BUS_DEVICE(&s->systick[M_REG_NS]), 0,
-                       qdev_get_gpio_in_named(dev, "systick-trigger",
-                                              M_REG_NS));
-
-    if (arm_feature(&s->cpu->env, ARM_FEATURE_M_SECURITY)) {
-        /* We couldn't init the secure systick device in instance_init
-         * as we didn't know then if the CPU had the security extensions;
-         * so we have to do it here.
+    if (s->num_prio_bits == 0) {
+        /*
+         * If left unspecified, use 2 bits by default on Cortex-M0/M0+/M1
+         * and 8 bits otherwise.
          */
-        object_initialize_child(OBJECT(dev), "systick-reg-s",
-                                &s->systick[M_REG_S], TYPE_SYSTICK);
-
-        if (!sysbus_realize(SYS_BUS_DEVICE(&s->systick[M_REG_S]), errp)) {
+        s->num_prio_bits = arm_feature(&s->cpu->env, ARM_FEATURE_V7) ? 8 : 2;
+    } else {
+        uint8_t min_prio_bits =
+            arm_feature(&s->cpu->env, ARM_FEATURE_V7) ? 3 : 2;
+        if (s->num_prio_bits < min_prio_bits || s->num_prio_bits > 8) {
+            error_setg(errp,
+                       "num-prio-bits %d is outside "
+                       "NVIC acceptable range [%d-8]",
+                       s->num_prio_bits, min_prio_bits);
             return;
         }
-        sysbus_connect_irq(SYS_BUS_DEVICE(&s->systick[M_REG_S]), 0,
-                           qdev_get_gpio_in_named(dev, "systick-trigger",
-                                                  M_REG_S));
     }
 
     /*
-     * This device provides a single sysbus memory region which
-     * represents the whole of the "System PPB" space. This is the
-     * range from 0xe0000000 to 0xe00fffff and includes the NVIC,
-     * the System Control Space (system registers), the systick timer,
-     * and for CPUs with the Security extension an NS banked version
-     * of all of these.
-     *
-     * The default behaviour for unimplemented registers/ranges
-     * (for instance the Data Watchpoint and Trace unit at 0xe0001000)
-     * is to RAZ/WI for privileged access and BusFault for non-privileged
-     * access.
-     *
-     * The NVIC and System Control Space (SCS) starts at 0xe000e000
-     * and looks like this:
-     *  0x004 - ICTR
-     *  0x010 - 0xff - systick
-     *  0x100..0x7ec - NVIC
-     *  0x7f0..0xcff - Reserved
-     *  0xd00..0xd3c - SCS registers
-     *  0xd40..0xeff - Reserved or Not implemented
-     *  0xf00 - STIR
-     *
-     * Some registers within this space are banked between security states.
-     * In v8M there is a second range 0xe002e000..0xe002efff which is the
-     * NonSecure alias SCS; secure accesses to this behave like NS accesses
-     * to the main SCS range, and non-secure accesses (including when
-     * the security extension is not implemented) are RAZ/WI.
-     * Note that both the main SCS range and the alias range are defined
-     * to be exempt from memory attribution (R_BLJT) and so the memory
-     * transaction attribute always matches the current CPU security
-     * state (attrs.secure == env->v7m.secure). In the nvic_sysreg_ns_ops
-     * wrappers we change attrs.secure to indicate the NS access; so
-     * generally code determining which banked register to use should
-     * use attrs.secure; code determining actual behaviour of the system
-     * should use env->v7m.secure.
-     *
-     * The container covers the whole PPB space. Within it the priority
-     * of overlapping regions is:
-     *  - default region (for RAZ/WI and BusFault) : -1
-     *  - system register regions : 0
-     *  - systick : 1
-     * This is because the systick device is a small block of registers
-     * in the middle of the other system control registers.
+     * This device provides a single memory region which covers the
+     * sysreg/NVIC registers from 0xE000E000 .. 0xE000EFFF, with the
+     * exception of the systick timer registers 0xE000E010 .. 0xE000E0FF.
      */
-    memory_region_init(&s->container, OBJECT(s), "nvic", 0x100000);
-    memory_region_init_io(&s->defaultmem, OBJECT(s), &ppb_default_ops, s,
-                          "nvic-default", 0x100000);
-    memory_region_add_subregion_overlap(&s->container, 0, &s->defaultmem, -1);
     memory_region_init_io(&s->sysregmem, OBJECT(s), &nvic_sysreg_ops, s,
                           "nvic_sysregs", 0x1000);
-    memory_region_add_subregion(&s->container, 0xe000, &s->sysregmem);
-
-    memory_region_init_io(&s->systickmem, OBJECT(s),
-                          &nvic_systick_ops, s,
-                          "nvic_systick", 0xe0);
-
-    memory_region_add_subregion_overlap(&s->container, 0xe010,
-                                        &s->systickmem, 1);
-
-    if (arm_feature(&s->cpu->env, ARM_FEATURE_V8)) {
-        memory_region_init_io(&s->sysreg_ns_mem, OBJECT(s),
-                              &nvic_sysreg_ns_ops, &s->sysregmem,
-                              "nvic_sysregs_ns", 0x1000);
-        memory_region_add_subregion(&s->container, 0x2e000, &s->sysreg_ns_mem);
-        memory_region_init_io(&s->systick_ns_mem, OBJECT(s),
-                              &nvic_sysreg_ns_ops, &s->systickmem,
-                              "nvic_systick_ns", 0xe0);
-        memory_region_add_subregion_overlap(&s->container, 0x2e010,
-                                            &s->systick_ns_mem, 1);
-    }
-
-    if (cpu_isar_feature(aa32_ras, s->cpu)) {
-        memory_region_init_io(&s->ras_mem, OBJECT(s),
-                              &ras_ops, s, "nvic_ras", 0x1000);
-        memory_region_add_subregion(&s->container, 0x5000, &s->ras_mem);
-    }
-
-    sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->container);
+    sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->sysregmem);
 }
 
 static void armv7m_nvic_instance_init(Object *obj)
@@ -2960,12 +2723,6 @@ static void armv7m_nvic_instance_init(Object *obj)
     DeviceState *dev = DEVICE(obj);
     NVICState *nvic = NVIC(obj);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
-
-    object_initialize_child(obj, "systick-reg-ns", &nvic->systick[M_REG_NS],
-                            TYPE_SYSTICK);
-    /* We can't initialize the secure systick here, as we don't know
-     * yet if we need it.
-     */
 
     sysbus_init_irq(sbd, &nvic->excpout);
     qdev_init_gpio_out_named(dev, &nvic->sysresetreq, "SYSRESETREQ", 1);

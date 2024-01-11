@@ -6,9 +6,11 @@
    parts of the documentation that go in the manpage as well as the
    HTML manual.
 
-Title
-=====
+=======================
+QEMU User Documentation
+=======================
 
+--------
 Synopsis
 --------
 
@@ -16,16 +18,23 @@ Synopsis
 
    |qemu_system| [options] [disk_image]
 
+-----------
 Description
 -----------
 
 .. include:: target-i386-desc.rst.inc
 
+-------
 Options
 -------
 
 disk_image is a raw hard disk image for IDE hard disk 0. Some targets do
 not need a disk image.
+
+When dealing with options parameters as arbitrary strings containing
+commas, such as in "file=my,file" and "string=a,b", it's necessary to
+double the commas. For instance,"-fw_cfg name=z,string=a,,b" will be
+parsed as "-fw_cfg name=z,string=a,b".
 
 .. hxtool-doc:: qemu-options.hx
 
@@ -33,11 +42,13 @@ not need a disk image.
 
 .. include:: mux-chardev.rst.inc
 
+-----
 Notes
 -----
 
 .. include:: device-url-syntax.rst.inc
 
+--------
 See also
 --------
 

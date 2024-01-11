@@ -1,5 +1,5 @@
 /*
- * SPDX-License-Identifer: GPL-2.0-or-later
+ * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * QEMU Motorola 680x0 IRQ Controller
  *
@@ -33,6 +33,7 @@ typedef struct M68KIRQCState {
     SysBusDevice parent_obj;
 
     uint8_t ipr;
+    ArchCPU *cpu;
 
     /* statistics */
     uint64_t stats_irq_count[M68K_IRQC_LEVEL_NUM];

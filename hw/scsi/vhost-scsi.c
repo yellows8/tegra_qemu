@@ -26,7 +26,6 @@
 #include "hw/virtio/vhost.h"
 #include "hw/virtio/virtio-scsi.h"
 #include "hw/virtio/virtio-bus.h"
-#include "hw/virtio/virtio-access.h"
 #include "hw/fw-path-provider.h"
 #include "hw/qdev-properties.h"
 #include "qemu/cutils.h"
@@ -38,6 +37,7 @@ static const int kernel_feature_bits[] = {
     VIRTIO_RING_F_INDIRECT_DESC,
     VIRTIO_RING_F_EVENT_IDX,
     VIRTIO_SCSI_F_HOTPLUG,
+    VIRTIO_F_RING_RESET,
     VHOST_INVALID_FEATURE_BIT
 };
 
@@ -75,6 +75,7 @@ static int vhost_scsi_start(VHostSCSI *s)
     int ret, abi_version;
     VHostSCSICommon *vsc = VHOST_SCSI_COMMON(s);
     const VhostOps *vhost_ops = vsc->dev.vhost_ops;
+    Error *local_err = NULL;
 
     ret = vhost_ops->vhost_scsi_get_abi_version(&vsc->dev, &abi_version);
     if (ret < 0) {
@@ -88,8 +89,9 @@ static int vhost_scsi_start(VHostSCSI *s)
         return -ENOSYS;
     }
 
-    ret = vhost_scsi_common_start(vsc);
+    ret = vhost_scsi_common_start(vsc, &local_err);
     if (ret < 0) {
+        error_reportf_err(local_err, "Error starting vhost-scsi: ");
         return ret;
     }
 
@@ -120,7 +122,7 @@ static void vhost_scsi_set_status(VirtIODevice *vdev, uint8_t val)
         start = false;
     }
 
-    if (vsc->dev.started == start) {
+    if (vhost_dev_is_started(&vsc->dev) == start) {
         return;
     }
 
@@ -147,7 +149,7 @@ static int vhost_scsi_pre_save(void *opaque)
 
     /* At this point, backend must be stopped, otherwise
      * it might keep writing to memory. */
-    assert(!vsc->dev.started);
+    assert(!vhost_dev_is_started(&vsc->dev));
 
     return 0;
 }
@@ -156,12 +158,65 @@ static const VMStateDescription vmstate_virtio_vhost_scsi = {
     .name = "virtio-vhost_scsi",
     .minimum_version_id = 1,
     .version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_VIRTIO_DEVICE,
         VMSTATE_END_OF_LIST()
     },
     .pre_save = vhost_scsi_pre_save,
 };
+
+static int vhost_scsi_set_workers(VHostSCSICommon *vsc, bool per_virtqueue)
+{
+    struct vhost_dev *dev = &vsc->dev;
+    struct vhost_vring_worker vq_worker;
+    struct vhost_worker_state worker;
+    int i, ret;
+
+    /* Use default worker */
+    if (!per_virtqueue || dev->nvqs == VHOST_SCSI_VQ_NUM_FIXED + 1) {
+        return 0;
+    }
+
+    /*
+     * ctl/evt share the first worker since it will be rare for them
+     * to send cmds while IO is running.
+     */
+    for (i = VHOST_SCSI_VQ_NUM_FIXED + 1; i < dev->nvqs; i++) {
+        memset(&worker, 0, sizeof(worker));
+
+        ret = dev->vhost_ops->vhost_new_worker(dev, &worker);
+        if (ret == -ENOTTY) {
+            /*
+             * worker ioctls are not implemented so just ignore and
+             * and continue device setup.
+             */
+            warn_report("vhost-scsi: Backend supports a single worker. "
+                        "Ignoring worker_per_virtqueue=true setting.");
+            ret = 0;
+            break;
+        } else if (ret) {
+            break;
+        }
+
+        memset(&vq_worker, 0, sizeof(vq_worker));
+        vq_worker.worker_id = worker.worker_id;
+        vq_worker.index = i;
+
+        ret = dev->vhost_ops->vhost_attach_vring_worker(dev, &vq_worker);
+        if (ret == -ENOTTY) {
+            /*
+             * It's a bug for the kernel to have supported the worker creation
+             * ioctl but not attach.
+             */
+            dev->vhost_ops->vhost_free_worker(dev, &worker);
+            break;
+        } else if (ret) {
+            break;
+        }
+    }
+
+    return ret;
+}
 
 static void vhost_scsi_realize(DeviceState *dev, Error **errp)
 {
@@ -170,6 +225,7 @@ static void vhost_scsi_realize(DeviceState *dev, Error **errp)
     Error *err = NULL;
     int vhostfd = -1;
     int ret;
+    struct vhost_virtqueue *vqs = NULL;
 
     if (!vs->conf.wwpn) {
         error_setg(errp, "vhost-scsi: missing wwpn");
@@ -207,20 +263,32 @@ static void vhost_scsi_realize(DeviceState *dev, Error **errp)
                 "When external environment supports it (Orchestrator migrates "
                 "target SCSI device state or use shared storage over network), "
                 "set 'migratable' property to true to enable migration.");
-        if (migrate_add_blocker(vsc->migration_blocker, errp) < 0) {
-            error_free(vsc->migration_blocker);
+        if (migrate_add_blocker_normal(&vsc->migration_blocker, errp) < 0) {
             goto free_virtio;
         }
     }
 
     vsc->dev.nvqs = VHOST_SCSI_VQ_NUM_FIXED + vs->conf.num_queues;
-    vsc->dev.vqs = g_new0(struct vhost_virtqueue, vsc->dev.nvqs);
+    vqs = g_new0(struct vhost_virtqueue, vsc->dev.nvqs);
+    vsc->dev.vqs = vqs;
     vsc->dev.vq_index = 0;
     vsc->dev.backend_features = 0;
 
     ret = vhost_dev_init(&vsc->dev, (void *)(uintptr_t)vhostfd,
                          VHOST_BACKEND_TYPE_KERNEL, 0, errp);
     if (ret < 0) {
+        /*
+         * vhost_dev_init calls vhost_dev_cleanup on error, which closes
+         * vhostfd, don't double close it.
+         */
+        vhostfd = -1;
+        goto free_vqs;
+    }
+
+    ret = vhost_scsi_set_workers(vsc, vs->conf.worker_per_virtqueue);
+    if (ret < 0) {
+        error_setg(errp, "vhost-scsi: vhost worker setup failed: %s",
+                   strerror(-ret));
         goto free_vqs;
     }
 
@@ -233,14 +301,16 @@ static void vhost_scsi_realize(DeviceState *dev, Error **errp)
     return;
 
  free_vqs:
+    g_free(vqs);
     if (!vsc->migratable) {
-        migrate_del_blocker(vsc->migration_blocker);
+        migrate_del_blocker(&vsc->migration_blocker);
     }
-    g_free(vsc->dev.vqs);
  free_virtio:
     virtio_scsi_common_unrealize(dev);
  close_fd:
-    close(vhostfd);
+    if (vhostfd >= 0) {
+        close(vhostfd);
+    }
     return;
 }
 
@@ -251,8 +321,7 @@ static void vhost_scsi_unrealize(DeviceState *dev)
     struct vhost_virtqueue *vqs = vsc->dev.vqs;
 
     if (!vsc->migratable) {
-        migrate_del_blocker(vsc->migration_blocker);
-        error_free(vsc->migration_blocker);
+        migrate_del_blocker(&vsc->migration_blocker);
     }
 
     /* This will stop vhost backend. */
@@ -262,6 +331,13 @@ static void vhost_scsi_unrealize(DeviceState *dev)
     g_free(vqs);
 
     virtio_scsi_common_unrealize(dev);
+}
+
+static struct vhost_dev *vhost_scsi_get_vhost(VirtIODevice *vdev)
+{
+    VHostSCSI *s = VHOST_SCSI(vdev);
+    VHostSCSICommon *vsc = VHOST_SCSI_COMMON(s);
+    return &vsc->dev;
 }
 
 static Property vhost_scsi_properties[] = {
@@ -281,6 +357,8 @@ static Property vhost_scsi_properties[] = {
                                                  VIRTIO_SCSI_F_T10_PI,
                                                  false),
     DEFINE_PROP_BOOL("migratable", VHostSCSICommon, migratable, false),
+    DEFINE_PROP_BOOL("worker_per_virtqueue", VirtIOSCSICommon,
+                     conf.worker_per_virtqueue, false),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -298,6 +376,7 @@ static void vhost_scsi_class_init(ObjectClass *klass, void *data)
     vdc->get_features = vhost_scsi_common_get_features;
     vdc->set_config = vhost_scsi_common_set_config;
     vdc->set_status = vhost_scsi_set_status;
+    vdc->get_vhost = vhost_scsi_get_vhost;
     fwc->get_dev_path = vhost_scsi_common_get_fw_dev_path;
 }
 

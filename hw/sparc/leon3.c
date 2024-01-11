@@ -26,7 +26,6 @@
 #include "qemu/units.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
-#include "qemu-common.h"
 #include "qemu/datadir.h"
 #include "cpu.h"
 #include "hw/irq.h"
@@ -165,9 +164,9 @@ static void leon3_cache_control_int(CPUSPARCState *env)
     }
 }
 
-static void leon3_irq_ack(void *irq_manager, int intno)
+static void leon3_irq_ack(CPUSPARCState *env, int intno)
 {
-    grlib_irqmp_ack((DeviceState *)irq_manager, intno);
+    grlib_irqmp_ack(env->irq_manager, intno);
 }
 
 /*
@@ -209,9 +208,9 @@ static void leon3_set_pil_in(void *opaque, int n, int level)
     }
 }
 
-static void leon3_irq_manager(CPUSPARCState *env, void *irq_manager, int intno)
+static void leon3_irq_manager(CPUSPARCState *env, int intno)
 {
-    leon3_irq_ack(irq_manager, intno);
+    leon3_irq_ack(env, intno);
     leon3_cache_control_int(env);
 }
 
@@ -241,7 +240,7 @@ static void leon3_generic_hw_init(MachineState *machine)
     cpu_sparc_set_id(env, 0);
 
     /* Reset data */
-    reset_info        = g_malloc0(sizeof(ResetData));
+    reset_info        = g_new0(ResetData, 1);
     reset_info->cpu   = cpu;
     reset_info->sp    = LEON3_RAM_OFFSET + ram_size;
     qemu_register_reset(main_cpu_reset, reset_info);

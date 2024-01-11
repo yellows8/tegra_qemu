@@ -18,13 +18,22 @@
  * member in your target-specific DisasContext.
  */
 
-
 #include "qemu/bswap.h"
-#include "exec/exec-all.h"
-#include "exec/cpu_ldst.h"
-#include "exec/plugin-gen.h"
-#include "tcg/tcg.h"
+#include "exec/cpu_ldst.h"	/* for abi_ptr */
 
+/**
+ * gen_intermediate_code
+ * @cpu: cpu context
+ * @tb: translation block
+ * @max_insns: max number of instructions to translate
+ * @pc: guest virtual program counter address
+ * @host_pc: host physical program counter address
+ *
+ * This function must be provided by the target, which should create
+ * the target-specific DisasContext, and then invoke translator_loop.
+ */
+void gen_intermediate_code(CPUState *cpu, TranslationBlock *tb, int *max_insns,
+                           target_ulong pc, void *host_pc);
 
 /**
  * DisasJumpType:
@@ -63,17 +72,22 @@ typedef enum DisasJumpType {
  * @num_insns: Number of translated instructions (including current).
  * @max_insns: Maximum number of instructions to be translated in this TB.
  * @singlestep_enabled: "Hardware" single stepping enabled.
+ * @saved_can_do_io: Known value of cpu->neg.can_do_io, or -1 for unknown.
+ * @plugin_enabled: TCG plugin enabled in this TB.
  *
  * Architecture-agnostic disassembly context.
  */
 typedef struct DisasContextBase {
-    const TranslationBlock *tb;
+    TranslationBlock *tb;
     target_ulong pc_first;
     target_ulong pc_next;
     DisasJumpType is_jmp;
     int num_insns;
     int max_insns;
     bool singlestep_enabled;
+    int8_t saved_can_do_io;
+    bool plugin_enabled;
+    void *host_addr[2];
 } DisasContextBase;
 
 /**
@@ -106,16 +120,18 @@ typedef struct TranslatorOps {
     void (*insn_start)(DisasContextBase *db, CPUState *cpu);
     void (*translate_insn)(DisasContextBase *db, CPUState *cpu);
     void (*tb_stop)(DisasContextBase *db, CPUState *cpu);
-    void (*disas_log)(const DisasContextBase *db, CPUState *cpu);
+    void (*disas_log)(const DisasContextBase *db, CPUState *cpu, FILE *f);
 } TranslatorOps;
 
 /**
  * translator_loop:
- * @ops: Target-specific operations.
- * @db: Disassembly context.
  * @cpu: Target vCPU.
  * @tb: Translation block.
  * @max_insns: Maximum number of insns to translate.
+ * @pc: guest virtual program counter address
+ * @host_pc: host physical program counter address
+ * @ops: Target-specific operations.
+ * @db: Disassembly context.
  *
  * Generic translator loop.
  *
@@ -129,10 +145,9 @@ typedef struct TranslatorOps {
  * - When single-stepping is enabled (system-wide or on the current vCPU).
  * - When too many instructions have been translated.
  */
-void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
-                     CPUState *cpu, TranslationBlock *tb, int max_insns);
-
-void translator_loop_temp_check(DisasContextBase *db);
+void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
+                     vaddr pc, void *host_pc, const TranslatorOps *ops,
+                     DisasContextBase *db);
 
 /**
  * translator_use_goto_tb
@@ -142,7 +157,17 @@ void translator_loop_temp_check(DisasContextBase *db);
  * Return true if goto_tb is allowed between the current TB
  * and the destination PC.
  */
-bool translator_use_goto_tb(DisasContextBase *db, target_ulong dest);
+bool translator_use_goto_tb(DisasContextBase *db, vaddr dest);
+
+/**
+ * translator_io_start
+ * @db: Disassembly context
+ *
+ * If icount is enabled, set cpu->can_do_io, adjust db->is_jmp to
+ * DISAS_TOO_MANY if it is still DISAS_NEXT, and return true.
+ * Otherwise return false.
+ */
+bool translator_io_start(DisasContextBase *db);
 
 /*
  * Translator Load Functions
@@ -155,28 +180,64 @@ bool translator_use_goto_tb(DisasContextBase *db, target_ulong dest);
  * the relevant information at translation time.
  */
 
-#define GEN_TRANSLATOR_LD(fullname, type, load_fn, swap_fn)             \
-    static inline type                                                  \
-    fullname ## _swap(CPUArchState *env, abi_ptr pc, bool do_swap)      \
-    {                                                                   \
-        type ret = load_fn(env, pc);                                    \
-        if (do_swap) {                                                  \
-            ret = swap_fn(ret);                                         \
-        }                                                               \
-        plugin_insn_append(&ret, sizeof(ret));                          \
-        return ret;                                                     \
-    }                                                                   \
-                                                                        \
-    static inline type fullname(CPUArchState *env, abi_ptr pc)          \
-    {                                                                   \
-        return fullname ## _swap(env, pc, false);                       \
+uint8_t translator_ldub(CPUArchState *env, DisasContextBase *db, abi_ptr pc);
+uint16_t translator_lduw(CPUArchState *env, DisasContextBase *db, abi_ptr pc);
+uint32_t translator_ldl(CPUArchState *env, DisasContextBase *db, abi_ptr pc);
+uint64_t translator_ldq(CPUArchState *env, DisasContextBase *db, abi_ptr pc);
+
+static inline uint16_t
+translator_lduw_swap(CPUArchState *env, DisasContextBase *db,
+                     abi_ptr pc, bool do_swap)
+{
+    uint16_t ret = translator_lduw(env, db, pc);
+    if (do_swap) {
+        ret = bswap16(ret);
     }
+    return ret;
+}
 
-GEN_TRANSLATOR_LD(translator_ldub, uint8_t, cpu_ldub_code, /* no swap */)
-GEN_TRANSLATOR_LD(translator_ldsw, int16_t, cpu_ldsw_code, bswap16)
-GEN_TRANSLATOR_LD(translator_lduw, uint16_t, cpu_lduw_code, bswap16)
-GEN_TRANSLATOR_LD(translator_ldl, uint32_t, cpu_ldl_code, bswap32)
-GEN_TRANSLATOR_LD(translator_ldq, uint64_t, cpu_ldq_code, bswap64)
-#undef GEN_TRANSLATOR_LD
+static inline uint32_t
+translator_ldl_swap(CPUArchState *env, DisasContextBase *db,
+                    abi_ptr pc, bool do_swap)
+{
+    uint32_t ret = translator_ldl(env, db, pc);
+    if (do_swap) {
+        ret = bswap32(ret);
+    }
+    return ret;
+}
 
-#endif  /* EXEC__TRANSLATOR_H */
+static inline uint64_t
+translator_ldq_swap(CPUArchState *env, DisasContextBase *db,
+                    abi_ptr pc, bool do_swap)
+{
+    uint64_t ret = translator_ldq(env, db, pc);
+    if (do_swap) {
+        ret = bswap64(ret);
+    }
+    return ret;
+}
+
+/**
+ * translator_fake_ldb - fake instruction load
+ * @insn8: byte of instruction
+ * @pc: program counter of instruction
+ *
+ * This is a special case helper used where the instruction we are
+ * about to translate comes from somewhere else (e.g. being
+ * re-synthesised for s390x "ex"). It ensures we update other areas of
+ * the translator with details of the executed instruction.
+ */
+void translator_fake_ldb(uint8_t insn8, abi_ptr pc);
+
+/*
+ * Return whether addr is on the same page as where disassembly started.
+ * Translators can use this to enforce the rule that only single-insn
+ * translation blocks are allowed to cross page boundaries.
+ */
+static inline bool is_same_page(const DisasContextBase *db, target_ulong addr)
+{
+    return ((addr ^ db->pc_first) & TARGET_PAGE_MASK) == 0;
+}
+
+#endif /* EXEC__TRANSLATOR_H */

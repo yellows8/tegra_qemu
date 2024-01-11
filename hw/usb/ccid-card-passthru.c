@@ -9,7 +9,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
+#include "qemu/cutils.h"
 #include "qemu/units.h"
 #include <libcacard.h>
 #include "chardev/char-fe.h"
@@ -378,7 +378,7 @@ static const VMStateDescription passthru_vmstate = {
     .name = "ccid-card-passthru",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BUFFER(vscard_in_data, PassthruState),
         VMSTATE_UINT32(vscard_in_pos, PassthruState),
         VMSTATE_UINT32(vscard_in_hdr, PassthruState),
@@ -415,6 +415,7 @@ static const TypeInfo passthru_card_info = {
     .class_init    = passthru_class_initfn,
 };
 module_obj(TYPE_CCID_PASSTHRU);
+module_kconfig(USB);
 
 static void ccid_card_passthru_register_types(void)
 {

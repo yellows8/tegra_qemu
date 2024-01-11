@@ -28,7 +28,6 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
 #include "cpu.h"
 #include "hw/irq.h"
 #include "hw/qdev-properties.h"
@@ -41,6 +40,7 @@
 #include "chardev/char-fe.h"
 #include "chardev/char-serial.h"
 #include "sysemu/sysemu.h"
+#include "sysemu/rtc.h"
 #include "hw/ssi/ssi.h"
 #include "qapi/error.h"
 #include "qemu/cutils.h"
@@ -151,7 +151,7 @@ static uint64_t strongarm_pic_mem_read(void *opaque, hwaddr offset,
     case ICPR:
         return s->pending;
     default:
-        printf("%s: Bad register offset 0x" TARGET_FMT_plx "\n",
+        printf("%s: Bad register offset 0x" HWADDR_FMT_plx "\n",
                         __func__, offset);
         return 0;
     }
@@ -173,7 +173,7 @@ static void strongarm_pic_mem_write(void *opaque, hwaddr offset,
         s->int_idle = (value & 1) ? 0 : ~0;
         break;
     default:
-        printf("%s: Bad register offset 0x" TARGET_FMT_plx "\n",
+        printf("%s: Bad register offset 0x" HWADDR_FMT_plx "\n",
                         __func__, offset);
         break;
     }
@@ -211,7 +211,7 @@ static const VMStateDescription vmstate_strongarm_pic_regs = {
     .version_id = 0,
     .minimum_version_id = 0,
     .post_load = strongarm_pic_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(pending, StrongARMPICState),
         VMSTATE_UINT32(enabled, StrongARMPICState),
         VMSTATE_UINT32(is_fiq, StrongARMPICState),
@@ -333,7 +333,7 @@ static uint64_t strongarm_rtc_read(void *opaque, hwaddr addr,
                 ((qemu_clock_get_ms(rtc_clock) - s->last_hz) << 15) /
                 (1000 * ((s->rttr & 0xffff) + 1));
     default:
-        printf("%s: Bad register 0x" TARGET_FMT_plx "\n", __func__, addr);
+        printf("%s: Bad register 0x" HWADDR_FMT_plx "\n", __func__, addr);
         return 0;
     }
 }
@@ -375,7 +375,7 @@ static void strongarm_rtc_write(void *opaque, hwaddr addr,
         break;
 
     default:
-        printf("%s: Bad register 0x" TARGET_FMT_plx "\n", __func__, addr);
+        printf("%s: Bad register 0x" HWADDR_FMT_plx "\n", __func__, addr);
     }
 }
 
@@ -439,7 +439,7 @@ static const VMStateDescription vmstate_strongarm_rtc_regs = {
     .minimum_version_id = 0,
     .pre_save = strongarm_rtc_pre_save,
     .post_load = strongarm_rtc_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(rttr, StrongARMRTCState),
         VMSTATE_UINT32(rtsr, StrongARMRTCState),
         VMSTATE_UINT32(rtar, StrongARMRTCState),
@@ -581,7 +581,7 @@ static uint64_t strongarm_gpio_read(void *opaque, hwaddr offset,
         return s->status;
 
     default:
-        printf("%s: Bad offset 0x" TARGET_FMT_plx "\n", __func__, offset);
+        printf("%s: Bad offset 0x" HWADDR_FMT_plx "\n", __func__, offset);
     }
 
     return 0;
@@ -626,7 +626,7 @@ static void strongarm_gpio_write(void *opaque, hwaddr offset,
         break;
 
     default:
-        printf("%s: Bad offset 0x" TARGET_FMT_plx "\n", __func__, offset);
+        printf("%s: Bad offset 0x" HWADDR_FMT_plx "\n", __func__, offset);
     }
 }
 
@@ -677,7 +677,7 @@ static const VMStateDescription vmstate_strongarm_gpio_regs = {
     .name = "strongarm-gpio",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(ilevel, StrongARMGPIOInfo),
         VMSTATE_UINT32(olevel, StrongARMGPIOInfo),
         VMSTATE_UINT32(dir, StrongARMGPIOInfo),
@@ -782,7 +782,7 @@ static uint64_t strongarm_ppc_read(void *opaque, hwaddr offset,
         return s->ppfr | ~0x7f001;
 
     default:
-        printf("%s: Bad offset 0x" TARGET_FMT_plx "\n", __func__, offset);
+        printf("%s: Bad offset 0x" HWADDR_FMT_plx "\n", __func__, offset);
     }
 
     return 0;
@@ -817,7 +817,7 @@ static void strongarm_ppc_write(void *opaque, hwaddr offset,
         break;
 
     default:
-        printf("%s: Bad offset 0x" TARGET_FMT_plx "\n", __func__, offset);
+        printf("%s: Bad offset 0x" HWADDR_FMT_plx "\n", __func__, offset);
     }
 }
 
@@ -846,7 +846,7 @@ static const VMStateDescription vmstate_strongarm_ppc_regs = {
     .name = "strongarm-ppc",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(ilevel, StrongARMPPCInfo),
         VMSTATE_UINT32(olevel, StrongARMPPCInfo),
         VMSTATE_UINT32(dir, StrongARMPPCInfo),
@@ -1164,7 +1164,7 @@ static uint64_t strongarm_uart_read(void *opaque, hwaddr addr,
         return s->utsr1;
 
     default:
-        printf("%s: Bad register 0x" TARGET_FMT_plx "\n", __func__, addr);
+        printf("%s: Bad register 0x" HWADDR_FMT_plx "\n", __func__, addr);
         return 0;
     }
 }
@@ -1221,7 +1221,7 @@ static void strongarm_uart_write(void *opaque, hwaddr addr,
         break;
 
     default:
-        printf("%s: Bad register 0x" TARGET_FMT_plx "\n", __func__, addr);
+        printf("%s: Bad register 0x" HWADDR_FMT_plx "\n", __func__, addr);
     }
 }
 
@@ -1300,7 +1300,7 @@ static const VMStateDescription vmstate_strongarm_uart_regs = {
     .version_id = 0,
     .minimum_version_id = 0,
     .post_load = strongarm_uart_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(utcr0, StrongARMUARTState),
         VMSTATE_UINT16(brd, StrongARMUARTState),
         VMSTATE_UINT8(utcr3, StrongARMUARTState),
@@ -1443,7 +1443,7 @@ static uint64_t strongarm_ssp_read(void *opaque, hwaddr addr,
         strongarm_ssp_fifo_update(s);
         return retval;
     default:
-        printf("%s: Bad register 0x" TARGET_FMT_plx "\n", __func__, addr);
+        printf("%s: Bad register 0x" HWADDR_FMT_plx "\n", __func__, addr);
         break;
     }
     return 0;
@@ -1509,7 +1509,7 @@ static void strongarm_ssp_write(void *opaque, hwaddr addr,
         break;
 
     default:
-        printf("%s: Bad register 0x" TARGET_FMT_plx "\n", __func__, addr);
+        printf("%s: Bad register 0x" HWADDR_FMT_plx "\n", __func__, addr);
         break;
     }
 }
@@ -1558,7 +1558,7 @@ static const VMStateDescription vmstate_strongarm_ssp_regs = {
     .version_id = 0,
     .minimum_version_id = 0,
     .post_load = strongarm_ssp_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT16_ARRAY(sscr, StrongARMSSPState, 2),
         VMSTATE_UINT16(sssr, StrongARMSSPState),
         VMSTATE_UINT16_ARRAY(rx_fifo, StrongARMSSPState, 8),

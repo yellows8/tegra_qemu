@@ -9,6 +9,22 @@
 #
 # This work is licensed under the terms of the GNU GPL version 2.
 # See the COPYING file in the top-level directory.
+#
+# The script will copy the headers into two target folders:
+#
+# - linux-headers/ for files that are required for compiling for a
+#   Linux host.  Generally we have these so we can use kernel structs
+#   and defines that are more recent than the headers that might be
+#   installed on the host system.  Usually this script can do simple
+#   file copies for these headers.
+#
+# - include/standard-headers/ for files that are used for guest
+#   device emulation and are required on all hosts.  For instance, we
+#   get our definitions of the virtio structures from the Linux
+#   kernel headers, but we need those definitions regardless of which
+#   host OS we are building for.  This script has to be careful to
+#   sanitize the headers to remove any use of Linux-specifics such as
+#   types like "__u64".  This work is done in the cp_portable function.
 
 tmpdir=$(mktemp -d)
 linux="$1"
@@ -140,12 +156,16 @@ for arch in $ARCHLIST; do
         cp_portable "$tmpdir/bootparam.h" \
                     "$output/include/standard-headers/asm-$arch"
     fi
+    if [ $arch = riscv ]; then
+        cp "$tmpdir/include/asm/ptrace.h" "$output/linux-headers/asm-riscv/"
+    fi
 done
 
 rm -rf "$output/linux-headers/linux"
 mkdir -p "$output/linux-headers/linux"
-for header in kvm.h vfio.h vfio_ccw.h vfio_zdev.h vhost.h \
-              psci.h psp-sev.h userfaultfd.h mman.h; do
+for header in const.h stddef.h kvm.h vfio.h vfio_ccw.h vfio_zdev.h vhost.h \
+              psci.h psp-sev.h userfaultfd.h memfd.h mman.h nvme_ioctl.h \
+              vduse.h iommufd.h; do
     cp "$tmpdir/include/linux/$header" "$output/linux-headers/linux"
 done
 
@@ -198,7 +218,8 @@ for i in "$tmpdir"/include/linux/*virtio*.h \
          "$tmpdir/include/linux/const.h" \
          "$tmpdir/include/linux/kernel.h" \
          "$tmpdir/include/linux/vhost_types.h" \
-         "$tmpdir/include/linux/sysinfo.h"; do
+         "$tmpdir/include/linux/sysinfo.h" \
+         "$tmpdir/include/misc/pvpanic.h"; do
     cp_portable "$i" "$output/include/standard-headers/linux"
 done
 mkdir -p "$output/include/standard-headers/drm"

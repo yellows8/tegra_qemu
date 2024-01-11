@@ -51,7 +51,7 @@ struct VMBusDeviceClass {
     uint16_t channel_flags;
     uint16_t mmio_size_mb;
 
-    /* Extentions to standard device callbacks */
+    /* Extensions to standard device callbacks */
     void (*vmdev_realize)(VMBusDevice *vdev, Error **errp);
     void (*vmdev_unrealize)(VMBusDevice *vdev);
     void (*vmdev_reset)(VMBusDevice *vdev);
@@ -222,8 +222,5 @@ int vmbus_map_sgl(VMBusChanReq *req, DMADirection dir, struct iovec *iov,
  */
 void vmbus_unmap_sgl(VMBusChanReq *req, DMADirection dir, struct iovec *iov,
                      unsigned iov_cnt, size_t accessed);
-
-void vmbus_save_req(QEMUFile *f, VMBusChanReq *req);
-void *vmbus_load_req(QEMUFile *f, VMBusDevice *dev, uint32_t size);
 
 #endif

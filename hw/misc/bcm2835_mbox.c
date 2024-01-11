@@ -257,7 +257,7 @@ static const VMStateDescription vmstate_bcm2835_mbox_box = {
     .name = TYPE_BCM2835_MBOX "_box",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_ARRAY(reg, BCM2835Mbox, MBOX_SIZE),
         VMSTATE_UINT32(count, BCM2835Mbox),
         VMSTATE_UINT32(status, BCM2835Mbox),
@@ -271,8 +271,7 @@ static const VMStateDescription vmstate_bcm2835_mbox = {
     .name = TYPE_BCM2835_MBOX,
     .version_id = 1,
     .minimum_version_id = 1,
-    .minimum_version_id_old = 1,
-    .fields      = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BOOL_ARRAY(available, BCM2835MboxState, MBOX_CHAN_COUNT),
         VMSTATE_STRUCT_ARRAY(mbox, BCM2835MboxState, 2, 1,
                              vmstate_bcm2835_mbox_box, BCM2835Mbox),
@@ -324,7 +323,7 @@ static void bcm2835_mbox_class_init(ObjectClass *klass, void *data)
     dc->vmsd = &vmstate_bcm2835_mbox;
 }
 
-static TypeInfo bcm2835_mbox_info = {
+static const TypeInfo bcm2835_mbox_info = {
     .name          = TYPE_BCM2835_MBOX,
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(BCM2835MboxState),

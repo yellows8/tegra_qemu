@@ -109,7 +109,7 @@ static const VMStateDescription vmstate_bcm2835_powermgt = {
     .name = TYPE_BCM2835_POWERMGT,
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(rstc, BCM2835PowerMgtState),
         VMSTATE_UINT32(rsts, BCM2835PowerMgtState),
         VMSTATE_UINT32(wdog, BCM2835PowerMgtState),
@@ -144,7 +144,7 @@ static void bcm2835_powermgt_class_init(ObjectClass *klass, void *data)
     dc->vmsd = &vmstate_bcm2835_powermgt;
 }
 
-static TypeInfo bcm2835_powermgt_info = {
+static const TypeInfo bcm2835_powermgt_info = {
     .name          = TYPE_BCM2835_POWERMGT,
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(BCM2835PowerMgtState),

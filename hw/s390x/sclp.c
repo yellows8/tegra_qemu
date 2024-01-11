@@ -20,6 +20,7 @@
 #include "hw/s390x/event-facility.h"
 #include "hw/s390x/s390-pci-bus.h"
 #include "hw/s390x/ipl.h"
+#include "hw/s390x/cpu-topology.h"
 
 static inline SCLPDevice *get_sclp_device(void)
 {
@@ -51,7 +52,7 @@ static bool sccb_verify_boundary(uint64_t sccb_addr, uint16_t sccb_len,
                                  uint32_t code)
 {
     uint64_t sccb_max_addr = sccb_addr + sccb_len - 1;
-    uint64_t sccb_boundary = (sccb_addr & PAGE_MASK) + PAGE_SIZE;
+    uint64_t sccb_boundary = (sccb_addr & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
 
     switch (code & SCLP_CMD_CODE_MASK) {
     case SCLP_CMDW_READ_SCP_INFO:
@@ -121,6 +122,10 @@ static void read_SCP_info(SCLPDevice *sclp, SCCB *sccb)
         }
         sccb->h.response_code = cpu_to_be16(SCLP_RC_INSUFFICIENT_SCCB_LENGTH);
         return;
+    }
+
+    if (s390_has_topology()) {
+        read_info->stsi_parm = SCLP_READ_SCP_INFO_MNEST;
     }
 
     /* CPU information */
@@ -264,9 +269,9 @@ static void sclp_execute(SCLPDevice *sclp, SCCB *sccb, uint32_t code)
  * service_interrupt call.
  */
 #define SCLP_PV_DUMMY_ADDR 0x4000
-int sclp_service_call_protected(CPUS390XState *env, uint64_t sccb,
-                                uint32_t code)
+int sclp_service_call_protected(S390CPU *cpu, uint64_t sccb, uint32_t code)
 {
+    CPUS390XState *env = &cpu->env;
     SCLPDevice *sclp = get_sclp_device();
     SCLPDeviceClass *sclp_c = SCLP_GET_CLASS(sclp);
     SCCBHeader header;
@@ -291,8 +296,9 @@ out_write:
     return 0;
 }
 
-int sclp_service_call(CPUS390XState *env, uint64_t sccb, uint32_t code)
+int sclp_service_call(S390CPU *cpu, uint64_t sccb, uint32_t code)
 {
+    CPUS390XState *env = &cpu->env;
     SCLPDevice *sclp = get_sclp_device();
     SCLPDeviceClass *sclp_c = SCLP_GET_CLASS(sclp);
     SCCBHeader header;
@@ -460,7 +466,7 @@ static void sclp_class_init(ObjectClass *oc, void *data)
     sc->service_interrupt = service_interrupt;
 }
 
-static TypeInfo sclp_info = {
+static const TypeInfo sclp_info = {
     .name = TYPE_SCLP,
     .parent = TYPE_DEVICE,
     .instance_init = sclp_init,

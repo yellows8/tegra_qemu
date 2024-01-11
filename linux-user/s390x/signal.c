@@ -18,14 +18,14 @@
  */
 #include "qemu/osdep.h"
 #include "qemu.h"
+#include "user-internals.h"
 #include "signal-common.h"
 #include "linux-user/trace.h"
+#include "vdso-asmoffset.h"
 
 #define __NUM_GPRS 16
 #define __NUM_FPRS 16
 #define __NUM_ACRS 16
-
-#define __SIGNAL_FRAMESIZE      160 /* FIXME: 31-bit mode -> 96 */
 
 #define _SIGCONTEXT_NSIG        64
 #define _SIGCONTEXT_NSIG_BPW    64 /* FIXME: 31-bit mode -> 32 */
@@ -62,12 +62,11 @@ typedef struct {
 } target_sigcontext;
 
 typedef struct {
-    uint8_t callee_used_stack[__SIGNAL_FRAMESIZE];
+    uint8_t callee_used_stack[STACK_FRAME_OVERHEAD];
     target_sigcontext sc;
     target_sigregs sregs;
     int signo;
     target_sigregs_ext sregs_ext;
-    uint16_t retcode;
 } sigframe;
 
 #define TARGET_UC_VXRS 2
@@ -83,8 +82,12 @@ struct target_ucontext {
 };
 
 typedef struct {
-    uint8_t callee_used_stack[__SIGNAL_FRAMESIZE];
-    uint16_t retcode;
+    uint8_t callee_used_stack[STACK_FRAME_OVERHEAD];
+    /*
+     * This field is no longer initialized by the kernel, but it's still a part
+     * of the ABI.
+     */
+    uint16_t svc_insn;
     struct target_siginfo info;
     struct target_ucontext uc;
 } rt_sigframe;
@@ -142,6 +145,7 @@ static void save_sigregs(CPUS390XState *env, target_sigregs *sregs)
      * We have to store the fp registers to current->thread.fp_regs
      * to merge them with the emulated registers.
      */
+    __put_user(env->fpc, &sregs->fpregs.fpc);
     for (i = 0; i < 16; i++) {
         __put_user(*get_freg(env, i), &sregs->fpregs.fprs[i]);
     }
@@ -208,9 +212,7 @@ void setup_frame(int sig, struct target_sigaction *ka,
     if (ka->sa_flags & TARGET_SA_RESTORER) {
         restorer = ka->sa_restorer;
     } else {
-        restorer = frame_addr + offsetof(sigframe, retcode);
-        __put_user(S390_SYSCALL_OPCODE | TARGET_NR_sigreturn,
-                   &frame->retcode);
+        restorer = default_sigreturn;
     }
 
     /* Set up registers for signal handler */
@@ -261,9 +263,7 @@ void setup_rt_frame(int sig, struct target_sigaction *ka,
     if (ka->sa_flags & TARGET_SA_RESTORER) {
         restorer = ka->sa_restorer;
     } else {
-        restorer = frame_addr + offsetof(typeof(*frame), retcode);
-        __put_user(S390_SYSCALL_OPCODE | TARGET_NR_rt_sigreturn,
-                   &frame->retcode);
+        restorer = default_rt_sigreturn;
     }
 
     /* Create siginfo on the signal stack. */
@@ -331,6 +331,7 @@ static void restore_sigregs(CPUS390XState *env, target_sigregs *sc)
     for (i = 0; i < 16; i++) {
         __get_user(env->aregs[i], &sc->regs.acrs[i]);
     }
+    __get_user(env->fpc, &sc->fpregs.fpc);
     for (i = 0; i < 16; i++) {
         __get_user(*get_freg(env, i), &sc->fpregs.fprs[i]);
     }
@@ -364,7 +365,7 @@ long do_sigreturn(CPUS390XState *env)
     trace_user_do_sigreturn(env, frame_addr);
     if (!lock_user_struct(VERIFY_READ, frame, frame_addr, 1)) {
         force_sig(TARGET_SIGSEGV);
-        return -TARGET_QEMU_ESIGRETURN;
+        return -QEMU_ESIGRETURN;
     }
 
     /* Make sure that we're initializing all of target_set. */
@@ -378,7 +379,7 @@ long do_sigreturn(CPUS390XState *env)
     restore_sigregs_ext(env, &frame->sregs_ext);
 
     unlock_user_struct(frame, frame_addr, 0);
-    return -TARGET_QEMU_ESIGRETURN;
+    return -QEMU_ESIGRETURN;
 }
 
 long do_rt_sigreturn(CPUS390XState *env)
@@ -390,7 +391,7 @@ long do_rt_sigreturn(CPUS390XState *env)
     trace_user_do_rt_sigreturn(env, frame_addr);
     if (!lock_user_struct(VERIFY_READ, frame, frame_addr, 1)) {
         force_sig(TARGET_SIGSEGV);
-        return -TARGET_QEMU_ESIGRETURN;
+        return -QEMU_ESIGRETURN;
     }
     target_to_host_sigset(&set, &frame->uc.tuc_sigmask);
 
@@ -402,5 +403,19 @@ long do_rt_sigreturn(CPUS390XState *env)
     target_restore_altstack(&frame->uc.tuc_stack, env);
 
     unlock_user_struct(frame, frame_addr, 0);
-    return -TARGET_QEMU_ESIGRETURN;
+    return -QEMU_ESIGRETURN;
+}
+
+void setup_sigtramp(abi_ulong sigtramp_page)
+{
+    uint16_t *tramp = lock_user(VERIFY_WRITE, sigtramp_page, 2 + 2, 0);
+    assert(tramp != NULL);
+
+    default_sigreturn = sigtramp_page;
+    __put_user(S390_SYSCALL_OPCODE | TARGET_NR_sigreturn, &tramp[0]);
+
+    default_rt_sigreturn = sigtramp_page + 2;
+    __put_user(S390_SYSCALL_OPCODE | TARGET_NR_rt_sigreturn, &tramp[1]);
+
+    unlock_user(tramp, sigtramp_page, 2 + 2);
 }

@@ -34,7 +34,6 @@ struct target_pt_regs {
  * and copy_thread().
  */
 #define TARGET_CLONE_BACKWARDS
-#define TARGET_MINSIGSTKSZ      4096
 #define TARGET_MCL_CURRENT 0x2000
 #define TARGET_MCL_FUTURE  0x4000
 #define TARGET_MCL_ONFAULT 0x8000
@@ -51,11 +50,7 @@ static inline abi_ulong target_shmlba(CPUSPARCState *env)
 #ifdef TARGET_SPARC64
     return MAX(TARGET_PAGE_SIZE, 16 * 1024);
 #else
-    if (!(env->def.features & CPU_FEATURE_FLUSH)) {
-        return 64 * 1024;
-    } else {
-        return 256 * 1024;
-    }
+    return 256 * 1024;
 #endif
 }
 

@@ -383,7 +383,8 @@ static inline int get_dwords(EHCIState *ehci, uint32_t addr,
     }
 
     for (i = 0; i < num; i++, buf++, addr += sizeof(*buf)) {
-        dma_memory_read(ehci->as, addr, buf, sizeof(*buf));
+        dma_memory_read(ehci->as, addr, buf, sizeof(*buf),
+                        MEMTXATTRS_UNSPECIFIED);
         *buf = le32_to_cpu(*buf);
     }
 
@@ -405,7 +406,8 @@ static inline int put_dwords(EHCIState *ehci, uint32_t addr,
 
     for (i = 0; i < num; i++, buf++, addr += sizeof(*buf)) {
         uint32_t tmp = cpu_to_le32(*buf);
-        dma_memory_write(ehci->as, addr, &tmp, sizeof(tmp));
+        dma_memory_write(ehci->as, addr, &tmp, sizeof(tmp),
+                         MEMTXATTRS_UNSPECIFIED);
     }
 
     return num;
@@ -1462,7 +1464,7 @@ static int ehci_process_itd(EHCIState *ehci,
                     usb_handle_packet(dev, &ehci->ipacket);
                     usb_packet_unmap(&ehci->ipacket, &ehci->isgl);
                 } else {
-                    DPRINTF("ISOCH: attempt to addess non-iso endpoint\n");
+                    DPRINTF("ISOCH: attempt to address non-iso endpoint\n");
                     ehci->ipacket.status = USB_RET_NAK;
                     ehci->ipacket.actual_length = 0;
                 }
@@ -1511,7 +1513,7 @@ static int ehci_process_itd(EHCIState *ehci,
 
 
 /*  This state is the entry point for asynchronous schedule
- *  processing.  Entry here consitutes a EHCI start event state (4.8.5)
+ *  processing.  Entry here constitutes a EHCI start event state (4.8.5)
  */
 static int ehci_state_waitlisthead(EHCIState *ehci,  int async)
 {
@@ -2009,7 +2011,10 @@ static int ehci_state_writeback(EHCIQueue *q)
     ehci_trace_qtd(q, NLPTR_GET(p->qtdaddr), (EHCIqtd *) &q->qh.next_qtd);
     qtd = (uint32_t *) &q->qh.next_qtd;
     addr = NLPTR_GET(p->qtdaddr);
-    put_dwords(q->ehci, addr + 2 * sizeof(uint32_t), qtd + 2, 2);
+    /* First write back the offset */
+    put_dwords(q->ehci, addr + 3 * sizeof(uint32_t), qtd + 3, 1);
+    /* Then write back the token, clearing the 'active' bit */
+    put_dwords(q->ehci, addr + 2 * sizeof(uint32_t), qtd + 2, 1);
     ehci_free_packet(p);
 
     /*
@@ -2446,14 +2451,14 @@ static void usb_ehci_vm_state_change(void *opaque, bool running, RunState state)
      * USB-devices which have async handled packages have a packet in the
      * ep queue to match the completion with.
      */
-    if (state == RUN_STATE_RUNNING) {
+    if (running) {
         ehci_advance_async_state(ehci);
     }
 
     /*
      * The schedule rebuilt from guest memory could cause the migration dest
      * to miss a QH unlink, and fail to cancel packets, since the unlinked QH
-     * will never have existed on the destination. Therefor we must flush the
+     * will never have existed on the destination. Therefore we must flush the
      * async schedule on savevm to catch any not yet noticed unlinks.
      */
     if (state == RUN_STATE_SAVE_VM) {
@@ -2468,7 +2473,7 @@ const VMStateDescription vmstate_ehci = {
     .minimum_version_id  = 1,
     .pre_save    = usb_ehci_pre_save,
     .post_load   = usb_ehci_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         /* mmio registers */
         VMSTATE_UINT32(usbcmd, EHCIState),
         VMSTATE_UINT32(usbsts, EHCIState),
@@ -2528,7 +2533,8 @@ void usb_ehci_realize(EHCIState *s, DeviceState *dev, Error **errp)
     }
 
     s->frame_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, ehci_work_timer, s);
-    s->async_bh = qemu_bh_new(ehci_work_bh, s);
+    s->async_bh = qemu_bh_new_guarded(ehci_work_bh, s,
+                                      &dev->mem_reentrancy_guard);
     s->device = dev;
 
     s->vmstate = qemu_add_vm_change_state_handler(usb_ehci_vm_state_change, s);

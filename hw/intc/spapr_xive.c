@@ -27,7 +27,7 @@
 #include "trace.h"
 
 /*
- * XIVE Virtualization Controller BAR and Thread Managment BAR that we
+ * XIVE Virtualization Controller BAR and Thread Management BAR that we
  * use for the ESB pages and the TIMA pages
  */
 #define SPAPR_XIVE_VC_BASE   0x0006010000000000ull
@@ -185,7 +185,7 @@ static void spapr_xive_pic_print_info(SpaprXive *xive, Monitor *mon)
                        xive_source_irq_is_lsi(xsrc, i) ? "LSI" : "MSI",
                        pq & XIVE_ESB_VAL_P ? 'P' : '-',
                        pq & XIVE_ESB_VAL_Q ? 'Q' : '-',
-                       xsrc->status[i] & XIVE_STATUS_ASSERTED ? 'A' : ' ',
+                       xive_source_is_asserted(xsrc, i) ? 'A' : ' ',
                        xive_eas_is_masked(eas) ? "M" : " ",
                        (int) xive_get_field64(EAS_END_DATA, eas->w));
 
@@ -316,7 +316,6 @@ static void spapr_xive_realize(DeviceState *dev, Error **errp)
     if (!qdev_realize(DEVICE(xsrc), NULL, errp)) {
         return;
     }
-    sysbus_init_mmio(SYS_BUS_DEVICE(xive), &xsrc->esb_mmio);
 
     /*
      * Initialize the END ESB source
@@ -328,7 +327,6 @@ static void spapr_xive_realize(DeviceState *dev, Error **errp)
     if (!qdev_realize(DEVICE(end_xsrc), NULL, errp)) {
         return;
     }
-    sysbus_init_mmio(SYS_BUS_DEVICE(xive), &end_xsrc->esb_mmio);
 
     /* Set the mapping address of the END ESB pages after the source ESBs */
     xive->end_base = xive->vc_base + xive_source_esb_len(xsrc);
@@ -347,15 +345,17 @@ static void spapr_xive_realize(DeviceState *dev, Error **errp)
     /* TIMA initialization */
     memory_region_init_io(&xive->tm_mmio, OBJECT(xive), &spapr_xive_tm_ops,
                           xive, "xive.tima", 4ull << TM_SHIFT);
-    sysbus_init_mmio(SYS_BUS_DEVICE(xive), &xive->tm_mmio);
 
     /*
      * Map all regions. These will be enabled or disabled at reset and
      * can also be overridden by KVM memory regions if active
      */
-    sysbus_mmio_map(SYS_BUS_DEVICE(xive), 0, xive->vc_base);
-    sysbus_mmio_map(SYS_BUS_DEVICE(xive), 1, xive->end_base);
-    sysbus_mmio_map(SYS_BUS_DEVICE(xive), 2, xive->tm_base);
+    memory_region_add_subregion(get_system_memory(), xive->vc_base,
+                                &xsrc->esb_mmio);
+    memory_region_add_subregion(get_system_memory(), xive->end_base,
+                                &end_xsrc->esb_mmio);
+    memory_region_add_subregion(get_system_memory(), xive->tm_base,
+                                &xive->tm_mmio);
 }
 
 static int spapr_xive_get_eas(XiveRouter *xrtr, uint8_t eas_blk,
@@ -475,16 +475,54 @@ static int spapr_xive_match_nvt(XivePresenter *xptr, uint8_t format,
     return count;
 }
 
+static uint32_t spapr_xive_presenter_get_config(XivePresenter *xptr)
+{
+    uint32_t cfg = 0;
+
+    /*
+     * Let's claim GEN1 TIMA format. If running with KVM on P10, the
+     * correct answer is deep in the hardware and not accessible to
+     * us.  But it shouldn't matter as it only affects the presenter
+     * as seen by a guest OS.
+     */
+    cfg |= XIVE_PRESENTER_GEN1_TIMA_OS;
+
+    return cfg;
+}
+
 static uint8_t spapr_xive_get_block_id(XiveRouter *xrtr)
 {
     return SPAPR_XIVE_BLOCK_ID;
 }
 
+static int spapr_xive_get_pq(XiveRouter *xrtr, uint8_t blk, uint32_t idx,
+                             uint8_t *pq)
+{
+    SpaprXive *xive = SPAPR_XIVE(xrtr);
+
+    assert(SPAPR_XIVE_BLOCK_ID == blk);
+
+    *pq = xive_source_esb_get(&xive->source, idx);
+    return 0;
+}
+
+static int spapr_xive_set_pq(XiveRouter *xrtr, uint8_t blk, uint32_t idx,
+                             uint8_t *pq)
+{
+    SpaprXive *xive = SPAPR_XIVE(xrtr);
+
+    assert(SPAPR_XIVE_BLOCK_ID == blk);
+
+    *pq = xive_source_esb_set(&xive->source, idx, *pq);
+    return 0;
+}
+
+
 static const VMStateDescription vmstate_spapr_xive_end = {
     .name = TYPE_SPAPR_XIVE "/end",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField []) {
+    .fields = (const VMStateField []) {
         VMSTATE_UINT32(w0, XiveEND),
         VMSTATE_UINT32(w1, XiveEND),
         VMSTATE_UINT32(w2, XiveEND),
@@ -501,7 +539,7 @@ static const VMStateDescription vmstate_spapr_xive_eas = {
     .name = TYPE_SPAPR_XIVE "/eas",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField []) {
+    .fields = (const VMStateField []) {
         VMSTATE_UINT64(w, XiveEAS),
         VMSTATE_END_OF_LIST()
     },
@@ -539,7 +577,7 @@ static const VMStateDescription vmstate_spapr_xive = {
     .minimum_version_id = 1,
     .pre_save = vmstate_spapr_xive_pre_save,
     .post_load = NULL, /* handled at the machine level */
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32_EQUAL(nr_irqs, SpaprXive, NULL),
         VMSTATE_STRUCT_VARRAY_POINTER_UINT32(eat, SpaprXive, nr_irqs,
                                      vmstate_spapr_xive_eas, XiveEAS),
@@ -788,6 +826,8 @@ static void spapr_xive_class_init(ObjectClass *klass, void *data)
     dc->vmsd    = &vmstate_spapr_xive;
 
     xrc->get_eas = spapr_xive_get_eas;
+    xrc->get_pq  = spapr_xive_get_pq;
+    xrc->set_pq  = spapr_xive_set_pq;
     xrc->get_end = spapr_xive_get_end;
     xrc->write_end = spapr_xive_write_end;
     xrc->get_nvt = spapr_xive_get_nvt;
@@ -807,6 +847,7 @@ static void spapr_xive_class_init(ObjectClass *klass, void *data)
     sicc->post_load = spapr_xive_post_load;
 
     xpc->match_nvt  = spapr_xive_match_nvt;
+    xpc->get_config = spapr_xive_presenter_get_config;
     xpc->in_kernel  = spapr_xive_in_kernel_xptr;
 }
 
@@ -1684,7 +1725,8 @@ static target_ulong h_int_esb(PowerPCCPU *cpu,
         mmio_addr = xive->vc_base + xive_source_esb_mgmt(xsrc, lisn) + offset;
 
         if (dma_memory_rw(&address_space_memory, mmio_addr, &data, 8,
-                          (flags & SPAPR_XIVE_ESB_STORE))) {
+                          (flags & SPAPR_XIVE_ESB_STORE),
+                          MEMTXATTRS_UNSPECIFIED)) {
             qemu_log_mask(LOG_GUEST_ERROR, "XIVE: failed to access ESB @0x%"
                           HWADDR_PRIx "\n", mmio_addr);
             return H_HARDWARE;

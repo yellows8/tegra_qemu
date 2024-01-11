@@ -58,7 +58,6 @@ static void sdl2_gl_render_surface(struct sdl2_console *scon)
 
     surface_gl_render_texture(scon->gls, scon->surface);
     SDL_GL_SwapWindow(scon->real_window);
-    graphic_hw_gl_flushed(scon->dcl.con);
 }
 
 void sdl2_gl_update(DisplayChangeListener *dcl,
@@ -67,6 +66,10 @@ void sdl2_gl_update(DisplayChangeListener *dcl,
     struct sdl2_console *scon = container_of(dcl, struct sdl2_console, dcl);
 
     assert(scon->opengl);
+
+    if (!scon->real_window) {
+        return;
+    }
 
     SDL_GL_MakeCurrent(scon->real_window, scon->winctx);
     surface_gl_update_texture(scon->gls, scon->surface, x, y, w, h);
@@ -133,10 +136,10 @@ void sdl2_gl_redraw(struct sdl2_console *scon)
     }
 }
 
-QEMUGLContext sdl2_gl_create_context(DisplayChangeListener *dcl,
+QEMUGLContext sdl2_gl_create_context(DisplayGLCtx *dgc,
                                      QEMUGLParams *params)
 {
-    struct sdl2_console *scon = container_of(dcl, struct sdl2_console, dcl);
+    struct sdl2_console *scon = container_of(dgc, struct sdl2_console, dgc);
     SDL_GLContext ctx;
 
     assert(scon->opengl);
@@ -168,17 +171,17 @@ QEMUGLContext sdl2_gl_create_context(DisplayChangeListener *dcl,
     return (QEMUGLContext)ctx;
 }
 
-void sdl2_gl_destroy_context(DisplayChangeListener *dcl, QEMUGLContext ctx)
+void sdl2_gl_destroy_context(DisplayGLCtx *dgc, QEMUGLContext ctx)
 {
     SDL_GLContext sdlctx = (SDL_GLContext)ctx;
 
     SDL_GL_DeleteContext(sdlctx);
 }
 
-int sdl2_gl_make_context_current(DisplayChangeListener *dcl,
+int sdl2_gl_make_context_current(DisplayGLCtx *dgc,
                                  QEMUGLContext ctx)
 {
-    struct sdl2_console *scon = container_of(dcl, struct sdl2_console, dcl);
+    struct sdl2_console *scon = container_of(dgc, struct sdl2_console, dgc);
     SDL_GLContext sdlctx = (SDL_GLContext)ctx;
 
     assert(scon->opengl);
@@ -202,7 +205,8 @@ void sdl2_gl_scanout_texture(DisplayChangeListener *dcl,
                              uint32_t backing_width,
                              uint32_t backing_height,
                              uint32_t x, uint32_t y,
-                             uint32_t w, uint32_t h)
+                             uint32_t w, uint32_t h,
+                             void *d3d_tex2d)
 {
     struct sdl2_console *scon = container_of(dcl, struct sdl2_console, dcl);
 
@@ -241,5 +245,4 @@ void sdl2_gl_scanout_flush(DisplayChangeListener *dcl,
     egl_fb_blit(&scon->win_fb, &scon->guest_fb, !scon->y0_top);
 
     SDL_GL_SwapWindow(scon->real_window);
-    graphic_hw_gl_flushed(dcl->con);
 }

@@ -1,5 +1,5 @@
 /*
- *  Copyright(c) 2019-2021 Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright(c) 2019-2023 Qualcomm Innovation Center, Inc. All Rights Reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@
 #include "decode.h"
 #include "insn.h"
 #include "printinsn.h"
+#include "mmvec/decode_ext_mmvec.h"
 
 #define fZXTN(N, M, VAL) ((VAL) & ((1LL << (N)) - 1))
 
@@ -46,6 +47,7 @@ enum {
         /* Name   Num Table */
 DEF_REGMAP(R_16,  16, 0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 20, 21, 22, 23)
 DEF_REGMAP(R__8,  8,  0, 2, 4, 6, 16, 18, 20, 22)
+DEF_REGMAP(R_8,   8,  0, 1, 2, 3, 4, 5, 6, 7)
 
 #define DECODE_MAPPED_REG(OPNUM, NAME) \
     insn->regno[OPNUM] = DECODE_REGISTER_##NAME[insn->regno[OPNUM]];
@@ -156,6 +158,9 @@ static void decode_ext_init(void)
     int i;
     for (i = EXT_IDX_noext; i < EXT_IDX_noext_AFTER; i++) {
         ext_trees[i] = &dectree_table_DECODE_EXT_EXT_noext;
+    }
+    for (i = EXT_IDX_mmvec; i < EXT_IDX_mmvec_AFTER; i++) {
+        ext_trees[i] = &dectree_table_DECODE_EXT_EXT_mmvec;
     }
 }
 
@@ -383,6 +388,7 @@ static void decode_set_insn_attr_fields(Packet *pkt)
     uint16_t opcode;
 
     pkt->pkt_has_cof = false;
+    pkt->pkt_has_multi_cof = false;
     pkt->pkt_has_endloop = false;
     pkt->pkt_has_dczeroa = false;
 
@@ -397,20 +403,33 @@ static void decode_set_insn_attr_fields(Packet *pkt)
         }
 
         if (GET_ATTRIB(opcode, A_STORE)) {
-            if (pkt->insn[i].slot == 0) {
-                pkt->pkt_has_store_s0 = true;
-            } else {
-                pkt->pkt_has_store_s1 = true;
+            if (GET_ATTRIB(opcode, A_SCALAR_STORE) &&
+                !GET_ATTRIB(opcode, A_MEMSIZE_0B)) {
+                if (pkt->insn[i].slot == 0) {
+                    pkt->pkt_has_store_s0 = true;
+                } else {
+                    pkt->pkt_has_store_s1 = true;
+                }
             }
         }
 
-        pkt->pkt_has_cof |= decode_opcode_can_jump(opcode);
+        if (decode_opcode_can_jump(opcode)) {
+            if (pkt->pkt_has_cof) {
+                pkt->pkt_has_multi_cof = true;
+            }
+            pkt->pkt_has_cof = true;
+        }
 
         pkt->insn[i].is_endloop = decode_opcode_ends_loop(opcode);
 
         pkt->pkt_has_endloop |= pkt->insn[i].is_endloop;
 
-        pkt->pkt_has_cof |= pkt->pkt_has_endloop;
+        if (pkt->pkt_has_endloop) {
+            if (pkt->pkt_has_cof) {
+                pkt->pkt_has_multi_cof = true;
+            }
+            pkt->pkt_has_cof = true;
+        }
     }
 }
 
@@ -566,8 +585,12 @@ static void decode_remove_extenders(Packet *packet)
 
 static SlotMask get_valid_slots(const Packet *pkt, unsigned int slot)
 {
-    return find_iclass_slots(pkt->insn[slot].opcode,
-                             pkt->insn[slot].iclass);
+    if (GET_ATTRIB(pkt->insn[slot].opcode, A_EXTENSION)) {
+        return mmvec_ext_decode_find_iclass_slots(pkt->insn[slot].opcode);
+    } else {
+        return find_iclass_slots(pkt->insn[slot].opcode,
+                                 pkt->insn[slot].iclass);
+    }
 }
 
 #define DECODE_NEW_TABLE(TAG, SIZE, WHATNOT)     /* NOTHING */
@@ -728,6 +751,11 @@ decode_insns_tablewalk(Insn *insn, const DectreeTable *table,
         }
         decode_op(insn, opc, encoding);
         return 1;
+    } else if (table->table[i].type == DECTREE_EXTSPACE) {
+        /*
+         * For now, HVX will be the only coproc
+         */
+        return decode_insns_tablewalk(insn, ext_trees[EXT_IDX_mmvec], encoding);
     } else {
         return 0;
     }
@@ -769,7 +797,26 @@ static bool decode_parsebits_is_loopend(uint32_t encoding32)
     return bits == 0x2;
 }
 
-static void
+static bool has_valid_slot_assignment(Packet *pkt)
+{
+    int used_slots = 0;
+    for (int i = 0; i < pkt->num_insns; i++) {
+        int slot_mask;
+        Insn *insn = &pkt->insn[i];
+        if (decode_opcode_ends_loop(insn->opcode)) {
+            /* We overload slot 0 for endloop. */
+            continue;
+        }
+        slot_mask = 1 << insn->slot;
+        if (used_slots & slot_mask) {
+            return false;
+        }
+        used_slots |= slot_mask;
+    }
+    return true;
+}
+
+static bool
 decode_set_slot_number(Packet *pkt)
 {
     int slot;
@@ -858,6 +905,8 @@ decode_set_slot_number(Packet *pkt)
         /* Then push it to slot0 */
         pkt->insn[slot1_iidx].slot = 0;
     }
+
+    return has_valid_slot_assignment(pkt);
 }
 
 /*
@@ -874,6 +923,7 @@ int decode_packet(int max_words, const uint32_t *words, Packet *pkt,
     int words_read = 0;
     bool end_of_packet = false;
     int new_insns = 0;
+    int i;
     uint32_t encoding32;
 
     /* Initialize */
@@ -901,6 +951,11 @@ int decode_packet(int max_words, const uint32_t *words, Packet *pkt,
         return 0;
     }
     pkt->encod_pkt_size_in_bytes = words_read * 4;
+    pkt->pkt_has_hvx = false;
+    for (i = 0; i < num_insns; i++) {
+        pkt->pkt_has_hvx |=
+            GET_ATTRIB(pkt->insn[i].opcode, A_CVI);
+    }
 
     /*
      * Check for :endloop in the parse bits
@@ -927,9 +982,16 @@ int decode_packet(int max_words, const uint32_t *words, Packet *pkt,
     decode_apply_extenders(pkt);
     if (!disas_only) {
         decode_remove_extenders(pkt);
+        if (!decode_set_slot_number(pkt)) {
+            /* Invalid packet */
+            return 0;
+        }
     }
-    decode_set_slot_number(pkt);
     decode_fill_newvalue_regno(pkt);
+
+    if (pkt->pkt_has_hvx) {
+        mmvec_ext_decode_checks(pkt, disas_only);
+    }
 
     if (!disas_only) {
         decode_shuffle_for_execution(pkt);
