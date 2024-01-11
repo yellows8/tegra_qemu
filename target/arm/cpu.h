@@ -1109,7 +1109,6 @@ static inline void aarch64_add_sve_properties(Object *obj) { }
 
 void aarch64_sync_32_to_64(CPUARMState *env);
 void aarch64_sync_64_to_32(CPUARMState *env);
-void __arm_cpu_reset(CPUState *s);
 
 int fp_exception_el(CPUARMState *env, int cur_el);
 int sve_exception_el(CPUARMState *env, int cur_el);

@@ -160,10 +160,12 @@ static void cp_reg_check_reset(gpointer key, gpointer value,  gpointer opaque)
     assert(oldvalue == newvalue);
 }
 
-void __arm_cpu_reset(CPUState *s)
+static void arm_cpu_reset(CPUState *s)
 {
     ARMCPU *cpu = ARM_CPU(s);
     CPUARMState *env = &cpu->env;
+
+    acc->parent_reset(s);
 
     memset(env, 0, offsetof(CPUARMState, end_reset_fields));
 
@@ -550,17 +552,6 @@ static inline bool arm_excp_unmasked(CPUState *cs, unsigned int excp_idx,
      * ability above.
      */
     return unmasked || pstate_unmasked;
-}
-
-static void arm_cpu_reset(DeviceState *dev)
-{
-    CPUState *s = CPU(dev);
-    ARMCPU *cpu = ARM_CPU(s);
-    ARMCPUClass *acc = ARM_CPU_GET_CLASS(cpu);
-
-    acc->parent_reset(dev);
-
-    __arm_cpu_reset(s);
 }
 
 bool arm_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
