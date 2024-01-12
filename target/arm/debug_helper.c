@@ -1018,7 +1018,7 @@ static const ARMCPRegInfo debug_cp_reginfo[] = {
       .writefn = oslar_write },
     { .name = "OSLSR_EL1", .state = ARM_CP_STATE_BOTH,
       .cp = 14, .opc0 = 2, .opc1 = 0, .crn = 1, .crm = 1, .opc2 = 4,
-      .access = PL1_R, .resetvalue = 10,
+      .access = PL1_R, .resetvalue = /*10*/0, // Checked by secmon, not sure how to properly handle.
       .accessfn = access_tdosa,
       .fgt = FGT_OSLSR_EL1,
       .fieldoffset = offsetof(CPUARMState, cp15.oslsr_el1) },
