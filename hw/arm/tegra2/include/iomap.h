@@ -30,6 +30,7 @@
 	&& !defined(CONFIG_ARCH_TEGRA_11x_SOC) && !defined(CONFIG_ARCH_TEGRA_12x_SOC) \
 	&& !defined(CONFIG_ARCH_TEGRA_21x_SOC)
 #define CONFIG_ARCH_TEGRA_21x_SOC
+#define CONFIG_ARM_ARCH_TIMER
 #endif
 
 #if defined(CONFIG_ARCH_TEGRA_2x_SOC)

@@ -19,6 +19,7 @@ arm_ss.add(files(
   'ppsb/timer/timer.c',
   'ppsb/timer/timer_us.c',
 
+  'ahb/avpcache/avpcache.c',
   'ahb/apb_dma/apb_dma.c',
   'ahb/bse/bsea.c',
   'ahb/bse/bsev.c',
@@ -36,13 +37,13 @@ arm_ss.add(files(
   'ahb/dma/ahb_dma.c',
   'ahb/gizmo/gizmo.c',
   'ahb/usb/usb.c',
-  'ahb/avpcache/avpcache.c',
 
   'apb/fuse/fuse.c',
   'apb/i2c/i2c.c',
   'apb/pmc/pmc.c',
   'apb/rtc/rtc.c',
   'apb/uart/uart.c',
+  'apb/sysctr0/sysctr0.c',
 
   'cpu/arm_op.c',
   'cpu/cop_mmu.c',
