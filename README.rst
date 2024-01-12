@@ -9,8 +9,10 @@ Build
 
   cd tegra2_qemu
   mkdir build && cd build
-  ../configure --target-list=arm-softmmu --disable-werror
-  ninja
+  ../configure --target-list=aarch64-softmmu,arm-softmmu --enable-gcrypt
+  make # Or ninja
+
+gcrypt is required for using raw RSA messages.
 
 Run
 ===
