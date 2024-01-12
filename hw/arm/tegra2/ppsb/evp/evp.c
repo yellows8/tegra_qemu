@@ -189,7 +189,7 @@ static void tegra_cpu_do_interrupt(ARMCPU *cpu, void *opaque)
         irq_vector_addr = s->evp_regs[1][1];
         break;
     case EXCP_SWI:
-        if (semihosting_enabled()) {
+        if (semihosting_enabled(false)) {
             if (env->regs[15] != 0x08 && env->regs[15] != 0xFFFF0008) {
                 return;
             }

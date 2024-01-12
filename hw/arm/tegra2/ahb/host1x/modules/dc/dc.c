@@ -404,7 +404,7 @@ static void tegra_dc_priv_realize(DeviceState *dev, Error **errp)
     init_window(&s->win_b, WIN_B_CAPS);
     init_window(&s->win_c, WIN_C_CAPS);
 
-    s->ptimer = ptimer_init(tegra_dc_vblank, s, PTIMER_POLICY_DEFAULT);
+    s->ptimer = ptimer_init(tegra_dc_vblank, s, PTIMER_POLICY_CONTINUOUS_TRIGGER);
     ptimer_transaction_begin(s->ptimer);
     ptimer_set_freq(s->ptimer, s->disp_refresh_rate);
     ptimer_transaction_commit(s->ptimer);

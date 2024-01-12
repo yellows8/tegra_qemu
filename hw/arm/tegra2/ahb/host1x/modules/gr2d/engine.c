@@ -133,7 +133,7 @@ static void __process_2d(gr2d_ctx *ctx)
 
             dst_ptr = dma_memory_map(&address_space_memory,
                                      ALIGN(ctx->g2sb_g2dstba.reg32, 8),
-                                     &dma_dst_sz, DMA_DIRECTION_FROM_DEVICE);
+                                     &dma_dst_sz, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
 
             pixman_fill(dst_ptr, ALIGN(ctx->g2sb_g2dstst.dsts, 1) >> 2,
                         8 << ctx->g2sb_g2controlmain.dstcd,
@@ -175,11 +175,11 @@ static void __process_2d(gr2d_ctx *ctx)
 
             src_ptr = dma_memory_map(&address_space_memory,
                                      ALIGN(ctx->g2sb_g2srcba.reg32, 8),
-                                     &dma_src_sz, DMA_DIRECTION_TO_DEVICE);
+                                     &dma_src_sz, DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
 
             dst_ptr = dma_memory_map(&address_space_memory,
                                      ALIGN(ctx->g2sb_g2dstba.reg32, 8),
-                                     &dma_dst_sz, DMA_DIRECTION_FROM_DEVICE);
+                                     &dma_dst_sz, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
 
 //             g_assert(ctx->g2sb_g2srcst.srcs != (1 << ctx->g2sb_g2controlmain.dstcd) * ctx->g2sb_g2srcsize.srcwidth);
 //             g_assert(ctx->g2sb_g2dstst.dsts != (1 << ctx->g2sb_g2controlmain.dstcd) * ctx->g2sb_g2dstsize.dstwidth);

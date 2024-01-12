@@ -125,7 +125,7 @@ void process_cmd_buf(struct host1x_dma_gather *gather)
 //         TPRINT("cdma=%d inlined=%d get=0x%X cmd=0x%08X\n",
 //                cdma->ch_id, gather->inlined, gather->get - 1, cmd);
 
-        qemu_mutex_lock_iothread();
+        bql_lock();
 
         switch (opcode) {
         case SETCL:
@@ -170,7 +170,7 @@ void process_cmd_buf(struct host1x_dma_gather *gather)
             g_assert(dma_range_is_valid(gather));
 
             if (cdma_stopped(gather)) {
-                qemu_mutex_unlock_iothread();
+                bql_unlock();
                 return;
             }
 
@@ -192,9 +192,9 @@ void process_cmd_buf(struct host1x_dma_gather *gather)
             if (op.insert)
                 module_feed(&gather_inlined, op.offset, op.count, op.incr);
             else {
-                qemu_mutex_unlock_iothread();
+                bql_unlock();
                 process_cmd_buf(&gather_inlined);
-                qemu_mutex_lock_iothread();
+                bql_lock();
             }
             break;
         }
@@ -226,7 +226,7 @@ void process_cmd_buf(struct host1x_dma_gather *gather)
             cdma->gather.get = op.offset << 2;
 
             if (gather->inlined) {
-                qemu_mutex_unlock_iothread();
+                bql_unlock();
                 return;
             }
             break;
@@ -239,6 +239,6 @@ void process_cmd_buf(struct host1x_dma_gather *gather)
             g_assert_not_reached();
         }
 
-        qemu_mutex_unlock_iothread();
+        bql_unlock();
     }
 }

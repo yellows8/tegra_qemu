@@ -151,7 +151,7 @@ int tegra_recv_all(int fd, void *_buf, int len1, bool single_read)
     return len1 - len;
 }
 
-void tegra_trace_text_message(const char* format, ...)
+__attribute__ ((format (printf, 1, 2))) void tegra_trace_text_message(const char* format, ...)
 {
 #ifdef _GNU_SOURCE
     struct trace_pkt_txt *W;

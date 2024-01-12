@@ -243,7 +243,7 @@ static void tegra_exec_icmd(tegra_bse *s, uint64_t value)
 
                 if (s->secure_sec_sel[slot].keyupdate_enb)
                     dma_memory_read(&address_space_memory, table_addr,
-                                    s->aes_key[slot], 32);
+                                    s->aes_key[slot], 32, MEMTXATTRS_UNSPECIFIED);
             }
             break;
         }
@@ -284,11 +284,11 @@ static void tegra_exec_icmd(tegra_bse *s, uint64_t value)
 
         buffer_in = dma_memory_map(&address_space_memory,
                                    dma_src_addr, &len_in,
-                                   DMA_DIRECTION_TO_DEVICE);
+                                   DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
 
         buffer_out = dma_memory_map(&address_space_memory,
                                     dma_dst_addr, &len_out,
-                                    DMA_DIRECTION_FROM_DEVICE);
+                                    DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
 
         g_assert(buffer_in != NULL);
         g_assert(buffer_out != NULL);

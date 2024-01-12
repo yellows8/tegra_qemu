@@ -19,10 +19,9 @@
 
 #include "tegra_common.h"
 
+#include "target/arm/cpu.h"
 #include "hw/arm/boot.h"
 #include "sysemu/sysemu.h"
-
-#include "tcg/tcg-op.h"
 
 #include "tegra_cpu.h"
 #include "tegra_trace.h"

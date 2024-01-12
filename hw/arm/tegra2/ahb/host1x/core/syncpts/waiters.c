@@ -118,9 +118,9 @@ void host1x_wait_syncpt(struct host1x_syncpt_waiter *waiter,
 
     syncpt_unlock(syncpt);
 
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
     qemu_event_wait(&waiter->syncpt_ev);
-    qemu_mutex_lock_iothread();
+    bql_lock();
 }
 
 void host1x_wait_syncpt_incr(struct host1x_syncpt_waiter *waiter,
@@ -137,9 +137,9 @@ void host1x_wait_syncpt_incr(struct host1x_syncpt_waiter *waiter,
 
     syncpt_unlock(syncpt);
 
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
     qemu_event_wait(&waiter->syncpt_ev);
-    qemu_mutex_lock_iothread();
+    bql_lock();
 }
 
 void host1x_update_threshold_waiters_base(uint32_t syncpt_base_id)
@@ -198,7 +198,7 @@ void host1x_wait_syncpt_base(struct host1x_syncpt_waiter *waiter,
 
     syncpt_unlock(syncpt);
 
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
     qemu_event_wait(&waiter->syncpt_ev);
-    qemu_mutex_lock_iothread();
+    bql_lock();
 }

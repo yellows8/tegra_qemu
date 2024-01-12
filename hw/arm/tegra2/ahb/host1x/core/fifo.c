@@ -62,7 +62,7 @@ void host1x_fifo_push(struct host1x_fifo *fifo, uint32_t data)
     qemu_mutex_lock(&fifo->mutex);
 
     while (fifo->entries_nb == fifo->size) {
-        qemu_mutex_unlock_iothread();
+        bql_unlock();
         lock = true;
 
         qemu_cond_wait(&fifo->free_cond, &fifo->mutex);
@@ -77,7 +77,7 @@ void host1x_fifo_push(struct host1x_fifo *fifo, uint32_t data)
     qemu_mutex_unlock(&fifo->mutex);
 
     if (lock) {
-        qemu_mutex_lock_iothread();
+        bql_lock();
     }
 }
 

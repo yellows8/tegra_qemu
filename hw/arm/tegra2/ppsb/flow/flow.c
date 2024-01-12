@@ -489,12 +489,12 @@ static void tegra_flow_update_mode(tegra_flow *s, int cpu_id, int in_wfe)
         CPUState *cs = CPU(qemu_get_cpu(cpu_id));
         int sibling = tegra_sibling_cpu(cpu_id);
 
-        qemu_mutex_lock_iothread();
+        bql_lock();
 
         if (tegra_flow_powergate(s, cpu_id, 0) ||
             tegra_flow_powergate(s, sibling, 1))
         {
-            qemu_mutex_unlock_iothread();
+            bql_unlock();
             cpu_loop_exit(cs);
         }
     }
@@ -535,7 +535,7 @@ static void tegra_flow_update_mode(tegra_flow *s, int cpu_id, int in_wfe)
     }
 
     if (in_wfe) {
-        qemu_mutex_unlock_iothread();
+        bql_unlock();
     }
 }
 
@@ -673,7 +673,7 @@ static void tegra_flow_priv_realize(DeviceState *dev, Error **errp)
         arg->cpu_id = i;
 
         s->ptimer[i] = ptimer_init(tegra_flow_timer_event, arg,
-                                   PTIMER_POLICY_DEFAULT);
+                                   PTIMER_POLICY_CONTINUOUS_TRIGGER);
         ptimer_transaction_begin(s->ptimer[i]);
         ptimer_set_freq(s->ptimer[i], 1000000);
         ptimer_transaction_commit(s->ptimer[i]);

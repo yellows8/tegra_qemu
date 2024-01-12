@@ -17,6 +17,8 @@
  *  with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
+#define CONFIG_ARCH_TEGRA_2x_SOC
+
 #include "tegra_common.h"
 
 #include "qapi/error.h"
@@ -626,11 +628,11 @@ static void tegra2_init(MachineState *machine)
     tegra_cpu_reset_init();
 }
 
-static void tegra2_reset(MachineState *state)
+static void tegra2_reset(MachineState *state, ShutdownCause cause)
 {
 //     remote_io_init("10.1.1.3:45312");
     tegra_trace_init();
-    qemu_devices_reset();
+    qemu_devices_reset(cause);
 
     tegra_cpu_reset_deassert(TEGRA2_COP, 1);
 }

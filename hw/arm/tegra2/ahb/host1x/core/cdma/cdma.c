@@ -131,7 +131,7 @@ void host1x_init_dma(void)
     dma_addr_t dma_sz = 0x3fffffff;
 
     host1x_dma_ptr = dma_memory_map(&address_space_memory, 0, &dma_sz,
-                                    DMA_DIRECTION_TO_DEVICE);
+                                    DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
 
     g_assert(host1x_dma_ptr != NULL);
 }
