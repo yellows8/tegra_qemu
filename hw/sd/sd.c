@@ -116,6 +116,8 @@ struct SDState {
     uint8_t spec_version;
     BlockBackend *blk;
     bool emmc;
+    uint32_t mmcpart;
+    uint32_t bootpartsize;
 
     /* Runtime changeables */
 
@@ -1245,6 +1247,8 @@ static void sd_reset(DeviceState *dev)
     sd->dat_lines = 0xf;
     sd->cmd_line = true;
     sd->multi_blk_cnt = 0;
+
+    sd->mmcpart = 0;
 }
 
 static bool sd_get_inserted(SDState *sd)
@@ -1329,6 +1333,7 @@ static const VMStateDescription sd_vmstate = {
     .minimum_version_id = 2,
     .pre_load = sd_vmstate_pre_load,
     .fields = (const VMStateField[]) {
+        VMSTATE_UINT32(mmcpart, SDState),
         VMSTATE_UINT32(mode, SDState),
         VMSTATE_INT32(state, SDState),
         VMSTATE_UINT8_ARRAY(cid, SDState, 16),
@@ -1403,8 +1408,18 @@ void sd_set_cb(SDState *sd, qemu_irq readonly, qemu_irq insert)
     qemu_set_irq(insert, sd->blk ? blk_is_inserted(sd->blk) : 0);
 }
 
+static size_t sd_get_partoff(SDState *sd, size_t *part_size)
+{
+    if (part_size) *part_size = sd->size - (sd->bootpartsize*2);
+    if (!sd->emmc) return 0;
+    if (sd->mmcpart==0) return sd->bootpartsize*2;
+    if (part_size) *part_size = sd->bootpartsize;
+    return (sd->mmcpart-1) * sd->bootpartsize;
+}
+
 static void sd_blk_read(SDState *sd, uint64_t addr, uint32_t len)
 {
+    addr+= sd_get_partoff(sd, NULL);
     trace_sdcard_read_block(addr, len);
     if (!sd->blk || blk_pread(sd->blk, addr, len, sd->data, 0) < 0) {
         fprintf(stderr, "sd_blk_read: read error on host side\n");
@@ -1413,6 +1428,7 @@ static void sd_blk_read(SDState *sd, uint64_t addr, uint32_t len)
 
 static void sd_blk_write(SDState *sd, uint64_t addr, uint32_t len)
 {
+    addr+= sd_get_partoff(sd, NULL);
     trace_sdcard_write_block(addr, len);
     if (!sd->blk || blk_pwrite(sd->blk, addr, len, sd->data, 0) < 0) {
         fprintf(stderr, "sd_blk_write: write error on host side\n");
@@ -1610,10 +1626,12 @@ static void sd_lock_command(SDState *sd)
 static bool address_in_range(SDState *sd, const char *desc,
                              uint64_t addr, uint32_t length)
 {
-    if (addr + length > sd->size) {
+    size_t partsize=0;
+    sd_get_partoff(sd, &partsize);
+    if (addr + length > partsize) {
         qemu_log_mask(LOG_GUEST_ERROR,
                       "%s offset %"PRIu64" > card %"PRIu64" [%%%u]\n",
-                      desc, addr, sd->size, length);
+                      desc, addr, partsize, length);
         sd->card_status |= ADDRESS_ERROR;
         return false;
     }
@@ -1791,7 +1809,13 @@ static sd_rsp_type_t sd_normal_command(SDState *sd, SDRequest req)
 
     case 6:  /* CMD6:   SWITCH_FUNCTION */
         if (sd->emmc)
+        {
+            if ((req.arg & 0xFFFF00FF) == 0x03B30000)
+            {
+                sd->mmcpart = (req.arg>>8) & 0xFF;
+            }
             return sd_r1b;
+        }
         switch (sd->mode) {
         case sd_data_transfer_mode:
             sd_function_switch(sd, req.arg);
@@ -2925,6 +2949,7 @@ static Property sd_properties[] = {
      * board to ensure that ssi transfers only occur when the chip select
      * is asserted.  */
     DEFINE_PROP_BOOL("emmc", SDState, emmc, false),
+    DEFINE_PROP_UINT32("bootpartsize", SDState, bootpartsize, 0),
     DEFINE_PROP_END_OF_LIST()
 };
 
