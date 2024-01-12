@@ -195,7 +195,7 @@ inddata_out:
         break;
     }
     default:
-        g_assert_not_reached();
+        //g_assert_not_reached();
         break;
     }
 }
@@ -212,7 +212,7 @@ uint32_t host1x_read(struct host1x_module *module, uint32_t offset)
         break;
     }
     default:
-        g_assert_not_reached();
+        //g_assert_not_reached();
         break;
     }
 

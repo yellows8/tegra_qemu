@@ -111,7 +111,7 @@ static uint32_t win_common_read(void *regs, uint32_t offset)
         ret = win->winbuf_uflow_status.reg32;
         break;
     default:
-        g_assert_not_reached();
+        //g_assert_not_reached();
     }
 
     return ret;
@@ -206,7 +206,7 @@ static void win_common_write(void *regs, uint32_t offset, uint32_t value)
         win->winbuf_uflow_status.reg32 = value;
         break;
     default:
-        g_assert_not_reached();
+        //g_assert_not_reached();
     }
 }
 

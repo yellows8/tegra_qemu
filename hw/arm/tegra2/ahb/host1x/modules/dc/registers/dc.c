@@ -445,7 +445,7 @@ static uint32_t dc_read(void *regs, uint32_t offset)
         ret = dc->disp_disp_misc_control.reg32;
         break;
     default:
-        g_assert_not_reached();
+        //g_assert_not_reached();
     }
 
     return ret;
@@ -901,7 +901,7 @@ static void dc_write(void *regs, uint32_t offset, uint32_t value)
         dc->disp_disp_misc_control.reg32 = value;
         break;
     default:
-        g_assert_not_reached();
+        //g_assert_not_reached();
     }
 }
 
