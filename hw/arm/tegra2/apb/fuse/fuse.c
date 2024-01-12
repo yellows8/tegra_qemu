@@ -1,7 +1,8 @@
 /*
- * ARM NVIDIA Tegra2 emulation.
+ * ARM NVIDIA Tegra2/X1 emulation.
  *
  * Copyright (c) 2014-2015 Dmitry Osipenko <digetx@gmail.com>
+ * Copyright (c) yellows8
  *
  *  This program is free software; you can redistribute it and/or modify it
  *  under the terms of the GNU General Public License as published by the
@@ -25,6 +26,9 @@
 #include "iomap.h"
 #include "tegra_trace.h"
 
+#include "crypto/secret_common.h"
+#include "qapi/error.h"
+
 #define TYPE_TEGRA_FUSE "tegra.fuse"
 #define TEGRA_FUSE(obj) OBJECT_CHECK(tegra_fuse, (obj), TYPE_TEGRA_FUSE)
 #define DEFINE_REG32(reg) reg##_t reg
@@ -45,6 +49,14 @@ typedef struct tegra_fuse_state {
     DEFINE_REG32(fuse_dac_hdtv_calib);
     DEFINE_REG32(fuse_dac_sdtv_calib);
     DEFINE_REG32(fuse_reserved_production);
+    DEFINE_REG32(fuse_reserved_odm0);
+    DEFINE_REG32(fuse_reserved_odm1);
+    DEFINE_REG32(fuse_reserved_odm2);
+    DEFINE_REG32(fuse_reserved_odm3);
+    DEFINE_REG32(fuse_reserved_odm4);
+    DEFINE_REG32(fuse_reserved_odm5);
+    DEFINE_REG32(fuse_reserved_odm6);
+    DEFINE_REG32(fuse_reserved_odm7);
     DEFINE_REG32(fuse_spare_bit_0);
     DEFINE_REG32(fuse_spare_bit_1);
     DEFINE_REG32(fuse_spare_bit_2);
@@ -125,6 +137,14 @@ static const VMStateDescription vmstate_tegra_fuse = {
         VMSTATE_UINT32(fuse_dac_hdtv_calib.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_dac_sdtv_calib.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_reserved_production.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_reserved_odm0.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_reserved_odm1.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_reserved_odm2.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_reserved_odm3.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_reserved_odm4.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_reserved_odm5.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_reserved_odm6.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_reserved_odm7.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_spare_bit_0.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_spare_bit_1.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_spare_bit_2.reg32, tegra_fuse),
@@ -230,6 +250,30 @@ static uint64_t tegra_fuse_priv_read(void *opaque, hwaddr offset,
         break;
     case FUSE_RESERVED_PRODUCTION_OFFSET:
         ret = s->fuse_reserved_production.reg32;
+        break;
+    case FUSE_RESERVED_ODM0_OFFSET:
+        ret = s->fuse_reserved_odm0.reg32;
+        break;
+    case FUSE_RESERVED_ODM1_OFFSET:
+        ret = s->fuse_reserved_odm1.reg32;
+        break;
+    case FUSE_RESERVED_ODM2_OFFSET:
+        ret = s->fuse_reserved_odm2.reg32;
+        break;
+    case FUSE_RESERVED_ODM3_OFFSET:
+        ret = s->fuse_reserved_odm3.reg32;
+        break;
+    case FUSE_RESERVED_ODM4_OFFSET:
+        ret = s->fuse_reserved_odm4.reg32;
+        break;
+    case FUSE_RESERVED_ODM5_OFFSET:
+        ret = s->fuse_reserved_odm5.reg32;
+        break;
+    case FUSE_RESERVED_ODM6_OFFSET:
+        ret = s->fuse_reserved_odm6.reg32;
+        break;
+    case FUSE_RESERVED_ODM7_OFFSET:
+        ret = s->fuse_reserved_odm7.reg32;
         break;
     case FUSE_SPARE_BIT_0_OFFSET:
         ret = s->fuse_spare_bit_0.reg32;
@@ -475,6 +519,38 @@ static void tegra_fuse_priv_write(void *opaque, hwaddr offset,
     case FUSE_RESERVED_PRODUCTION_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_production.reg32, value);
         s->fuse_reserved_production.reg32 = value;
+        break;
+    case FUSE_RESERVED_ODM0_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm0.reg32, value);
+        s->fuse_reserved_odm0.reg32 = value;
+        break;
+    case FUSE_RESERVED_ODM1_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm1.reg32, value);
+        s->fuse_reserved_odm1.reg32 = value;
+        break;
+    case FUSE_RESERVED_ODM2_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm2.reg32, value);
+        s->fuse_reserved_odm2.reg32 = value;
+        break;
+    case FUSE_RESERVED_ODM3_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm3.reg32, value);
+        s->fuse_reserved_odm3.reg32 = value;
+        break;
+    case FUSE_RESERVED_ODM4_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm4.reg32, value);
+        s->fuse_reserved_odm4.reg32 = value;
+        break;
+    case FUSE_RESERVED_ODM5_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm5.reg32, value);
+        s->fuse_reserved_odm5.reg32 = value;
+        break;
+    case FUSE_RESERVED_ODM6_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm6.reg32, value);
+        s->fuse_reserved_odm6.reg32 = value;
+        break;
+    case FUSE_RESERVED_ODM7_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm7.reg32, value);
+        s->fuse_reserved_odm7.reg32 = value;
         break;
     case FUSE_SPARE_BIT_0_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_spare_bit_0.reg32, value & FUSE_SPARE_BIT_0_WRMASK);
@@ -745,6 +821,14 @@ static void tegra_fuse_priv_reset(DeviceState *dev)
     s->fuse_dac_hdtv_calib.reg32 = FUSE_DAC_HDTV_CALIB_RESET;
     s->fuse_dac_sdtv_calib.reg32 = 0xC8;
     s->fuse_reserved_production.reg32 = 0x2;
+    s->fuse_reserved_odm0.reg32 = 0x0;
+    s->fuse_reserved_odm1.reg32 = 0x0;
+    s->fuse_reserved_odm2.reg32 = 0x0;
+    s->fuse_reserved_odm3.reg32 = 0x0;
+    s->fuse_reserved_odm4.reg32 = 0x0;
+    s->fuse_reserved_odm5.reg32 = 0x0;
+    s->fuse_reserved_odm6.reg32 = 0x0;
+    s->fuse_reserved_odm7.reg32 = 0x0;
     s->fuse_spare_bit_0.reg32 = FUSE_SPARE_BIT_0_RESET;
     s->fuse_spare_bit_1.reg32 = FUSE_SPARE_BIT_1_RESET;
     s->fuse_spare_bit_2.reg32 = FUSE_SPARE_BIT_2_RESET;
@@ -807,6 +891,34 @@ static void tegra_fuse_priv_reset(DeviceState *dev)
     s->fuse_spare_bit_59.reg32 = FUSE_SPARE_BIT_59_RESET;
     s->fuse_spare_bit_60.reg32 = FUSE_SPARE_BIT_60_RESET;
     s->fuse_spare_bit_61.reg32 = FUSE_SPARE_BIT_61_RESET;
+
+    // Load the fuse_cache secret into the fuse-cache regs. End-of-file == end of fuse regs. Loading cache regs from iopage is also supported.
+    Error *err = NULL;
+    uint8_t *data=NULL;
+    size_t datalen = 0;
+    if (qcrypto_secret_lookup("fuse_cache", &data, &datalen, &err)==0) {
+        if (datalen > 0x368 && datalen!=0x1000) {
+            error_setg(&err, "Fuse: Invalid datalen for secret fuse_cache, datalen=0x%lx expected <=0x368/0x1000.", datalen);
+        }
+        else {
+            uint32_t *dataptr = (uint32_t*)data;
+            size_t datacount = datalen/4;
+            size_t databaseoff = 0;
+
+            if (datalen==0x1000) {
+                databaseoff = 0x898>>2;
+            }
+
+            for (size_t offset=databaseoff; offset<datacount; offset++) {
+                hwaddr hwoff = offset*4;
+                if (datalen!=0x1000) hwoff = 0x400-datalen+offset*4;
+                else hwoff-= 0x800;
+                tegra_fuse_priv_write(s, hwoff, dataptr[offset], 4);
+            }
+        }
+        g_free(data);
+    }
+    if (err) error_report_err(err);
 }
 
 static const MemoryRegionOps tegra_fuse_mem_ops = {

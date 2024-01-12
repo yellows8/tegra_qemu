@@ -1,7 +1,8 @@
 /*
- * ARM NVIDIA Tegra2 emulation.
+ * ARM NVIDIA Tegra2/X1 emulation.
  *
  * Copyright (c) 2014-2015 Dmitry Osipenko <digetx@gmail.com>
+ * Copyright (c) yellows8
  *
  *  This program is free software; you can redistribute it and/or modify it
  *  under the terms of the GNU General Public License as published by the
@@ -142,6 +143,54 @@ typedef union fuse_reserved_production_u {
 
     uint32_t reg32;
 } fuse_reserved_production_t;
+
+#define FUSE_RESERVED_ODM0_OFFSET 0x1C8
+#define FUSE_RESERVED_ODM0_RESET  0x00000000
+typedef union fuse_reserved_odm0_u {
+    uint32_t reg32;
+} fuse_reserved_odm0_t;
+
+#define FUSE_RESERVED_ODM1_OFFSET 0x1CC
+#define FUSE_RESERVED_ODM1_RESET  0x00000000
+typedef union fuse_reserved_odm1_u {
+    uint32_t reg32;
+} fuse_reserved_odm1_t;
+
+#define FUSE_RESERVED_ODM2_OFFSET 0x1D0
+#define FUSE_RESERVED_ODM2_RESET  0x00000000
+typedef union fuse_reserved_odm2_u {
+    uint32_t reg32;
+} fuse_reserved_odm2_t;
+
+#define FUSE_RESERVED_ODM3_OFFSET 0x1D4
+#define FUSE_RESERVED_ODM3_RESET  0x00000000
+typedef union fuse_reserved_odm3_u {
+    uint32_t reg32;
+} fuse_reserved_odm3_t;
+
+#define FUSE_RESERVED_ODM4_OFFSET 0x1D8
+#define FUSE_RESERVED_ODM4_RESET  0x00000000
+typedef union fuse_reserved_odm4_u {
+    uint32_t reg32;
+} fuse_reserved_odm4_t;
+
+#define FUSE_RESERVED_ODM5_OFFSET 0x1DC
+#define FUSE_RESERVED_ODM5_RESET  0x00000000
+typedef union fuse_reserved_odm5_u {
+    uint32_t reg32;
+} fuse_reserved_odm5_t;
+
+#define FUSE_RESERVED_ODM6_OFFSET 0x1E0
+#define FUSE_RESERVED_ODM6_RESET  0x00000000
+typedef union fuse_reserved_odm6_u {
+    uint32_t reg32;
+} fuse_reserved_odm6_t;
+
+#define FUSE_RESERVED_ODM7_OFFSET 0x1E4
+#define FUSE_RESERVED_ODM7_RESET  0x00000000
+typedef union fuse_reserved_odm7_u {
+    uint32_t reg32;
+} fuse_reserved_odm7_t;
 
 #define FUSE_SPARE_BIT_0_OFFSET 0x200
 #define FUSE_SPARE_BIT_0_RESET  0x00000000
