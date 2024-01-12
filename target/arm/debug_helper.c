@@ -1063,6 +1063,10 @@ static const ARMCPRegInfo debug_cp_reginfo[] = {
       .fgt = FGT_DBGCLAIM,
       .writefn = dbgclaimclr_write, .raw_writefn = raw_write,
       .fieldoffset = offsetof(CPUARMState, cp15.dbgclaim) },
+    { .name = "DBGAUTHSTATUS_EL1", .state = ARM_CP_STATE_BOTH,
+      .cp = 14, .opc0 = 2, .opc1 = 0, .crn = 7, .crm = 14, .opc2 = 6,
+      .access = PL1_RW, .accessfn = access_tda,
+      .type = ARM_CP_NOP | ARM_CP_EL3_NO_EL2_KEEP },
 };
 
 /* These are present only when EL1 supports AArch32 */
