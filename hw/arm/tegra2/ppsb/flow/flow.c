@@ -17,6 +17,8 @@
  *  with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
+#define CONFIG_ARCH_TEGRA_21x_SOC
+
 #include "tegra_common.h"
 
 #include "qemu/main-loop.h"
@@ -112,7 +114,7 @@ static int tegra_flow_have_pending_irq(int cpu_id)
         return 0;
     }
 
-    for (i = INT_CPU_IRQS_NR; i < INT_GIC_NR; i++) {
+    for (i = INT_PRI_BASE; i < INT_GIC_NR; i++) {
         if (!GIC_DIST_TEST_ENABLED(i, 1 << cpu_id))
             continue;
 

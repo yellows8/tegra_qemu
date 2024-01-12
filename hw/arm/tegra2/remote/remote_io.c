@@ -17,6 +17,8 @@
  *  with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
+#define CONFIG_ARCH_TEGRA_2x_SOC
+
 #include "tegra_common.h"
 
 #include "qemu/sockets.h"
