@@ -36,6 +36,7 @@ arm_ss.add(files(
   'ahb/dma/ahb_dma.c',
   'ahb/gizmo/gizmo.c',
   'ahb/usb/usb.c',
+  'ahb/avpcache/avpcache.c',
 
   'apb/fuse/fuse.c',
   'apb/i2c/i2c.c',
