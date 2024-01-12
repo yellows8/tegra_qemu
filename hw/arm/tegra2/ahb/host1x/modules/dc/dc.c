@@ -221,11 +221,6 @@ static void tegra_dc_priv_write(void *opaque, hwaddr offset,
                 latch_window_assembly(&s->win_c);
         }
 
-        if (offset == DISP_DISP_ACTIVE_OFFSET) {
-            qemu_console_resize(s->console,
-                                s->dc.disp_disp_active.h_disp_active,
-                                s->dc.disp_disp_active.v_disp_active);
-        }
         break;
 
     case 0x500 ... 0x80a:
@@ -376,6 +371,8 @@ static void tegra_dc_compose(void *opaque)
     if (s->dc.cmd_display_command.display_ctrl_mode == 0) {
         return;
     }
+
+    qemu_console_resize(s->console, s->dc.disp_disp_active.h_disp_active, s->dc.disp_disp_active.v_disp_active); // This will internally do nothing if resize isn't needed.
 
     tegra_dc_compose_window(s->console, &s->win_a);
     tegra_dc_compose_window(s->console, &s->win_b);
