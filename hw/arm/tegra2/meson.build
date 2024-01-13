@@ -43,6 +43,7 @@ arm_ss.add(files(
   'apb/pmc/pmc.c',
   'apb/rtc/rtc.c',
   'apb/uart/uart.c',
+  'apb/se/se.c',
   'apb/sysctr0/sysctr0.c',
 
   'cpu/arm_op.c',
