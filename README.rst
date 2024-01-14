@@ -14,8 +14,9 @@ Build
 
 gcrypt is required for using raw RSA messages.
 
+==========
 Run Tegra2
-===
+==========
 
 .. code-block:: shell
 
@@ -33,8 +34,9 @@ Kernel and device-tree are available at `<https://github.com/grate-driver/linux>
 
 U-Boot is available at `<https://github.com/grate-driver/u-boot>`_, use ``qemu_tegra2_defconfig``.
 
+============
 Run Tegra X1
-===
+============
 
 .. code-block:: shell
 
