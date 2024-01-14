@@ -38,7 +38,8 @@
 
 typedef struct tegra_irq_dispatcher {
     SysBusDevice parent_obj;
-    qemu_irq cpu_irqs[TEGRA2_A9_NCORES][2];
+    uint32_t num_cpu;
+    qemu_irq cpu_irqs[TEGRA_CCPLEX_NCORES][2];
     qemu_irq cop_irqs[2];
     int cpu_irq_gic_lvl;
     int cpu_irq_lic_lvl;
@@ -46,12 +47,11 @@ typedef struct tegra_irq_dispatcher {
 
 static void tegra_irq_dispatcher_set_irq_dev(void *opaque, int irq, int level)
 {
-    A9MPPrivState *a9mpcore = A9MPCORE_PRIV(tegra_a9mpcore_dev);
     tegra_ictlr *ictlr = TEGRA_ICTLR(tegra_ictlr_dev);
 
 //     TPRINT("%s irq=%d lvl=%d\n", __func__, irq, level);
 
-    qemu_set_irq(qdev_get_gpio_in(DEVICE(&a9mpcore->gic), irq), level);
+    qemu_set_irq(qdev_get_gpio_in(DEVICE(gic_dev), irq), level);
     qemu_set_irq(qdev_get_gpio_in(DEVICE(ictlr), irq), level);
 }
 
@@ -60,9 +60,9 @@ static void tegra_irq_dispatcher_set_irq_gic(void *opaque, int irq, int level)
     tegra_irq_dispatcher *s = TEGRA_IRQ_DISPATCHER(opaque);
     int cpu_id = irq - INT_MAIN_NR;
 
-    assert(cpu_id < TEGRA2_A9_NCORES);
+    assert(cpu_id < s->num_cpu);
 
-    if (cpu_id == TEGRA2_A9_CORE0) {
+    if (cpu_id == TEGRA_CCPLEX_CORE0) {
         s->cpu_irq_gic_lvl = level;
         level |= s->cpu_irq_lic_lvl;
     }
@@ -78,7 +78,7 @@ static void tegra_irq_dispatcher_set_irq_gic(void *opaque, int irq, int level)
 
 static void tegra_irq_dispatcher_set_cpu_irq_lic(void *opaque, int irq, int level)
 {
-//     tegra_irq_dispatcher *s = TEGRA_IRQ_DISPATCHER(opaque);
+    tegra_irq_dispatcher *s = TEGRA_IRQ_DISPATCHER(opaque);
 //     int irq_type = irq & 1;
 
 //     s->cpu_irq_lic_lvl = level;
@@ -88,11 +88,16 @@ static void tegra_irq_dispatcher_set_cpu_irq_lic(void *opaque, int irq, int leve
 //            __func__, irq, irq_type ? "FIQ":"IRQ", level);
 
     if (level) {
-        tegra_flow_on_irq(TEGRA2_A9_CORE0);
+        tegra_flow_on_irq(TEGRA_CCPLEX_CORE0);
+        if (s->num_cpu>=4) {
+            tegra_flow_on_irq(TEGRA_CCPLEX_CORE1);
+            tegra_flow_on_irq(TEGRA_CCPLEX_CORE2);
+            tegra_flow_on_irq(TEGRA_CCPLEX_CORE3);
+        }
     }
 
     /* LIC is only used to wake CPU.  */
-//     qemu_set_irq(s->cpu_irqs[TEGRA2_A9_CORE0][irq_type], level);
+//     qemu_set_irq(s->cpu_irqs[TEGRA_CCPLEX_CORE0][irq_type], level);
 }
 
 static void tegra_irq_dispatcher_set_cop_irq_lic(void *opaque, int irq, int level)
@@ -106,17 +111,19 @@ static void tegra_irq_dispatcher_set_cop_irq_lic(void *opaque, int irq, int leve
     qemu_set_irq(s->cop_irqs[irq_type], level);
 
     if (level) {
-        tegra_flow_on_irq(TEGRA2_COP);
+        tegra_flow_on_irq(TEGRA_BPMP);
     }
 }
 
 static void tegra_irq_dispatcher_realize(DeviceState *dev, Error **errp)
 {
+    tegra_irq_dispatcher *s = TEGRA_IRQ_DISPATCHER(dev);
+
     /* Initialize IRQs coming from devices to dispatcher */
     qdev_init_gpio_in(dev, tegra_irq_dispatcher_set_irq_dev, INT_MAIN_NR);
-    qdev_init_gpio_in(dev, tegra_irq_dispatcher_set_irq_gic, 2);
-    qdev_init_gpio_in(dev, tegra_irq_dispatcher_set_cpu_irq_lic, 2);
-    qdev_init_gpio_in(dev, tegra_irq_dispatcher_set_cop_irq_lic, 2);
+    qdev_init_gpio_in(dev, tegra_irq_dispatcher_set_irq_gic, s->num_cpu);
+    qdev_init_gpio_in(dev, tegra_irq_dispatcher_set_cpu_irq_lic, s->num_cpu);
+    qdev_init_gpio_in(dev, tegra_irq_dispatcher_set_cop_irq_lic, s->num_cpu);
 }
 
 static void tegra_irq_dispatcher_priv_reset(DeviceState *dev)
@@ -131,7 +138,9 @@ static void tegra_irq_dispatcher_init(Object *obj)
     tegra_irq_dispatcher *s = TEGRA_IRQ_DISPATCHER(obj);
     int i;
 
-    for (i = 0; i < TEGRA2_A9_NCORES; i++) {
+    assert(s->num_cpu <= TEGRA_CCPLEX_NCORES);
+
+    for (i = 0; i < s->num_cpu; i++) {
         sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->cpu_irqs[i][ARM_CPU_IRQ]);
         sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->cpu_irqs[i][ARM_CPU_FIQ]);
     }
@@ -140,10 +149,16 @@ static void tegra_irq_dispatcher_init(Object *obj)
     sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->cop_irqs[ARM_CPU_FIQ]);
 }
 
+static Property tegra_irq_dispatcher_properties[] = {
+    DEFINE_PROP_UINT32("num-cpu", tegra_irq_dispatcher, num_cpu, TEGRA_CCPLEX_NCORES), \
+    DEFINE_PROP_END_OF_LIST(),
+};
+
 static void tegra_irq_dispatcher_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    device_class_set_props(dc, tegra_irq_dispatcher_properties);
     dc->realize = tegra_irq_dispatcher_realize;
     dc->reset = tegra_irq_dispatcher_priv_reset;
 }

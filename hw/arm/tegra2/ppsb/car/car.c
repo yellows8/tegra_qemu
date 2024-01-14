@@ -42,6 +42,7 @@ typedef struct tegra_car_state {
     SysBusDevice parent_obj;
 
     MemoryRegion iomem;
+    uint32_t rst_cpu_cmplx_clr_offset;
     DEFINE_REG32(rst_source);
     DEFINE_REG32(rst_devices_l);
     DEFINE_REG32(rst_devices_h);
@@ -135,6 +136,8 @@ typedef struct tegra_car_state {
     DEFINE_REG32(clk_source_osc);
     DEFINE_REG32(clk_source_la);
     DEFINE_REG32(rst_cpu_cmplx_set);
+    DEFINE_REG32(rst_controller_pllc4_base);
+    DEFINE_REG32(rst_controller_pllmb_base);
 } tegra_car;
 
 static const VMStateDescription vmstate_tegra_car = {
@@ -142,6 +145,7 @@ static const VMStateDescription vmstate_tegra_car = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
+        VMSTATE_UINT32(rst_cpu_cmplx_clr_offset, tegra_car),
         VMSTATE_UINT32(rst_source.reg32, tegra_car),
         VMSTATE_UINT32(rst_devices_l.reg32, tegra_car),
         VMSTATE_UINT32(rst_devices_h.reg32, tegra_car),
@@ -234,6 +238,8 @@ static const VMStateDescription vmstate_tegra_car = {
         VMSTATE_UINT32(clk_source_csite.reg32, tegra_car),
         VMSTATE_UINT32(clk_source_osc.reg32, tegra_car),
         VMSTATE_UINT32(rst_cpu_cmplx_set.reg32, tegra_car),
+        VMSTATE_UINT32(rst_controller_pllc4_base.reg32, tegra_car),
+        VMSTATE_UINT32(rst_controller_pllmb_base.reg32, tegra_car),
         VMSTATE_UINT32(clk_source_la.reg32, tegra_car),
         VMSTATE_END_OF_LIST()
     }
@@ -288,7 +294,7 @@ static void set_rst_devices_l(uint32_t value)
     rst_dev_l_set_t rst = { .reg32 = value };
 
     if (rst.set_cop_rst) {
-        tegra_cpu_reset_assert(TEGRA2_COP);
+        tegra_cpu_reset_assert(TEGRA_BPMP);
     }
 
     if (rst.set_trig_sys_rst) {
@@ -320,7 +326,7 @@ static void clr_rst_devices_l(uint32_t value)
     rst_dev_l_clr_t rst = { .reg32 = value };
 
     if (rst.clr_cop_rst) {
-        tegra_cpu_reset_deassert(TEGRA2_COP, 0);
+        tegra_cpu_reset_deassert(TEGRA_BPMP, 0);
     }
 
     if (rst.clr_vcp_rst) {
@@ -697,8 +703,13 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
         ret = s->clk_source_osc.reg32;
         break;
     case RST_CPU_CMPLX_SET_OFFSET:
-    case RST_CPU_CMPLX_CLR_OFFSET:
         ret = s->rst_cpu_cmplx_set.reg32;
+        break;
+    case RST_CONTROLLER_PLLC4_BASE_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->rst_controller_pllc4_base.reg32;
+        break;
+    case RST_CONTROLLER_PLLMB_BASE_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->rst_controller_pllmb_base.reg32;
         break;
     case CLK_SOURCE_LA_OFFSET:
         ret = s->clk_source_la.reg32;
@@ -706,6 +717,8 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
     default:
         break;
     }
+
+    if (offset == s->rst_cpu_cmplx_clr_offset) ret = s->rst_cpu_cmplx_set.reg32;
 
     TRACE_READ(s->iomem.addr, offset, ret);
 
@@ -1184,30 +1197,36 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         s->rst_cpu_cmplx_set.reg32 |= value;
 
         if (rst.set_cpureset0) {
-            tegra_cpu_reset_assert(TEGRA2_A9_CORE0);
+            tegra_cpu_reset_assert(TEGRA_CCPLEX_CORE0);
         }
 
         if (rst.set_cpureset1) {
-            tegra_cpu_reset_assert(TEGRA2_A9_CORE1);
+            tegra_cpu_reset_assert(TEGRA_CCPLEX_CORE1);
+        }
+
+        if (tegra_board == TEGRAX1_BOARD) {
+            if (rst.set_cpureset2) {
+                tegra_cpu_reset_assert(TEGRA_CCPLEX_CORE2);
+            }
+
+            if (rst.set_cpureset3) {
+                tegra_cpu_reset_assert(TEGRA_CCPLEX_CORE3);
+            }
         }
         break;
     }
-    case RST_CPU_CMPLX_CLR_OFFSET:
-    {
-        TRACE_WRITE(s->iomem.addr, offset, 0, value);
-        rst_cpu_cmplx_clr_t rst = { .reg32 = value };
-
-        s->rst_cpu_cmplx_set.reg32 &= ~value;
-
-        if (rst.clr_cpureset0) {
-            tegra_cpu_reset_deassert(TEGRA2_A9_CORE0, 0);
-        }
-
-        if (rst.clr_cpureset1) {
-            tegra_cpu_reset_deassert(TEGRA2_A9_CORE1, 0);
+    case RST_CONTROLLER_PLLC4_BASE_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->rst_controller_pllc4_base.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD) s->rst_controller_pllc4_base.reg32 = value;
+        break;
+    case RST_CONTROLLER_PLLMB_BASE_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->rst_controller_pllmb_base.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD)  {
+            value &= ~(3<<26);
+            value |= s->rst_controller_pllmb_base.reg32 & (3<<26);
+            s->rst_controller_pllmb_base.reg32 = value;
         }
         break;
-    }
     case CLK_SOURCE_LA_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->clk_source_la.reg32, value);
         s->clk_source_la.reg32 = value;
@@ -1215,6 +1234,30 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
     default:
         TRACE_WRITE(s->iomem.addr, offset, 0, value);
         break;
+    }
+
+    if (offset == s->rst_cpu_cmplx_clr_offset) {
+        rst_cpu_cmplx_clr_t rst = { .reg32 = value };
+
+        s->rst_cpu_cmplx_set.reg32 &= ~value;
+
+        if (rst.clr_cpureset0) {
+            tegra_cpu_reset_deassert(TEGRA_CCPLEX_CORE0, 0);
+        }
+
+        if (rst.clr_cpureset1) {
+            tegra_cpu_reset_deassert(TEGRA_CCPLEX_CORE1, 0);
+        }
+
+        if (tegra_board == TEGRAX1_BOARD) {
+            if (rst.clr_cpureset2) {
+                tegra_cpu_reset_deassert(TEGRA_CCPLEX_CORE2, 0);
+            }
+
+            if (rst.clr_cpureset3) {
+                tegra_cpu_reset_deassert(TEGRA_CCPLEX_CORE3, 0);
+            }
+        }
     }
 }
 
@@ -1313,7 +1356,8 @@ static void tegra_car_priv_reset(DeviceState *dev)
     s->clk_source_nor.reg32 = CLK_SOURCE_NOR_RESET;
     s->clk_source_csite.reg32 = CLK_SOURCE_CSITE_RESET;
     s->clk_source_osc.reg32 = CLK_SOURCE_OSC_RESET;
-    s->rst_cpu_cmplx_set.reg32 = RST_CPU_CMPLX_SET_RESET;
+    s->rst_controller_pllc4_base.reg32 = RST_CONTROLLER_PLLC4_BASE_RESET;
+    s->rst_controller_pllmb_base.reg32 = RST_CONTROLLER_PLLMB_BASE_RESET | PLL_LOCKED;
     s->clk_source_la.reg32 = CLK_SOURCE_LA_RESET;
 
     /* Enable UARTA */
@@ -1330,6 +1374,15 @@ static void tegra_car_priv_reset(DeviceState *dev)
     s->rst_devices_h.swr_vde_rst = 0;
 
     s->osc_freq_det_status.osc_freq_det_cnt = 1587;
+
+    if (tegra_board == TEGRAX1_BOARD) {
+        s->rst_cpu_cmplx_clr_offset = RST_CPU_CMPLX_CLR_TEGRAX1_OFFSET;
+        s->rst_cpu_cmplx_set.reg32 = RST_CPU_CMPLX_SET_TEGRAX1_RESET;
+    }
+    else {
+        s->rst_cpu_cmplx_clr_offset = RST_CPU_CMPLX_CLR_TEGRA2_OFFSET;
+        s->rst_cpu_cmplx_set.reg32 = RST_CPU_CMPLX_SET_TEGRA2_RESET;
+    }
 }
 
 static const MemoryRegionOps tegra_car_mem_ops = {

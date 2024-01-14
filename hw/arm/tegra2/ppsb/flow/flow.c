@@ -72,10 +72,12 @@ typedef struct tegra_flow_state {
     qemu_irq irq_cop_event;
 
     MemoryRegion iomem;
-    ptimer_state *ptimer[TEGRA2_NCPUS];
-    DEFINE_REG32(halt_events)[TEGRA2_NCPUS];
-    DEFINE_REG32(csr)[TEGRA2_NCPUS];
+    uint32_t num_cpu;
+    ptimer_state *ptimer[TEGRA_NCPUS];
+    DEFINE_REG32(halt_events)[TEGRA_NCPUS];
+    DEFINE_REG32(csr)[TEGRA_NCPUS];
     DEFINE_REG32(xrq_events);
+    DEFINE_REG32(ram_repair);
     uint8_t cop_stalled;
 } tegra_flow;
 
@@ -84,12 +86,14 @@ static const VMStateDescription vmstate_tegra_flow = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        VMSTATE_PTIMER_ARRAY(ptimer, tegra_flow, TEGRA2_NCPUS),
-        VMSTATE_ARRAY(halt_events, tegra_flow, TEGRA2_NCPUS, 0,
+        VMSTATE_UINT32(num_cpu, tegra_flow),
+        VMSTATE_PTIMER_ARRAY(ptimer, tegra_flow, TEGRA_NCPUS),
+        VMSTATE_ARRAY(halt_events, tegra_flow, TEGRA_NCPUS, 0,
                       vmstate_info_uint32, halt_events_t),
-        VMSTATE_ARRAY(csr, tegra_flow, TEGRA2_NCPUS, 0,
+        VMSTATE_ARRAY(csr, tegra_flow, TEGRA_NCPUS, 0,
                       vmstate_info_uint32, csr_t),
         VMSTATE_UINT32(xrq_events.reg32, tegra_flow),
+        VMSTATE_UINT32(ram_repair.reg32, tegra_flow),
         VMSTATE_UINT8(cop_stalled, tegra_flow),
         VMSTATE_END_OF_LIST()
     }
@@ -102,15 +106,14 @@ typedef struct tegra_flow_timer_arg {
 
 static int tegra_flow_have_pending_irq(int cpu_id)
 {
-    A9MPPrivState *a9mpcore = A9MPCORE_PRIV(tegra_a9mpcore_dev);
-    GICState *s = &a9mpcore->gic;
+    GICState *s = gic_dev;
     int i;
 
     if (tegra_ictlr_is_irq_pending_on_cpu(cpu_id)) {
         return 1;
     }
 
-    if (cpu_id == TEGRA2_COP || tegra_cpu_is_powergated(cpu_id)) {
+    if (cpu_id == TEGRA_BPMP || tegra_cpu_is_powergated(cpu_id)) {
         return 0;
     }
 
@@ -133,29 +136,29 @@ static int tegra_flow_arm_event(tegra_flow *s, int cpu_id, int wait)
     int unimplemented = 1;
 
     if (s->csr[cpu_id].event_flag) {
-        if (cpu_id != TEGRA2_COP) {
+        if (cpu_id != TEGRA_BPMP) {
             goto fired;
         }
     }
 
     if (s->halt_events[cpu_id].irq_0) {
-        int sibling = tegra_sibling_cpu(cpu_id);
+        if (TEGRA_BPMP != cpu_id) {
+            if (tegra_flow_have_pending_irq(cpu_id)) {
+                 goto fired;
+             }
+         }
 
-        if (tegra_flow_have_pending_irq(cpu_id)) {
+        bool flag=false;
+        if (s->num_cpu>2) flag = tegra_flow_have_pending_irq(TEGRA_CCPLEX_CORE2) || tegra_flow_have_pending_irq(TEGRA_CCPLEX_CORE3);
+        if (tegra_flow_have_pending_irq(TEGRA_CCPLEX_CORE0) || tegra_flow_have_pending_irq(TEGRA_CCPLEX_CORE1) || flag) {
             goto fired;
-        }
-
-        if (sibling != cpu_id) {
-            if (tegra_flow_have_pending_irq(sibling)) {
-                goto fired;
-            }
         }
 
         unimplemented = 0;
     }
 
     if (s->halt_events[cpu_id].irq_1) {
-        if (tegra_flow_have_pending_irq(TEGRA2_COP)) {
+        if (tegra_flow_have_pending_irq(TEGRA_BPMP)) {
             goto fired;
         }
 
@@ -225,7 +228,7 @@ static void tegra_flow_gen_interrupt(tegra_flow *s, int cpu_id)
 //     s->halt_events[cpu_id].mode &= ~INTERRUPT;
 
     /* ??? TODO: Check if IRQ is deprecated on Tegra2.  */
-    if (cpu_id == TEGRA2_COP) {
+    if (cpu_id == TEGRA_BPMP) {
         TRACE_IRQ_RAISE(s->iomem.addr, s->irq_cop_event);
     } else {
         TRACE_IRQ_RAISE(s->iomem.addr, s->irq_cpu_event);
@@ -242,8 +245,8 @@ static void __tegra_flow_clear_waitevent(tegra_flow *s, int cpu_id, int clr_wait
         tegra_flow_gen_interrupt(s, cpu_id);
     }
 
-    if (cpu_id == TEGRA2_COP && s->cop_stalled) {
-        s->csr[TEGRA2_COP].wait_event = 0;
+    if (cpu_id == TEGRA_BPMP && s->cop_stalled) {
+        s->csr[TEGRA_BPMP].wait_event = 0;
         s->cop_stalled = 0;
         return;
     }
@@ -269,33 +272,36 @@ static uint64_t tegra_flow_priv_read(void *opaque, hwaddr offset,
 
     switch (offset) {
     case HALT_CPU0_EVENTS_OFFSET:
-        ret = s->halt_events[TEGRA2_A9_CORE0].reg32;
+        ret = s->halt_events[TEGRA_CCPLEX_CORE0].reg32;
         break;
     case HALT_CPU1_EVENTS_OFFSET:
-        ret = s->halt_events[TEGRA2_A9_CORE1].reg32;
+        ret = s->halt_events[TEGRA_CCPLEX_CORE1].reg32;
         break;
     case HALT_COP_EVENTS_OFFSET:
-        ret = s->halt_events[TEGRA2_COP].reg32;
+        ret = s->halt_events[TEGRA_BPMP].reg32;
         break;
 
     case CPU0_CSR_OFFSET:
-        s->csr[TEGRA2_A9_CORE0].halt = tegra_cpu_halted(TEGRA2_A9_CORE0);
-        s->csr[TEGRA2_A9_CORE0].pwr_off_sts = tegra_cpu_is_powergated(TEGRA2_A9_CORE0);
-        ret = s->csr[TEGRA2_A9_CORE0].reg32;
+        s->csr[TEGRA_CCPLEX_CORE0].halt = tegra_cpu_halted(TEGRA_CCPLEX_CORE0);
+        s->csr[TEGRA_CCPLEX_CORE0].pwr_off_sts = tegra_cpu_is_powergated(TEGRA_CCPLEX_CORE0);
+        ret = s->csr[TEGRA_CCPLEX_CORE0].reg32;
         break;
     case CPU1_CSR_OFFSET:
-        s->csr[TEGRA2_A9_CORE1].halt = tegra_cpu_halted(TEGRA2_A9_CORE1);
-        s->csr[TEGRA2_A9_CORE1].pwr_off_sts = tegra_cpu_is_powergated(TEGRA2_A9_CORE1);
-        ret = s->csr[TEGRA2_A9_CORE1].reg32;
+        s->csr[TEGRA_CCPLEX_CORE1].halt = tegra_cpu_halted(TEGRA_CCPLEX_CORE1);
+        s->csr[TEGRA_CCPLEX_CORE1].pwr_off_sts = tegra_cpu_is_powergated(TEGRA_CCPLEX_CORE1);
+        ret = s->csr[TEGRA_CCPLEX_CORE1].reg32;
         break;
     case COP_CSR_OFFSET:
-        s->csr[TEGRA2_COP].halt = tegra_cpu_halted(TEGRA2_COP);
-        s->csr[TEGRA2_COP].pwr_off_sts = tegra_cpu_is_powergated(TEGRA2_COP);
-        ret = s->csr[TEGRA2_COP].reg32;
+        s->csr[TEGRA_BPMP].halt = tegra_cpu_halted(TEGRA_BPMP);
+        s->csr[TEGRA_BPMP].pwr_off_sts = tegra_cpu_is_powergated(TEGRA_BPMP);
+        ret = s->csr[TEGRA_BPMP].reg32;
         break;
 
     case XRQ_EVENTS_OFFSET:
         ret = s->xrq_events.reg32;
+        break;
+    case RAM_REPAIR_OFFSET:
+        ret = s->ram_repair.reg32;
         break;
     default:
         break;
@@ -303,17 +309,17 @@ static uint64_t tegra_flow_priv_read(void *opaque, hwaddr offset,
 
     TRACE_READ(s->iomem.addr, offset, ret);
 
-    if (current_cpu && current_cpu->cpu_index == TEGRA2_COP) {
-        if (s->halt_events[TEGRA2_COP].mode & INTERRUPT) {
-            s->halt_events[TEGRA2_COP].mode |= WAITEVENT;
+    if (current_cpu && current_cpu->cpu_index == TEGRA_BPMP) {
+        if (s->halt_events[TEGRA_BPMP].mode & INTERRUPT) {
+            s->halt_events[TEGRA_BPMP].mode |= WAITEVENT;
             s->cop_stalled = 1;
 
             TPRINT("COP stalled");
 
-            if (!tegra_flow_arm_event(s, TEGRA2_COP, 1)) {
-                tegra_flow_clear_waitevent(s, TEGRA2_COP, 0);
+            if (!tegra_flow_arm_event(s, TEGRA_BPMP, 1)) {
+                tegra_flow_clear_waitevent(s, TEGRA_BPMP, 0);
             } else {
-                tegra_cpu_halt(TEGRA2_COP);
+                tegra_cpu_halt(TEGRA_BPMP);
             }
         }
     }
@@ -345,12 +351,12 @@ void tegra_flow_on_irq(int cpu_id)
         }
 
         if (s->csr[cpu_idX].event_flag) {
-            if (cpu_idX != TEGRA2_COP) {
+            if (cpu_idX != TEGRA_BPMP) {
                 goto event;
             }
         }
 
-        if (cpu_id != TEGRA2_COP) {
+        if (cpu_id != TEGRA_BPMP) {
             if (s->halt_events[cpu_idX].irq_0) {
                 goto event;
             }
@@ -372,9 +378,16 @@ event:
 
     if (!(s->halt_events[cpu_id].mode & WAIT_IRQ)) {
         if (tegra_cpu_is_powergated(cpu_id)) {
-            cpu_id = tegra_sibling_cpu(cpu_id);
-
-            g_assert(s->halt_events[cpu_id].mode & STOP);
+            if (cpu_id == TEGRA_BPMP) {
+                g_assert(s->halt_events[cpu_id].mode & STOP);
+            }
+            else {
+                for (uint32_t i=TEGRA_CCPLEX_CORE0; i<s->num_cpu; i++) {
+                    if (cpu_id!=i) {
+                        g_assert(s->halt_events[i].mode & STOP);
+                    }
+                }
+            }
         } else {
             return;
         }
@@ -482,19 +495,28 @@ static int tegra_flow_powergate(tegra_flow *s, int cpu_id, int is_sibling)
 
 static void tegra_flow_update_mode(tegra_flow *s, int cpu_id, int in_wfe)
 {
-    int is_cop = (cpu_id == TEGRA2_COP);
+    int is_cop = (cpu_id == TEGRA_BPMP);
 
 //     TPRINT("%s mode=%s in_wfe=%d cpu %d\n", __func__,
 //            tegra_flow_mode_name(s->halt_events[cpu_id].mode), in_wfe, cpu_id);
 
     if (in_wfe) {
         CPUState *cs = CPU(qemu_get_cpu(cpu_id));
-        int sibling = tegra_sibling_cpu(cpu_id);
 
         bql_lock();
 
+        bool flag=false;
+        if (!is_cop) {
+            for (int i=TEGRA_CCPLEX_CORE0; i<s->num_cpu; i++) {
+                if (cpu_id!=i) {
+                    flag = tegra_flow_powergate(s, i, 1);
+                    if (flag) break;
+                }
+            }
+        }
+
         if (tegra_flow_powergate(s, cpu_id, 0) ||
-            tegra_flow_powergate(s, sibling, 1))
+           (!is_cop && flag))
         {
             bql_unlock();
             cpu_loop_exit(cs);
@@ -564,7 +586,7 @@ static void tegra_flow_csr_write(tegra_flow *s, hwaddr offset,
 
     TRACE_WRITE(s->iomem.addr, offset, s->csr[cpu_id].reg32, value);
 
-    if (cpu_id != TEGRA2_COP) {
+    if (cpu_id != TEGRA_BPMP) {
         WR_MASKED(s->csr[cpu_id].reg32, value, CPU_CSR);
     } else {
         WR_MASKED(s->csr[cpu_id].reg32, value, COP_CSR);
@@ -580,14 +602,21 @@ static void tegra_flow_csr_write(tegra_flow *s, hwaddr offset,
 
     if (old_csr.intr_flag && s->csr[cpu_id].intr_flag) {
         switch (cpu_id) {
-        case TEGRA2_A9_CORE0:
-        case TEGRA2_A9_CORE1:
-            if (s->csr[ tegra_sibling_cpu(cpu_id) ].intr_flag) {
-                break;
+        case TEGRA_CCPLEX_CORE0:
+        case TEGRA_CCPLEX_CORE1:
+        case TEGRA_CCPLEX_CORE2:
+        case TEGRA_CCPLEX_CORE3:
+            bool flag=false;
+            for (int i=TEGRA_CCPLEX_CORE0; i<s->num_cpu; i++) {
+                if (cpu_id!=i && s->csr[ i ].intr_flag) {
+                    flag = true;
+                    break;
+                }
             }
+            if (flag) break;
             TRACE_IRQ_LOWER(s->iomem.addr, s->irq_cpu_event);
             break;
-        case TEGRA2_COP:
+        case TEGRA_BPMP:
             TRACE_IRQ_LOWER(s->iomem.addr, s->irq_cop_event);
             break;
         }
@@ -604,28 +633,38 @@ static void tegra_flow_priv_write(void *opaque, hwaddr offset,
 
     switch (offset) {
     case HALT_CPU0_EVENTS_OFFSET:
-        tegra_flow_event_write(s, offset, value, TEGRA2_A9_CORE0);
+        tegra_flow_event_write(s, offset, value, TEGRA_CCPLEX_CORE0);
         break;
     case HALT_CPU1_EVENTS_OFFSET:
-        tegra_flow_event_write(s, offset, value, TEGRA2_A9_CORE1);
+        tegra_flow_event_write(s, offset, value, TEGRA_CCPLEX_CORE1);
         break;
     case HALT_COP_EVENTS_OFFSET:
-        tegra_flow_event_write(s, offset, value, TEGRA2_COP);
+        tegra_flow_event_write(s, offset, value, TEGRA_BPMP);
         break;
 
     case CPU0_CSR_OFFSET:
-        tegra_flow_csr_write(s, offset, value, TEGRA2_A9_CORE0);
+        tegra_flow_csr_write(s, offset, value, TEGRA_CCPLEX_CORE0);
         break;
     case CPU1_CSR_OFFSET:
-        tegra_flow_csr_write(s, offset, value, TEGRA2_A9_CORE1);
+        tegra_flow_csr_write(s, offset, value, TEGRA_CCPLEX_CORE1);
         break;
     case COP_CSR_OFFSET:
-        tegra_flow_csr_write(s, offset, value, TEGRA2_COP);
+        tegra_flow_csr_write(s, offset, value, TEGRA_BPMP);
         break;
 
     case XRQ_EVENTS_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->xrq_events.reg32, value);
         s->xrq_events.reg32 = value;
+        break;
+
+    case RAM_REPAIR_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->ram_repair.reg32, value);
+        if (value & 0x1) // REQ
+        {
+            value &= ~0x1;
+            value |= 1<<1; // STS
+        }
+        s->ram_repair.reg32 = value;
         break;
 
     default:
@@ -638,15 +677,21 @@ static void tegra_flow_priv_reset(DeviceState *dev)
 {
     tegra_flow *s = TEGRA_FLOW_CTRL(dev);
 
-    s->halt_events[TEGRA2_A9_CORE0].reg32 = HALT_CPU_EVENTS_RESET;
-    s->halt_events[TEGRA2_A9_CORE1].reg32 = HALT_CPU_EVENTS_RESET;
-    s->csr[TEGRA2_A9_CORE0].reg32 = CPU_CSR_RESET;
-    s->csr[TEGRA2_A9_CORE1].reg32 = CPU_CSR_RESET;
+    s->halt_events[TEGRA_CCPLEX_CORE0].reg32 = HALT_CPU_EVENTS_RESET;
+    s->halt_events[TEGRA_CCPLEX_CORE1].reg32 = HALT_CPU_EVENTS_RESET;
+    s->halt_events[TEGRA_CCPLEX_CORE2].reg32 = HALT_CPU_EVENTS_RESET;
+    s->halt_events[TEGRA_CCPLEX_CORE3].reg32 = HALT_CPU_EVENTS_RESET;
+    s->csr[TEGRA_CCPLEX_CORE0].reg32 = CPU_CSR_RESET;
+    s->csr[TEGRA_CCPLEX_CORE1].reg32 = CPU_CSR_RESET;
+    s->csr[TEGRA_CCPLEX_CORE2].reg32 = CPU_CSR_RESET;
+    s->csr[TEGRA_CCPLEX_CORE3].reg32 = CPU_CSR_RESET;
 
-    s->halt_events[TEGRA2_COP].reg32 = HALT_COP_EVENTS_RESET;
-    s->csr[TEGRA2_COP].reg32 = COP_CSR_RESET;
+    s->halt_events[TEGRA_BPMP].reg32 = HALT_COP_EVENTS_RESET;
+    if (s->num_cpu>=TEGRAX1_CCPLEX_NCORES) s->halt_events[TEGRA_BPMP].reg32 |= (2<<29); // Tell secmon BPMP is halted. TODO: Handle this properly.
+    s->csr[TEGRA_BPMP].reg32 = COP_CSR_RESET;
 
     s->xrq_events.reg32 = XRQ_EVENTS_RESET;
+    s->ram_repair.reg32 = RAM_REPAIR_RESET;
     s->cop_stalled = 0;
 }
 
@@ -661,6 +706,8 @@ static void tegra_flow_priv_realize(DeviceState *dev, Error **errp)
     tegra_flow *s = TEGRA_FLOW_CTRL(dev);
     int i;
 
+    g_assert(s->num_cpu <= TEGRA_CCPLEX_NCORES);
+
     sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq_cpu_event);
     sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq_cop_event);
 
@@ -668,7 +715,9 @@ static void tegra_flow_priv_realize(DeviceState *dev, Error **errp)
                           "tegra.flow", TEGRA_FLOW_CTRL_SIZE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 
-    for (i = 0; i < TEGRA2_NCPUS; i++) {
+    for (i = 0; i < TEGRA_NCPUS; i++) {
+        if (i >= s->num_cpu && i != TEGRA_BPMP) continue;
+
         tegra_flow_timer_arg *arg = g_malloc0(sizeof(tegra_flow_timer_arg));
 
         arg->s = s;
@@ -682,10 +731,16 @@ static void tegra_flow_priv_realize(DeviceState *dev, Error **errp)
     }
 }
 
+static Property tegra_flow_properties[] = {
+    DEFINE_PROP_UINT32("num-cpu", tegra_flow, num_cpu, TEGRA_CCPLEX_NCORES), \
+    DEFINE_PROP_END_OF_LIST(),
+};
+
 static void tegra_flow_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    device_class_set_props(dc, tegra_flow_properties);
     dc->realize = tegra_flow_priv_realize;
     dc->vmsd = &vmstate_tegra_flow;
     dc->reset = tegra_flow_priv_reset;

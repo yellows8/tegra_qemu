@@ -257,7 +257,7 @@ uint32_t remote_io_read(uint32_t addr, int size)
         .magic = REMOTE_IO_READ,
         .address = addr,
         .size = size,
-        .on_avp = (current_cpu && current_cpu->cpu_index == TEGRA2_COP),
+        .on_avp = (current_cpu && current_cpu->cpu_index == TEGRA_BPMP),
     };
     int64_t ret;
 
@@ -294,7 +294,7 @@ void remote_io_write(uint32_t value, uint32_t addr, int size)
         .value = value,
         .address = addr,
         .size = size,
-        .on_avp = (current_cpu && current_cpu->cpu_index == TEGRA2_COP),
+        .on_avp = (current_cpu && current_cpu->cpu_index == TEGRA_BPMP),
     };
     int ret;
 

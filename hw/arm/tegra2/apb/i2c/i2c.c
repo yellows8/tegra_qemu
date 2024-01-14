@@ -264,8 +264,11 @@ static uint64_t tegra_i2c_read(void *opaque, hwaddr offset, unsigned size)
         return s->int_status;
     case 0x6c /* I2C_CLK_DIVISOR */:
         return s->clk_divisor;
+    case 0x8c /* I2C_I2C_CONFIG_LOAD */:
+        if (tegra_board == TEGRAX1_BOARD) return s->config_load;
+        break;
     default:
-        hw_error("tegra_i2c_read: Bad offset 0x%x\n", (uint32_t) offset);
+        /*hw_error*/printf("tegra_i2c_read: Bad offset 0x%x\n", (uint32_t) offset);
         return 0;
     }
 
@@ -353,8 +356,14 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
     case 0x6c /* I2C_CLK_DIVISOR */:
         s->clk_divisor = value;
         break;
+    case 0x8c /* I2C_I2C_CONFIG_LOAD */:
+        if (tegra_board == TEGRAX1_BOARD) {
+            value &= ~0x7;
+            s->config_load = value;
+        }
+        break;
     default:
-        hw_error("tegra_i2c_write: Bad offset %x\n", (int)offset);
+        /*hw_error*/printf("tegra_i2c_write: Bad offset %x\n", (int)offset);
         break;
     }
 }
@@ -395,6 +404,7 @@ static void tegra_i2c_reset(DeviceState *dev)
     s->int_mask = 0;
     s->int_status = 0;
     s->clk_divisor = 0;
+    s->config_load = 0;
     s->rx_len = 0;
     s->rx_ptr = 0;
     s->state = I2C_HEADER0;
@@ -419,6 +429,7 @@ static const VMStateDescription tegra_i2c_vmstate = {
         VMSTATE_UINT8(int_status, TegraI2CState),
         VMSTATE_UINT16(clk_divisor, TegraI2CState),
         VMSTATE_UINT8_ARRAY(rx_fifo, TegraI2CState, TEGRA_I2C_FIFO_SIZE),
+        VMSTATE_UINT32(config_load, TegraI2CState),
         VMSTATE_INT32(rx_len, TegraI2CState),
         VMSTATE_INT32(rx_ptr, TegraI2CState),
         VMSTATE_UINT8(payload_size, TegraI2CState),

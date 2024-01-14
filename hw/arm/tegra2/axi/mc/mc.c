@@ -35,6 +35,7 @@ typedef struct tegra_mc_state {
 
     uint32_t ram_size_kb;
     MemoryRegion iomem;
+    uint32_t emem_cfg_offset;
     DEFINE_REG32(emem_cfg);
     DEFINE_REG32(emem_adr_cfg);
     DEFINE_REG32(emem_arb_cfg0);
@@ -159,6 +160,7 @@ typedef struct tegra_mc_state {
     DEFINE_REG32(ap_ctrl_1);
     DEFINE_REG32(client_activity_monitor_emem_0);
     DEFINE_REG32(client_activity_monitor_emem_1);
+    uint32_t regs[(0xC00-0x274)>>2];
 } tegra_mc;
 
 static const VMStateDescription vmstate_tegra_mc = {
@@ -166,6 +168,7 @@ static const VMStateDescription vmstate_tegra_mc = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
+        VMSTATE_UINT32(emem_cfg_offset, tegra_mc),
         VMSTATE_UINT32(emem_cfg.reg32, tegra_mc),
         VMSTATE_UINT32(emem_adr_cfg.reg32, tegra_mc),
         VMSTATE_UINT32(emem_arb_cfg0.reg32, tegra_mc),
@@ -301,9 +304,6 @@ static uint64_t tegra_mc_priv_read(void *opaque, hwaddr offset,
     uint64_t ret = 0;
 
     switch (offset) {
-    case EMEM_CFG_OFFSET:
-        ret = s->emem_cfg.reg32;
-        break;
     case EMEM_ADR_CFG_OFFSET:
         ret = s->emem_adr_cfg.reg32;
         break;
@@ -673,7 +673,11 @@ static uint64_t tegra_mc_priv_read(void *opaque, hwaddr offset,
     case CLIENT_ACTIVITY_MONITOR_EMEM_1_OFFSET:
         ret = s->client_activity_monitor_emem_1.reg32;
         break;
+    case 0x274 ... 0xBFC:
+        ret = s->regs[offset>>2];
+        break;
     default:
+        if (offset == s->emem_cfg_offset) ret = s->emem_cfg.reg32;
         break;
     }
 
@@ -688,10 +692,6 @@ static void tegra_mc_priv_write(void *opaque, hwaddr offset,
     tegra_mc *s = opaque;
 
     switch (offset) {
-    case EMEM_CFG_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->emem_cfg.reg32, value);
-        s->emem_cfg.reg32 = value;
-        break;
     case EMEM_ADR_CFG_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->emem_adr_cfg.reg32, value);
         s->emem_adr_cfg.reg32 = value;
@@ -1084,8 +1084,17 @@ static void tegra_mc_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->client_activity_monitor_emem_1.reg32, value);
         s->client_activity_monitor_emem_1.reg32 = value;
         break;
+    case 0x274 ... 0xBFC:
+        TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
+        s->regs[offset>>2] = value;
+        break;
     default:
-        TRACE_WRITE(s->iomem.addr, offset, 0, value);
+        if (offset == s->emem_cfg_offset) {
+            TRACE_WRITE(s->iomem.addr, offset, s->emem_cfg.reg32, value);
+            s->emem_cfg.reg32 = value;
+        }
+        else
+            TRACE_WRITE(s->iomem.addr, offset, 0, value);
         break;
     }
 }
@@ -1094,7 +1103,14 @@ static void tegra_mc_priv_reset(DeviceState *dev)
 {
     tegra_mc *s = TEGRA_MC(dev);
 
-    s->emem_cfg.reg32 = s->ram_size_kb;
+    if (tegra_board == TEGRAX1_BOARD) {
+        s->emem_cfg_offset = EMEM_CFG_TEGRAX1_OFFSET;
+        s->emem_cfg.reg32 = s->ram_size_kb / SZ_1K;
+    }
+    else {
+        s->emem_cfg_offset = EMEM_CFG_TEGRA2_OFFSET;
+        s->emem_cfg.reg32 = s->ram_size_kb;
+    }
     s->emem_adr_cfg.reg32 = EMEM_ADR_CFG_RESET;
     s->emem_arb_cfg0.reg32 = EMEM_ARB_CFG0_RESET;
     s->emem_arb_cfg1.reg32 = EMEM_ARB_CFG1_RESET;
@@ -1218,6 +1234,7 @@ static void tegra_mc_priv_reset(DeviceState *dev)
     s->ap_ctrl_1.reg32 = AP_CTRL_1_RESET;
     s->client_activity_monitor_emem_0.reg32 = CLIENT_ACTIVITY_MONITOR_EMEM_0_RESET;
     s->client_activity_monitor_emem_1.reg32 = CLIENT_ACTIVITY_MONITOR_EMEM_1_RESET;
+    memset(s->regs, 0, sizeof(s->regs));
 }
 
 static const MemoryRegionOps tegra_mc_mem_ops = {
@@ -1236,7 +1253,7 @@ static void tegra_mc_priv_realize(DeviceState *dev, Error **errp)
 }
 
 static Property tegra_mc_properties[] = {
-    DEFINE_PROP_UINT32("ram_size_kb", tegra_mc, ram_size_kb, EMEM_CFG_RESET), \
+    DEFINE_PROP_UINT32("ram_size_kb", tegra_mc, ram_size_kb, EMEM_CFG_TEGRAX1_RESET*SZ_1K), \
     DEFINE_PROP_END_OF_LIST(),
 };
 

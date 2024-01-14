@@ -599,6 +599,7 @@ static uint64_t tegra_emc_priv_read(void *opaque, hwaddr offset,
         break;
     case DLL_XFORM_QUSE_OFFSET:
         ret = s->dll_xform_quse.reg32;
+        if (tegra_board == TEGRAX1_BOARD) s->dll_xform_quse.reg32 &= ~(1<<15); // EMC_DIG_DLL_STATUS DLL_LOCK
         break;
     case DIG_DLL_UPPER_STATUS_OFFSET:
         ret = s->dig_dll_upper_status.reg32;
@@ -1057,6 +1058,7 @@ static void tegra_emc_priv_write(void *opaque, hwaddr offset,
     case MRR_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->mrr.reg32, value);
         s->mrr.reg32 = value;
+        if (tegra_board == TEGRAX1_BOARD) s->emc_status.reg32 |= 0x100000;
         break;
     case FBIO_CFG1_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->fbio_cfg1.reg32, value);
@@ -1133,6 +1135,7 @@ static void tegra_emc_priv_write(void *opaque, hwaddr offset,
     case CFG_DIG_DLL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->cfg_dig_dll.reg32, value & CFG_DIG_DLL_WRMASK);
         WR_MASKED(s->cfg_dig_dll.reg32, value, CFG_DIG_DLL);
+        if (tegra_board == TEGRAX1_BOARD) s->dll_xform_quse.reg32 |= 0x28000; // EMC_DIG_DLL_STATUS: DLL_LOCK, DLL_PRIV_UPDATED
         break;
     case DLL_XFORM_DQS_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->dll_xform_dqs.reg32, value);

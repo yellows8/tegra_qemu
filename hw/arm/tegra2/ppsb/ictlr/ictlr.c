@@ -74,12 +74,12 @@ int tegra_ictlr_is_irq_pending_on_cpu(int cpu_id)
     assert(tegra_ictlr_dev != NULL);
 
     switch (cpu_id) {
-    case TEGRA2_A9_CORE0:
-    case TEGRA2_A9_CORE1:
+    case TEGRA_CCPLEX_CORE0:
+    case TEGRA_CCPLEX_CORE1:
         ret |= tegra_ictlr_is_irq_pending(s, s->virq_cpu, 0);
         ret |= tegra_ictlr_is_irq_pending(s, s->vfiq_cpu, 1);
         break;
-    case TEGRA2_COP:
+    case TEGRA_BPMP:
         ret |= tegra_ictlr_is_irq_pending(s, s->virq_cop, 0);
         ret |= tegra_ictlr_is_irq_pending(s, s->vfiq_cop, 1);
         break;

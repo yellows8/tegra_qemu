@@ -104,4 +104,10 @@ typedef union xrq_events_u {
 #define HALT_CPU1_EVENTS_OFFSET 0x14
 #define CPU1_CSR_OFFSET 0x18
 
+#define RAM_REPAIR_OFFSET 0x40
+#define RAM_REPAIR_RESET  0x00000004
+typedef union ram_repair_u {
+    uint32_t reg32;
+} ram_repair_t;
+
 #endif // TEGRA_FLOW_CTRL_H

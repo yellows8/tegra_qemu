@@ -146,7 +146,7 @@ static void tegra_res_sema_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->res_sema_shrd_inbox.reg32, value);
         s->res_sema_shrd_inbox.reg32 = value;
 
-        if (cpu_id != TEGRA2_COP) {
+        if (cpu_id != TEGRA_BPMP) {
             s->res_sema_shrd_inbox.tag = 0;
         }
 
@@ -156,7 +156,7 @@ static void tegra_res_sema_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->res_sema_shrd_outbox.reg32, value);
         s->res_sema_shrd_outbox.reg32 = value;
 
-        if (cpu_id == TEGRA2_COP) {
+        if (cpu_id == TEGRA_BPMP) {
             s->res_sema_shrd_outbox.tag = 0;
         }
 

@@ -75,7 +75,7 @@ static uint64_t tegra_cop_mmu_priv_read(void *opaque, hwaddr offset,
     tegra_cop_mmu *s = opaque;
     uint64_t ret = 0;
 
-    if (current_cpu != qemu_get_cpu(TEGRA2_COP)) {
+    if (current_cpu != qemu_get_cpu(TEGRA_BPMP)) {
         return ret;
     }
 
@@ -102,7 +102,7 @@ static void tegra_cop_mmu_priv_write(void *opaque, hwaddr offset,
     uint32_t old __attribute__ ((unused));
 
     /* MMU is in main address space for simplicity. Avoid CPU access.  */
-    if (current_cpu != qemu_get_cpu(TEGRA2_COP)) {
+    if (current_cpu != qemu_get_cpu(TEGRA_BPMP)) {
         TRACE_WRITE(s->iomem.addr, offset, 0, value);
         return;
     }
@@ -187,7 +187,7 @@ static hwaddr tegra_cop_mmu_translate(hwaddr addr, int access_type)
 static void tegra_cop_mmu_priv_realize(DeviceState *dev, Error **errp)
 {
     tegra_cop_mmu *s = TEGRA_COP_MMU(dev);
-    CPUState *cs = qemu_get_cpu(TEGRA2_COP);
+    CPUState *cs = qemu_get_cpu(TEGRA_BPMP);
 
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_cop_mmu_mem_ops, s,
                           "tegra.cop_mmu", SZ_64K);

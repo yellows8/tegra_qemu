@@ -63,7 +63,7 @@ static int tegra_evp_cpu_index(uint64_t offset)
         return cpu_index;
 
     if (offset < EVP_CPU_RESET_VECTOR_OFFSET) {
-        if (cs->cpu_index == TEGRA2_COP)
+        if (cs->cpu_index == TEGRA_BPMP)
             cpu_index = 1;
     } else {
         cpu_index = (offset >> 9) & 1;
@@ -169,6 +169,10 @@ static void tegra_evp_priv_reset(DeviceState *dev)
         s->evp_regs[i][34] = EVP_PRI_FIQ_NUM_3_RESET;
         s->evp_regs[i][35] = EVP_PRI_FIQ_VEC_3_RESET;
     }
+
+    if (tegra_board == TEGRAX1_BOARD) {
+        s->evp_regs[0][0] = 0x040030000; // CCPLEX RESET vector
+    }
 }
 
 static const MemoryRegionOps tegra_evp_mem_ops = {
@@ -229,7 +233,7 @@ static void tegra_cpu_do_interrupt(ARMCPU *cpu, void *opaque)
 static void tegra_evp_priv_realize(DeviceState *dev, Error **errp)
 {
     tegra_evp *s = TEGRA_EVP(dev);
-    CPUState *cs = qemu_get_cpu(TEGRA2_COP);
+    CPUState *cs = qemu_get_cpu(TEGRA_BPMP);
     ARMCPU *cpu = ARM_CPU(cs);
 
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_evp_mem_ops, s,

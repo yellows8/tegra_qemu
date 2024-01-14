@@ -215,9 +215,9 @@ typedef union pwrgate_timer_off_u {
     uint32_t reg32;
 } pwrgate_timer_off_t;
 
-#define PWRGATE_TIMER_ON_OFFSET 0x2C
-#define PWRGATE_TIMER_ON_RESET  0xECA97531
-typedef union pwrgate_timer_on_u {
+#define CLAMP_STATUS_OFFSET 0x2C
+#define CLAMP_STATUS_RESET  0xECA97531
+typedef union clamp_status_u {
     struct {
         unsigned int rail0:4;               /* timer value for rail 0 */
         unsigned int rail1:4;               /* timer value for rail 1 */
@@ -230,14 +230,14 @@ typedef union pwrgate_timer_on_u {
     };
 
     uint32_t reg32;
-} pwrgate_timer_on_t;
+} clamp_status_t;
 
 #define PWRGATE_TOGGLE_OFFSET 0x30
 #define PWRGATE_TOGGLE_RESET  0x00000000
 typedef union pwrgate_toggle_u {
     struct {
-        unsigned int partid:3;              /* id of partition to be toggled; 0 = CPU Partition; 1 = TD (3D); 2 = Video Encode; 4 = Video Decode; 3 = PCI Express; 5 = L2 Cache; 6 = MPEG Encode */
-        unsigned int undefined_bits_3_7:5;
+        unsigned int partid:5;              /* id of partition to be toggled; 0 = CPU Partition; 1 = TD (3D); 2 = Video Encode; 4 = Video Decode; 3 = PCI Express; 5 = L2 Cache; 6 = MPEG Encode */
+        unsigned int undefined_bits_5_7:3;
         unsigned int start:1;               /* start power down/up; 0 = DISABLE; 1 = ENABLE */
         unsigned int undefined_bits_9_31:23;
     };

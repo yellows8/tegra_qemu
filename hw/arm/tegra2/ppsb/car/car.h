@@ -1968,12 +1968,14 @@ typedef union clk_enb_u_clr_u {
 } clk_enb_u_clr_t;
 
 #define RST_CPU_CMPLX_SET_OFFSET 0x340
-#define RST_CPU_CMPLX_SET_RESET  0x00002222
+#define RST_CPU_CMPLX_SET_TEGRA2_RESET  0x00002222
+#define RST_CPU_CMPLX_SET_TEGRAX1_RESET 0x2000feef
 typedef union rst_cpu_cmplx_set_u {
     struct {
         unsigned int set_cpureset0:1;       /* 1 = assert nCPURESET to CPU0 */
         unsigned int set_cpureset1:1;       /* 1 = assert nCPURESET to CPU1 */
-        unsigned int undefined_bits_2_3:2;
+        unsigned int set_cpureset2:1;       /* 1 = assert nCPURESET to CPU2 */
+        unsigned int set_cpureset3:1;       /* 1 = assert nCPURESET to CPU3 */
         unsigned int set_dereset0:1;        /* 1 = assert nDERESET to CPU0 */
         unsigned int set_dereset1:1;        /* 1 = assert nDERESET to CPU1 */
         unsigned int undefined_bits_6_7:2;
@@ -1992,13 +1994,16 @@ typedef union rst_cpu_cmplx_set_u {
     uint32_t reg32;
 } rst_cpu_cmplx_set_t;
 
-#define RST_CPU_CMPLX_CLR_OFFSET 0x344
-#define RST_CPU_CMPLX_CLR_RESET  0x00002222
+#define RST_CPU_CMPLX_CLR_TEGRA2_OFFSET 0x344
+#define RST_CPU_CMPLX_CLR_TEGRA2_RESET  0x00002222
+#define RST_CPU_CMPLX_CLR_TEGRAX1_OFFSET 0x454
+#define RST_CPU_CMPLX_CLR_TEGRAX1_RESET  0x2000feef
 typedef union rst_cpu_cmplx_clr_u {
     struct {
         unsigned int clr_cpureset0:1;       /* 1 = deassert nCPURESET to CPU0 */
         unsigned int clr_cpureset1:1;       /* 1 = deassert nCPURESET to CPU1 */
-        unsigned int undefined_bits_2_3:2;
+        unsigned int clr_cpureset2:1;       /* 1 = deassert nCPURESET to CPU2 */
+        unsigned int clr_cpureset3:1;       /* 1 = deassert nCPURESET to CPU3 */
         unsigned int clr_dereset0:1;        /* 1 = deassert nDERESET to CPU0 */
         unsigned int clr_dereset1:1;        /* 1 = deassert nDERESET to CPU1 */
         unsigned int undefined_bits_6_7:2;
@@ -2016,6 +2021,18 @@ typedef union rst_cpu_cmplx_clr_u {
 
     uint32_t reg32;
 } rst_cpu_cmplx_clr_t;
+
+#define RST_CONTROLLER_PLLC4_BASE_OFFSET 0x5A4
+#define RST_CONTROLLER_PLLC4_BASE_RESET  0x000C2302
+typedef union rst_controller_pllc4_base_u {
+    uint32_t reg32;
+} rst_controller_pllc4_base_t;
+
+#define RST_CONTROLLER_PLLMB_BASE_OFFSET 0x5E8
+#define RST_CONTROLLER_PLLMB_BASE_RESET  0x00002A02
+typedef union rst_controller_pllmb_base_u {
+    uint32_t reg32;
+} rst_controller_pllmb_base_t;
 
 #define CLK_SOURCE_LA_OFFSET 0x1F8
 #define CLK_SOURCE_LA_RESET  0xC0000000

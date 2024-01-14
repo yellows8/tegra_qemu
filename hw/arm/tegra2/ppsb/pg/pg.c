@@ -44,7 +44,7 @@ static uint64_t tegra_pg_priv_read(void *opaque, hwaddr offset,
     if (cs == NULL)
         return 0;
 
-    if (cs->cpu_index == TEGRA2_COP)
+    if (cs->cpu_index == TEGRA_BPMP)
         return 0xAAAAAAAA;
 
     return 0x55555555;

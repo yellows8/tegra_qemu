@@ -58,6 +58,7 @@ arm_ss.add(files(
   'devices.c',
   'irq_dispatcher.c',
   'tegra2.c',
+  'tegrax1.c',
   'trace.c',
 
   'ahb/host1x/core/cdma/cdma.c',

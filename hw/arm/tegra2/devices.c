@@ -21,22 +21,33 @@
 
 #include "hw/cpu/a9mpcore.h"
 #include "sysemu/sysemu.h"
+#include "hw/irq.h"
 
 #include "devices.h"
 #include "tegra_trace.h"
 
 void *tegra_a9mpcore_dev = NULL;
+void *gic_dev = NULL;
 void *tegra_apb_dma_dev = NULL;
 void *tegra_ahb_gizmo_dev = NULL;
 void *tegra_apb_misc_dev = NULL;
 void *tegra_car_dev = NULL;
 void *tegra_emc_dev = NULL;
+void *tegra_emc0_dev = NULL;
+void *tegra_emc1_dev = NULL;
 void *tegra_flow_dev = NULL;
 void *tegra_fuse_dev = NULL;
+void *tegra_se_dev = NULL;
+void *tegra_se2_dev = NULL;
+void *tegra_sysctr0_dev = NULL;
+void *tegra_avpcache_dev = NULL;
 void *tegra_gpios_dev = NULL;
 void *tegra_mc_dev = NULL;
+void *tegra_mc0_dev = NULL;
+void *tegra_mc1_dev = NULL;
 void *tegra_pmc_dev = NULL;
 void *tegra_rtc_dev = NULL;
+void *tegra_sdhci1_dev = NULL;
 void *tegra_sdhci4_dev = NULL;
 void *tegra_timer1_dev = NULL;
 void *tegra_timer2_dev = NULL;
@@ -44,7 +55,10 @@ void *tegra_timer_us_dev = NULL;
 void *tegra_timer3_dev = NULL;
 void *tegra_timer4_dev = NULL;
 void *tegra_uarta_dev = NULL;
+void *tegra_uartb_dev = NULL;
+void *tegra_uartc_dev = NULL;
 void *tegra_uartd_dev = NULL;
+void *tegra_uarte_dev = NULL;
 void *tegra_dc1_dev = NULL;
 void *tegra_ehci1_dev = NULL;
 void *tegra_ehci2_dev = NULL;
@@ -54,6 +68,9 @@ void *tegra_bsev_dev = NULL;
 void *tegra_idc1_dev = NULL;
 void *tegra_idc2_dev = NULL;
 void *tegra_idc3_dev = NULL;
+void *tegra_idc4_dev = NULL;
+void *tegra_idc5_dev = NULL;
+void *tegra_idc6_dev = NULL;
 void *tegra_dvc_dev = NULL;
 void *tegra_grhost_dev = NULL;
 void *tegra_arb_sema_dev = NULL;
@@ -80,12 +97,15 @@ void *tegra_ahb_dma_dev = NULL;
 
 void tegra_a9mpcore_reset(void)
 {
-    A9MPPrivState *a9mpcore = A9MPCORE_PRIV(tegra_a9mpcore_dev);
+    if (tegra_board != TEGRAX1_BOARD) {
+        A9MPPrivState *a9mpcore = A9MPCORE_PRIV(tegra_a9mpcore_dev);
 
-    tegra_device_reset(&a9mpcore->scu);
-    tegra_device_reset(&a9mpcore->gtimer);
-    tegra_device_reset(&a9mpcore->mptimer);
-    tegra_device_reset(&a9mpcore->wdt);
+        tegra_device_reset(&a9mpcore->scu);
+        tegra_device_reset(&a9mpcore->gtimer);
+        tegra_device_reset(&a9mpcore->mptimer);
+        tegra_device_reset(&a9mpcore->wdt);
+    }
+
     /* FIXME: GIC reset is broken */
 //     device_reset( DEVICE(&a9mpcore->gic) );
 }

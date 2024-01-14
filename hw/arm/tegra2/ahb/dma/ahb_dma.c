@@ -438,7 +438,7 @@ static void tegra_ahb_dma_priv_realize(DeviceState *dev, Error **errp)
     sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq);
 
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_ahb_dma_mem_ops, s,
-                          "tegra.ahb_dma", TEGRA_AHB_DMA_SIZE * TEGRA_AHB_DMA_CH0_SIZE*4);
+                          "tegra.ahb_dma", TEGRA_AHB_DMA_SIZE + TEGRA_AHB_DMA_CH0_SIZE*4);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 }
 

@@ -22,17 +22,6 @@
 #ifndef TEGRA_MC_H
 #define TEGRA_MC_H
 
-#define EMEM_CFG_OFFSET 0xC
-#define EMEM_CFG_RESET  0x00010000
-typedef union emem_cfg_u {
-    struct {
-        unsigned int emem_size_kb:22;
-        unsigned int undefined_bits_22_31:10;
-    };
-
-    uint32_t reg32;
-} emem_cfg_t;
-
 #define EMEM_ADR_CFG_OFFSET 0x10
 #define EMEM_ADR_CFG_RESET  0x00040202
 typedef union emem_adr_cfg_u {
@@ -174,6 +163,25 @@ typedef union timeout_ctrl_u {
 
     uint32_t reg32;
 } timeout_ctrl_t;
+
+#define EMEM_CFG_TEGRA2_OFFSET 0xC
+#define EMEM_CFG_TEGRA2_RESET  0x00010000
+#define EMEM_CFG_TEGRAX1_OFFSET 0x50
+#define EMEM_CFG_TEGRAX1_RESET  0x00002000
+typedef union emem_cfg_u {
+    struct {
+        unsigned int emem_size_kb:22;
+        unsigned int undefined_bits_22_31:10;
+    }; // tegra2
+
+    struct {
+        unsigned int emem_size_mb:14;
+        unsigned int undefined_bits_15_30:16;
+        unsigned int emem_bom:1;/* 0 = B2GB, 1 = B0GB */
+    }; // tegrax1
+
+    uint32_t reg32;
+} emem_cfg_t;
 
 #define DECERR_EMEM_OTHERS_STATUS_OFFSET 0x58
 #define DECERR_EMEM_OTHERS_STATUS_RESET  0x00000000

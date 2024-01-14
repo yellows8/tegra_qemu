@@ -58,6 +58,7 @@ typedef struct TegraI2CState {
     uint8_t int_status;
     uint16_t clk_divisor;
     uint8_t rx_fifo[TEGRA_I2C_FIFO_SIZE];
+    uint32_t config_load;
     int32_t rx_ptr;
     int32_t rx_len;
     uint8_t payload_size;

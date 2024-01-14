@@ -46,7 +46,7 @@ typedef struct tegra_pmc_state {
     DEFINE_REG32(dpd_sample);
     DEFINE_REG32(dpd_enable);
     DEFINE_REG32(pwrgate_timer_off);
-    DEFINE_REG32(pwrgate_timer_on);
+    DEFINE_REG32(clamp_status);
     DEFINE_REG32(pwrgate_toggle);
     DEFINE_REG32(remove_clamping_cmd);
     DEFINE_REG32(pwrgate_status);
@@ -123,6 +123,9 @@ typedef struct tegra_pmc_state {
     DEFINE_REG32(sys_33v_en);
     DEFINE_REG32(bondout_mirror_access);
     DEFINE_REG32(gate);
+
+    uint32_t regs[(0xC00-0x160)>>2];
+
 } tegra_pmc;
 
 static const VMStateDescription vmstate_tegra_pmc = {
@@ -141,7 +144,7 @@ static const VMStateDescription vmstate_tegra_pmc = {
         VMSTATE_UINT32(dpd_sample.reg32, tegra_pmc),
         VMSTATE_UINT32(dpd_enable.reg32, tegra_pmc),
         VMSTATE_UINT32(pwrgate_timer_off.reg32, tegra_pmc),
-        VMSTATE_UINT32(pwrgate_timer_on.reg32, tegra_pmc),
+        VMSTATE_UINT32(clamp_status.reg32, tegra_pmc),
         VMSTATE_UINT32(pwrgate_toggle.reg32, tegra_pmc),
         VMSTATE_UINT32(remove_clamping_cmd.reg32, tegra_pmc),
         VMSTATE_UINT32(pwrgate_status.reg32, tegra_pmc),
@@ -218,6 +221,7 @@ static const VMStateDescription vmstate_tegra_pmc = {
         VMSTATE_UINT32(sys_33v_en.reg32, tegra_pmc),
         VMSTATE_UINT32(bondout_mirror_access.reg32, tegra_pmc),
         VMSTATE_UINT32(gate.reg32, tegra_pmc),
+        VMSTATE_UINT32_ARRAY(regs, tegra_pmc, (0xC00-0x160)>>2),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -262,8 +266,8 @@ static uint64_t tegra_pmc_priv_read(void *opaque, hwaddr offset,
     case PWRGATE_TIMER_OFF_OFFSET:
         ret = s->pwrgate_timer_off.reg32;
         break;
-    case PWRGATE_TIMER_ON_OFFSET:
-        ret = s->pwrgate_timer_on.reg32;
+    case CLAMP_STATUS_OFFSET:
+        ret = s->clamp_status.reg32;
         break;
     case PWRGATE_TOGGLE_OFFSET:
         ret = s->pwrgate_toggle.reg32;
@@ -494,6 +498,7 @@ static uint64_t tegra_pmc_priv_read(void *opaque, hwaddr offset,
         ret = s->gate.reg32;
         break;
     default:
+        if (offset>=0x160) ret = s->regs[offset>>2];
         break;
     }
 
@@ -553,22 +558,16 @@ static void tegra_pmc_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->dpd_enable.reg32, value);
         s->dpd_enable.reg32 = value;
         break;
-    case PWRGATE_TIMER_OFF_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->pwrgate_timer_off.reg32, value);
-        s->pwrgate_timer_off.reg32 = value;
-        break;
-    case PWRGATE_TIMER_ON_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->pwrgate_timer_on.reg32, value);
-        s->pwrgate_timer_on.reg32 = value;
+    case CLAMP_STATUS_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->clamp_status.reg32, value);
+        s->clamp_status.reg32 = value;
         break;
     case PWRGATE_TOGGLE_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pwrgate_toggle.reg32, value);
         s->pwrgate_toggle.reg32 = value;
 
-        if (s->pwrgate_toggle.start)
-            s->pwrgate_status.reg32 |= (1 << s->pwrgate_toggle.partid);
-        else
-            s->pwrgate_status.reg32 &= ~(1 << s->pwrgate_toggle.partid);
+        if (s->pwrgate_toggle.start) s->pwrgate_toggle.start = 0;
+        s->pwrgate_status.reg32 ^= (1 << s->pwrgate_toggle.partid);
         break;
     case REMOVE_CLAMPING_CMD_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->remove_clamping_cmd.reg32, value);
@@ -868,6 +867,7 @@ static void tegra_pmc_priv_write(void *opaque, hwaddr offset,
         break;
     default:
         TRACE_WRITE(s->iomem.addr, offset, 0, value);
+        if (offset>=0x160) s->regs[offset>>2] = value;
         break;
     }
 }
@@ -887,7 +887,7 @@ static void tegra_pmc_priv_reset(DeviceState *dev)
     s->dpd_sample.reg32 = DPD_SAMPLE_RESET;
     s->dpd_enable.reg32 = DPD_ENABLE_RESET;
     s->pwrgate_timer_off.reg32 = PWRGATE_TIMER_OFF_RESET;
-    s->pwrgate_timer_on.reg32 = PWRGATE_TIMER_ON_RESET;
+    s->clamp_status.reg32 = CLAMP_STATUS_RESET;
     s->pwrgate_toggle.reg32 = PWRGATE_TOGGLE_RESET;
     s->remove_clamping_cmd.reg32 = REMOVE_CLAMPING_CMD_RESET;
     s->pwrgate_status.reg32 = PWRGATE_STATUS_RESET;

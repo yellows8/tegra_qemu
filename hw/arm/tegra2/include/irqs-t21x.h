@@ -14,8 +14,12 @@
  *
  */
 
+// Imported from L4T with adjustments.
+
 #ifndef __MACH_TEGRA_IRQS_T21X_H
 #define __MACH_TEGRA_IRQS_T21X_H
+
+#define INT_CPU_IRQS_NR         32
 
 /* Primary Interrupt Controller */
 #define INT_PRI_BASE			(INT_GIC_BASE + 32)
@@ -198,9 +202,9 @@
 #define INT_MPCORE_AXIERRIRQ		(INT_HEXA_BASE + 0)
 #define INT_MPCORE_INTERRIRQ		(INT_HEXA_BASE + 1)
 
-#define INT_GIC_NR			(INT_HEXA_BASE + 32)
+#define INT_GIC_NR			(INT_HEXA_BASE + 32 + INT_CPU_IRQS_NR)
 
-#define INT_MAIN_NR			(INT_GIC_NR - INT_PRI_BASE)
+#define INT_MAIN_NR			(INT_GIC_NR - INT_CPU_IRQS_NR)
 
 #define INT_SYNCPT_THRESH_BASE		(INT_QUINT_BASE + 32)
 #define INT_SYNCPT_THRESH_NR		(32 * 6)

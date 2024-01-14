@@ -31,23 +31,25 @@
 
 #define HALT_WFE    0xff
 
-static int tegra_cpus[TEGRA2_NCPUS];
+static int tegra_cpus[TEGRA_NCPUS];
 
 void set_is_tegra_cpu(int cpu_id)
 {
     tegra_cpus[cpu_id] = 1;
 }
 
+#if 0
 static int is_tegra_cpu(int cpu_id)
 {
-    if (cpu_id > TEGRA2_NCPUS) {
+    if (cpu_id > TEGRAX1_NCPUS) {
         return 0;
     }
 
     return tegra_cpus[cpu_id];
 }
+#endif
 
-int __attribute__((const)) tegra_sibling_cpu(int cpu_id)
+/*int __attribute__((const)) tegra_sibling_cpu(int cpu_id)
 {
     switch (cpu_id) {
     case TEGRA2_A9_CORE0:
@@ -59,14 +61,14 @@ int __attribute__((const)) tegra_sibling_cpu(int cpu_id)
     }
 
     return cpu_id;
-}
+}*/
 
 uint32_t tegra_get_wfe_bitmap(void)
 {
     uint32_t wfe_bitmap = 0;
     int i;
 
-    for (i = 0; i < TEGRA2_A9_NCORES; i++) {
+    for (i = 0; i < TEGRA_CCPLEX_NCORES; i++) {
         CPUState *cs = CPU(qemu_get_cpu(i));
         wfe_bitmap |= (cs->halted == HALT_WFE) << i;
     }
@@ -74,6 +76,7 @@ uint32_t tegra_get_wfe_bitmap(void)
     return wfe_bitmap;
 }
 
+#if 0
 void HELPER(wfe)(CPUARMState *env)
 {
     CPUState *cs = env_cpu(env);
@@ -92,3 +95,4 @@ void HELPER(wfe)(CPUARMState *env)
 
     HELPER(yield)(env);
 }
+#endif

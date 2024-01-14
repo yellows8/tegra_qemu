@@ -31,13 +31,13 @@
 #undef TPRINT
 #define TPRINT(...) {}
 
-static int tcpu_halted[TEGRA2_NCPUS];
+static int tcpu_halted[TEGRA_NCPUS];
 
 void tegra_cpu_hlt_clr(void)
 {
     int i;
 
-    for (i = 0; i < TEGRA2_NCPUS; i++)
+    for (i = 0; i < TEGRA_NCPUS; i++)
         tcpu_halted[i] = 0;
 }
 

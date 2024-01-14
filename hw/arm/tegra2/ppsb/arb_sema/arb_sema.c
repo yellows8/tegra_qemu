@@ -73,7 +73,7 @@ static uint64_t tegra_arb_sema_priv_read(void *opaque, hwaddr offset,
     uint64_t ret = 0;
     int id;
 
-    id = (cs && cs->cpu_index == TEGRA2_COP) ? TEGRA_SEMA_COP : TEGRA_SEMA_CPU;
+    id = (cs && cs->cpu_index == TEGRA_BPMP) ? TEGRA_SEMA_COP : TEGRA_SEMA_CPU;
 
     switch (offset) {
     case SMP_GNT_ST_OFFSET:
@@ -126,7 +126,7 @@ static void tegra_arb_sema_priv_write(void *opaque, hwaddr offset,
     CPUState *cs = current_cpu;
     int id;
 
-    id = (cs && cs->cpu_index == TEGRA2_COP) ? TEGRA_SEMA_COP : TEGRA_SEMA_CPU;
+    id = (cs && cs->cpu_index == TEGRA_BPMP) ? TEGRA_SEMA_COP : TEGRA_SEMA_CPU;
 
     switch (offset) {
     case SMP_GET_OFFSET:
