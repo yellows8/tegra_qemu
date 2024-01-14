@@ -89,7 +89,7 @@ static void tegra_irq_dispatcher_set_cpu_irq_lic(void *opaque, int irq, int leve
 
     if (level) {
         tegra_flow_on_irq(TEGRA_CCPLEX_CORE0);
-        if (s->num_cpu>=4) {
+        if (s->num_cpu>=TEGRAX1_CCPLEX_NCORES) {
             tegra_flow_on_irq(TEGRA_CCPLEX_CORE1);
             tegra_flow_on_irq(TEGRA_CCPLEX_CORE2);
             tegra_flow_on_irq(TEGRA_CCPLEX_CORE3);
