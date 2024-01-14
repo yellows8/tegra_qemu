@@ -22,7 +22,7 @@
 #define INT_CPU_IRQS_NR         32
 
 /* Primary Interrupt Controller */
-#define INT_PRI_BASE			(INT_GIC_BASE + 32)
+#define INT_PRI_BASE			(INT_GIC_BASE + 0)
 #define INT_TMR1			(INT_PRI_BASE + 0)
 #define INT_TMR2			(INT_PRI_BASE + 1)
 #define INT_RTC				(INT_PRI_BASE + 2)
