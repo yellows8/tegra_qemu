@@ -14,7 +14,7 @@ Build
 
 gcrypt is required for using raw RSA messages.
 
-Run
+Run Tegra2
 ===
 
 .. code-block:: shell
@@ -32,6 +32,23 @@ Run
 Kernel and device-tree are available at `<https://github.com/grate-driver/linux>`_.
 
 U-Boot is available at `<https://github.com/grate-driver/u-boot>`_, use ``qemu_tegra2_defconfig``.
+
+Run Tegra X1
+===
+
+.. code-block:: shell
+
+  ./qemu-system-aarch64 -machine tegrax1 -m 4G -bios {BPMP IRAM bootloader path} -drive if=sd,index=0,format=raw,file={sd image path} -drive if=sd,index=1,format=raw,file={emmc image path}
+
+* The emmc image must start with the 0x400000-byte BOOT0 and BOOT1 partitions, with the main MMC partition following that at byte-offset 0x800000.
+
+* If uart output with stdio instead of the default is wanted, this can be used for example: ``-chardev stdio,id=char0 -serial chardev:char0``
+
+* The fuse-cache can be specified via an input secret. End-of-file == end of fuse regs. Loading cache regs from iopage is also supported. To set fuse-cache: ``-object secret,id=fuse_cache,file={path}``
+
+* SE AES keys can optionally be specified via input secrets if needed. Repeat as needed for each keyslot: ``-object secret,id=se.aeskeyslot{decimal keyslot 0-15},file={path to raw keydata}``
+
+See also QEMU docs regarding secrets input / cmdline arguments.
 
 ===========
 QEMU README
