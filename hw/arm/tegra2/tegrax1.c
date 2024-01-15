@@ -511,8 +511,8 @@ static void tegrax1_init(MachineState *machine)
     qdev_prop_set_uint32(DEVICE(tegra_flow_dev), "num-cpu", TEGRA_CCPLEX_NCORES);
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, TEGRA_FLOW_CTRL_BASE);
-    //sysbus_connect_irq(s, 0, DIRQ(INT_FLOW_RSM0));
-    //sysbus_connect_irq(s, 1, DIRQ(INT_FLOW_RSM1));
+    sysbus_connect_irq(s, 0, DIRQ(INT_FLOW_RSM_CPU));
+    sysbus_connect_irq(s, 1, DIRQ(INT_FLOW_RSM_COP));
 
     /* GPIO controllers */
     tegra_gpios_dev = sysbus_create_varargs("tegra.gpio", TEGRA_GPIO_BASE,
@@ -681,19 +681,14 @@ static void tegrax1_init(MachineState *machine)
                                           TEGRA_I2C5_BASE, DIRQ(INT_I2C5));
     tegra_idc6_dev = sysbus_create_simple("tegra-i2c",
                                           TEGRA_I2C6_BASE, DIRQ(INT_I2C6));
-    /*tegra_dvc_dev = qdev_new("tegra-i2c");
-    object_property_set_bool(tegra_dvc_dev, "is_dvc", true, &error_abort);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_dvc_dev), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_dvc_dev), 0, TEGRA_DVC_BASE);
-    sysbus_connect_irq(SYS_BUS_DEVICE(tegra_dvc_dev), 0, DIRQ(INT_DVC));*/
 
     /* Host1x IO */
     tegra_grhost_dev = sysbus_create_varargs("tegra.grhost",
                                              TEGRA_GRHOST_BASE,
-                                             DIRQ(INT_HOST1X_COP_SYNCPT),
-                                             DIRQ(INT_HOST1X_MPCORE_SYNCPT),
-                                             DIRQ(INT_HOST1X_COP_GENERAL),
-                                             DIRQ(INT_HOST1X_MPCORE_GENERAL),
+                                             DIRQ(INT_HOST1X_SYNCPT_COP),
+                                             DIRQ(INT_HOST1X_SYNCPT_CPU),
+                                             DIRQ(INT_HOST1X_GEN_COP),
+                                             DIRQ(INT_HOST1X_GEN_CPU),
                                              NULL);
 
     /* Host1x */
@@ -710,15 +705,11 @@ static void tegrax1_init(MachineState *machine)
     /* Process generator tag */
     //sysbus_create_simple("tegra.pg", 0x60000000, NULL);
 
-    /* PIO ethernet */
-    /*if (nd_table[0].used)
-        lan9118_init(&nd_table[0], 0xA0000000, DIRQ(INT_SW_RESERVED));*/
-
     /* Multi-CPU shared resources access arbitration */
     tegra_arb_sema_dev = sysbus_create_varargs("tegra.arb_sema",
                                                TEGRA_ARB_SEMA_BASE,
-                                               DIRQ(INT_GNT_0),
-                                               DIRQ(INT_GNT_1),
+                                               DIRQ(INT_ARB_SEM_GNT_COP),
+                                               DIRQ(INT_ARB_SEM_GNT_CPU),
                                                NULL);
 
     tegra_res_sema_dev = sysbus_create_varargs("tegra.res_sema",

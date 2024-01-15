@@ -33,27 +33,27 @@
 #define INT_SHR_SEM_OUTBOX_IBE		(INT_PRI_BASE + 7)
 #define INT_NVJPG			(INT_PRI_BASE + 8)
 #define INT_NVDEC			(INT_PRI_BASE + 9)
-#define INT_QSPI			(INT_PRI_BASE + 10)
-#define INT_DPAUX_1			(INT_PRI_BASE + 11)
+#define INT_QUAD_SPI			(INT_PRI_BASE + 10)
+#define INT_DPAUX_INT1			(INT_PRI_BASE + 11)
 /* unused				(INT_PRI_BASE + 12) */
 #define INT_SATA_RX_STAT		(INT_PRI_BASE + 13)
 #define INT_SDMMC1			(INT_PRI_BASE + 14)
 #define INT_SDMMC2			(INT_PRI_BASE + 15)
 #define INT_VGPIO			(INT_PRI_BASE + 16)
 #define INT_VII2C			(INT_PRI_BASE + 17)
-#define INT_AVP_UCQ			(INT_PRI_BASE + 18)
+#define INT_AVP_UCQ			(INT_PRI_BASE + 18) // Unassigned?
 #define INT_SDMMC3			(INT_PRI_BASE + 19)
 #define INT_USB				(INT_PRI_BASE + 20)
 #define INT_USB2			(INT_PRI_BASE + 21)
-#define INT_MIPI_BIF			(INT_PRI_BASE + 22)
+#define INT_MIPI_BIF			(INT_PRI_BASE + 22) // Unassigned?
 #define INT_SATA_CTL			(INT_PRI_BASE + 23)
 #define INT_PMC				(INT_PRI_BASE + 24)
 #define INT_FC				(INT_PRI_BASE + 25)
 #define INT_APB_DMA			(INT_PRI_BASE + 26)
-#define INT_AHB_DMA			(INT_PRI_BASE + 27)
-#define INT_GNT_0			(INT_PRI_BASE + 28)
-#define INT_GNT_1			(INT_PRI_BASE + 29)
-#define INT_OWR				(INT_PRI_BASE + 30)
+#define INT_AHB_DMA			(INT_PRI_BASE + 27) // Unassigned?
+#define INT_ARB_SEM_GNT_COP		(INT_PRI_BASE + 28)
+#define INT_ARB_SEM_GNT_CPU		(INT_PRI_BASE + 29)
+#define INT_OWR				(INT_PRI_BASE + 30) // Unassigned?
 #define INT_SDMMC4			(INT_PRI_BASE + 31)
 
 /* Secondary Interrupt Controller */
@@ -66,38 +66,37 @@
 #define INT_UARTB			(INT_SEC_BASE + 5)
 #define INT_I2C				(INT_SEC_BASE + 6)
 #define INT_USB3_HOST_INT		(INT_SEC_BASE + 7)
-#define INT_USB3_NOT_SMI		(INT_SEC_BASE + 8)
+#define INT_USB3_HOST_SMI		(INT_SEC_BASE + 8)
 #define INT_TMR3			(INT_SEC_BASE + 9)
 #define INT_TMR4			(INT_SEC_BASE + 10)
 #define INT_USB3_HOST_PME		(INT_SEC_BASE + 11)
 #define INT_USB3_DEV_HOST		(INT_SEC_BASE + 12)
 #define INT_ACTMON			(INT_SEC_BASE + 13)
 #define INT_UARTC			(INT_SEC_BASE + 14)
-#define INT_HOST1x_TZ_SYNCPT		(INT_SEC_BASE + 15)
+#define INT_HOST1x_TZ_SYNCPT		(INT_SEC_BASE + 15) // Unassigned?
 #define INT_THERMAL			(INT_SEC_BASE + 16)
-#define IRQ_ETH				(INT_SEC_BASE + 16)
 #define INT_XUSB_PADCTL			(INT_SEC_BASE + 17)
 #define INT_TSEC			(INT_SEC_BASE + 18)
 #define INT_EDP				(INT_SEC_BASE + 19)
-#define INT_HOST1x_TZ_GEN		(INT_SEC_BASE + 20)
+#define INT_HOST1x_TZ_GEN		(INT_SEC_BASE + 20) // Unassigned?
 #define INT_I2C5			(INT_SEC_BASE + 21)
-#define INT_SYS_STATS_MON		(INT_SEC_BASE + 22)
+#define INT_SYS_STATS_MON		(INT_SEC_BASE + 22) // Unassigned?
 #define INT_GPIO5			(INT_SEC_BASE + 23)
 #define INT_USB3_DEV_SMI		(INT_SEC_BASE + 24)
 #define INT_USB3_DEV_PME		(INT_SEC_BASE + 25)
 #define INT_SE				(INT_SEC_BASE + 26)
 #define INT_SPI_1			(INT_SEC_BASE + 27)
 #define INT_APB_DMA_COP			(INT_SEC_BASE + 28)
-#define INT_AHB_DMA_COP			(INT_SEC_BASE + 29)
+#define INT_AHB_DMA_COP			(INT_SEC_BASE + 29) // Unassigned?
 #define INT_CLDVFS			(INT_SEC_BASE + 30)
 #define INT_I2C6			(INT_SEC_BASE + 31)
 
 /* Tertiary Interrupt Controller */
 #define INT_TRI_BASE			(INT_SEC_BASE + 32)
-#define INT_HOST1X_COP_SYNCPT		(INT_TRI_BASE + 0)
-#define INT_HOST1X_MPCORE_SYNCPT	(INT_TRI_BASE + 1)
-#define INT_HOST1X_COP_GENERAL		(INT_TRI_BASE + 2)
-#define INT_HOST1X_MPCORE_GENERAL	(INT_TRI_BASE + 3)
+#define INT_HOST1X_SYNCPT_COP		(INT_TRI_BASE + 0)
+#define INT_HOST1X_SYNCPT_CPU		(INT_TRI_BASE + 1)
+#define INT_HOST1X_GEN_COP		(INT_TRI_BASE + 2)
+#define INT_HOST1X_GEN_CPU		(INT_TRI_BASE + 3)
 #define INT_NVENC			(INT_TRI_BASE + 4)
 #define INT_VI_GENERAL			(INT_TRI_BASE + 5)
 #define INT_ISPB_GENERAL		(INT_TRI_BASE + 6)
@@ -105,27 +104,27 @@
 #define INT_2D_GENERAL			(INT_TRI_BASE + 8)
 #define INT_DISPLAY_GENERAL		(INT_TRI_BASE + 9)
 #define INT_DISPLAY_B_GENERAL		(INT_TRI_BASE + 10)
-#define INT_SOR_1			(INT_TRI_BASE + 12)
+#define INT_SOR_1			(INT_TRI_BASE + 11)
 #define INT_SOR				(INT_TRI_BASE + 12)
 #define INT_MC_GENERAL			(INT_TRI_BASE + 13)
 #define INT_EMC_GENERAL			(INT_TRI_BASE + 14)
-#define INT_SPI_6			(INT_SEC_BASE + 15)
+#define INT_SPI_6			(INT_SEC_BASE + 15) // Unassigned?
 #define INT_TSECB			(INT_TRI_BASE + 16)
 #define INT_HDA				(INT_SEC_BASE + 17)
 #define INT_SPI_2			(INT_TRI_BASE + 18)
 #define INT_SPI_3			(INT_TRI_BASE + 19)
 #define INT_I2C2			(INT_TRI_BASE + 20)
 /* unused				(INT_TRI_BASE + 21) */
-#define INT_EXTERNAL_PMU		(INT_TRI_BASE + 22)
+#define INT_PMU_EXT			(INT_TRI_BASE + 22)
 #define INT_GPIO6			(INT_TRI_BASE + 23)
-#define INT_BB2AP_INT0			(INT_TRI_BASE + 24)
+#define INT_BB2AP_INT0			(INT_TRI_BASE + 24) // Unassigned?
 #define INT_GPIO7			(INT_TRI_BASE + 25)
 #define INT_UARTD			(INT_TRI_BASE + 26)
-#define INT_BB2AP_MEM_REQ_SOON_INT	(INT_TRI_BASE + 27)
+#define INT_BB2AP_MEM_REQ_SOON_INT	(INT_TRI_BASE + 27) // Unassigned?
 #define INT_I2C3			(INT_TRI_BASE + 28)
 #define INT_SPI_4			(INT_TRI_BASE + 29)
-#define INT_SPI_5			(INT_TRI_BASE + 30)
-#define INT_SW_RESERVED			(INT_TRI_BASE + 31)
+#define INT_SPI_5			(INT_TRI_BASE + 30) // Unassigned?
+#define INT_SW_RESERVED			(INT_TRI_BASE + 31) // Unassigned?
 
 /* Quaternary Interrupt Controller */
 #define INT_QUAD_BASE			(INT_TRI_BASE + 32)
@@ -160,7 +159,7 @@
 #define INT_WDT_AVP			(INT_QUAD_BASE + 28)
 #define INT_GPIO8			(INT_QUAD_BASE + 29)
 #define INT_CAR				(INT_QUAD_BASE + 30)
-#define INT_HIER_GROUP1_CPU		(INT_QUAD_BASE + 31)
+#define INT_HIER_GROUP1_CPU		(INT_QUAD_BASE + 31) // Unassigned?
 
 /* Quintary Interrupt Controller */
 #define INT_QUINT_BASE			(INT_QUAD_BASE + 32)
@@ -192,8 +191,8 @@
 #define INT_TMR7			(INT_QUINT_BASE + 25)
 #define INT_TMR8			(INT_QUINT_BASE + 26)
 #define INT_TMR9			(INT_QUINT_BASE + 27)
-#define INT_TMR10			(INT_QUINT_BASE + 28)
-#define INT_GPU				(INT_QUINT_BASE + 29)
+#define INT_TMR0			(INT_QUINT_BASE + 28)
+#define INT_GPU_STALL			(INT_QUINT_BASE + 29)
 #define INT_GPU_NONSTALL		(INT_QUINT_BASE + 30)
 #define INT_DPAUX			(INT_QUINT_BASE + 31)
 
@@ -201,6 +200,36 @@
 #define INT_HEXA_BASE			(INT_QUINT_BASE + 32)
 #define INT_MPCORE_AXIERRIRQ		(INT_HEXA_BASE + 0)
 #define INT_MPCORE_INTERRIRQ		(INT_HEXA_BASE + 1)
+#define INT_EVENT_GPIO_A		(INT_HEXA_BASE + 2)
+#define INT_EVENT_GPIO_B		(INT_HEXA_BASE + 3)
+#define INT_EVENT_GPIO_C		(INT_HEXA_BASE + 4)
+/* unused				(INT_HEXA_BASE + 5) */
+/* unused				(INT_HEXA_BASE + 6) */
+/* unused				(INT_HEXA_BASE + 7) */
+#define INT_FLOW_RSM_CPU		(INT_HEXA_BASE + 8)
+#define INT_FLOW_RSM_COP		(INT_HEXA_BASE + 9)
+#define INT_TMR_SHARED			(INT_HEXA_BASE + 10)
+#define INT_MPCORE_CTIIRQ0		(INT_HEXA_BASE + 11)
+#define INT_MPCORE_CTIIRQ1		(INT_HEXA_BASE + 12)
+#define INT_MPCORE_CTIIRQ2		(INT_HEXA_BASE + 13)
+#define INT_MPCORE_CTIIRQ3		(INT_HEXA_BASE + 14)
+#define INT_MSELECT_ERROR		(INT_HEXA_BASE + 15)
+#define INT_TMR10			(INT_HEXA_BASE + 16)
+#define INT_TMR11			(INT_HEXA_BASE + 17)
+#define INT_TMR12			(INT_HEXA_BASE + 18)
+#define INT_TMR13			(INT_HEXA_BASE + 19)
+/* unused				(INT_HEXA_BASE + 20) */
+/* unused				(INT_HEXA_BASE + 21) */
+/* unused				(INT_HEXA_BASE + 22) */
+/* unused				(INT_HEXA_BASE + 23) */
+/* unused				(INT_HEXA_BASE + 24) */
+/* unused				(INT_HEXA_BASE + 25) */
+/* unused				(INT_HEXA_BASE + 26) */
+/* unused				(INT_HEXA_BASE + 27) */
+/* unused				(INT_HEXA_BASE + 28) */
+/* unused				(INT_HEXA_BASE + 29) */
+/* unused				(INT_HEXA_BASE + 30) */
+/* unused				(INT_HEXA_BASE + 31) */
 
 #define INT_GIC_NR			(INT_HEXA_BASE + 32 + INT_CPU_IRQS_NR)
 
