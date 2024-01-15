@@ -69,6 +69,8 @@
 #define BOOTMON_BASE    0xF0010000
 #define BOOTROM_LOVEC_BASE 0x0
 
+#define SYSTEM_TICK_FREQ 19200000
+
 #define RW  0
 #define RO  1
 
@@ -202,6 +204,7 @@ static void tegrax1_create_cpus(void)
         object_property_set_bool(cpuobj, "has_el3", true, &error_abort);
         object_property_set_bool(cpuobj, "reset-hivecs", true, &error_abort);
         object_property_set_bool(cpuobj, "start-powered-off", true, &error_abort);
+        object_property_set_uint(cpuobj, "cntfrq", SYSTEM_TICK_FREQ, &error_abort); // This must be configured manually since qemu doesn't update the timer frequency when the cntfrq reg is written.
         qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
 
         // TODO: How to properly set oslsr_el1, without changing the default reset value?(Below doesn't work correctly)
