@@ -589,7 +589,6 @@ static void tegrax1_init(MachineState *machine)
                                             TEGRA_TMR4_BASE, DIRQ(INT_TMR4));
 
     /* UART controllers */
-//     sysbus_create_simple("tegra.uart", TEGRA_UARTA_BASE, DIRQ(INT_UARTA));
     tegra_uarta_dev = serial_mm_init(sysmem, TEGRA_UARTA_BASE, 2,
                                      DIRQ(INT_UARTA), 115200,
                                      serial_hd(0),
@@ -608,11 +607,6 @@ static void tegrax1_init(MachineState *machine)
     tegra_uartd_dev = serial_mm_init(sysmem, TEGRA_UARTD_BASE, 2,
                                      DIRQ(INT_UARTD), 115200,
                                      serial_hd(3),
-                                     DEVICE_LITTLE_ENDIAN);
-
-    tegra_uarte_dev = serial_mm_init(sysmem, TEGRA_UARTE_BASE, 2,
-                                     DIRQ(INT_UARTD), 115200, // TODO: fix IRQ
-                                     serial_hd(4),
                                      DEVICE_LITTLE_ENDIAN);
 
     /* USB2 controllers */

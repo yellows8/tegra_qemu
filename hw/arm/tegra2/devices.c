@@ -58,7 +58,6 @@ void *tegra_uarta_dev = NULL;
 void *tegra_uartb_dev = NULL;
 void *tegra_uartc_dev = NULL;
 void *tegra_uartd_dev = NULL;
-void *tegra_uarte_dev = NULL;
 void *tegra_dc1_dev = NULL;
 void *tegra_ehci1_dev = NULL;
 void *tegra_ehci2_dev = NULL;
