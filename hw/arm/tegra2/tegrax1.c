@@ -673,11 +673,11 @@ static void tegrax1_init(MachineState *machine)
     tegra_idc3_dev = sysbus_create_simple("tegra-i2c",
                                           TEGRA_I2C3_BASE, DIRQ(INT_I2C3));
     tegra_idc4_dev = sysbus_create_simple("tegra-i2c",
-                                          TEGRA_I2C4_BASE, DIRQ(INT_I2C3)); // TODO: fix IRQ
+                                          TEGRA_I2C4_BASE, DIRQ(INT_I2C4));
     tegra_idc5_dev = sysbus_create_simple("tegra-i2c",
-                                          TEGRA_I2C5_BASE, DIRQ(INT_I2C3)); // TODO: fix IRQ
+                                          TEGRA_I2C5_BASE, DIRQ(INT_I2C5));
     tegra_idc6_dev = sysbus_create_simple("tegra-i2c",
-                                          TEGRA_I2C6_BASE, DIRQ(INT_I2C3)); // TODO: fix IRQ
+                                          TEGRA_I2C6_BASE, DIRQ(INT_I2C6));
     /*tegra_dvc_dev = qdev_new("tegra-i2c");
     object_property_set_bool(tegra_dvc_dev, "is_dvc", true, &error_abort);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_dvc_dev), &error_fatal);
