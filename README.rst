@@ -44,7 +44,7 @@ Run Tegra X1
 
 * The emmc image must start with the 0x400000-byte BOOT0 and BOOT1 partitions, with the main MMC partition following that at byte-offset 0x800000.
 
-* If uart output with stdio instead of the default is wanted, this can be used for example: ``-chardev stdio,id=char0 -serial chardev:char0``
+* Each input ``-serial`` argument corresponds to UART-A - UART-D. If UART-A output with stdio instead of the default is wanted, this can be used for example: ``-chardev stdio,id=char0 -serial chardev:char0``
 
 * The fuse-cache can be specified via an input secret. End-of-file == end of fuse regs. Loading cache regs from iopage is also supported. To set fuse-cache: ``-object secret,id=fuse_cache,file={path}``
 
