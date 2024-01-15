@@ -303,8 +303,8 @@ static void tegrax1_init(MachineState *machine)
     memory_region_add_and_init_ram(sysmem, "tegra.dram",
                                    TEGRA_DRAM_BASE, machine->ram_size, RW);
 
-    memory_region_add_and_init_ram(sysmem, "tegra.hi-vec",
-                                   0xffff0000, SZ_64K, RW);
+    /*memory_region_add_and_init_ram(sysmem, "tegra.hi-vec",
+                                   0xffff0000, SZ_64K, RW);*/
 
     memory_region_add_and_init_ram(sysmem, "tegra.bootmon",
                                    BOOTMON_BASE, TARGET_PAGE_SIZE, RO);
@@ -739,11 +739,11 @@ static void tegrax1_init(MachineState *machine)
     memory_region_init(cop_sysmem, NULL, "tegra.cop-memory", UINT64_MAX);
     address_space_init(cop_as, cop_sysmem, "tegra.cop-address space");
 
-    memory_region_add_and_init_ram(cop_sysmem, "tegra.cop-ivectors",
+    /*memory_region_add_and_init_ram(cop_sysmem, "tegra.cop-ivectors",
                                    0x00000000, 0x40, RW);
 
     memory_region_add_and_init_ram(cop_sysmem, "tegra.cop-hi-vec",
-                                   0xffff0000, SZ_64K, RW);
+                                   0xffff0000, SZ_64K, RW);*/
 
     /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-DRAM", sysmem,
                                 0x00000040,
@@ -779,7 +779,7 @@ static void tegrax1_init(MachineState *machine)
 
     cop_memory_region_add_alias(cop_sysmem, "tegra.cop-DRAM UC", sysmem,
                                 0x80000000,
-                                0x80000000, TEGRA_DRAM_SIZE);
+                                0x80000000, machine->ram_size);
 
     /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-AHB", sysmem,
                                 0xC0000000,
