@@ -289,7 +289,7 @@ static void load_memory_images(MachineState *machine)
     }*/
 }
 
-static void* tegra_init_sdmmc(int index, hwaddr base, qemu_irq irq, bool emmc, uint32_t bootpartsize)
+static void* tegra_init_sdmmc(int index, hwaddr base, qemu_irq irq, bool emmc, uint32_t bootpartsize, void** vendor_dev)
 {
     DeviceState *carddev;
     BlockBackend *blk;
@@ -301,6 +301,7 @@ static void* tegra_init_sdmmc(int index, hwaddr base, qemu_irq irq, bool emmc, u
 
     sysbus_mmio_map(SYS_BUS_DEVICE(tmpdev), 0, base);
     sysbus_connect_irq(SYS_BUS_DEVICE(tmpdev), 0, irq);
+    *vendor_dev = sysbus_create_simple("tegra.sdmmcvendor", base+0x100, NULL);
 
     di = drive_get_by_index(IF_SD, index);
     blk = di ? blk_by_legacy_dinfo(di) : NULL;
@@ -553,10 +554,10 @@ static void tegrax1_init(MachineState *machine)
     tegra_rtc_dev = sysbus_create_simple("tegra.rtc",
                                          TEGRA_RTC_BASE, DIRQ(INT_RTC));
 
-    tegra_sdhci1_dev = tegra_init_sdmmc(0, TEGRA_SDMMC1_BASE, DIRQ(INT_SDMMC1), false, 0);
-    tegra_sdhci2_dev = tegra_init_sdmmc(1, TEGRA_SDMMC2_BASE, DIRQ(INT_SDMMC2), false, 0);
-    tegra_sdhci3_dev = tegra_init_sdmmc(2, TEGRA_SDMMC3_BASE, DIRQ(INT_SDMMC3), false, 0);
-    tegra_sdhci4_dev = tegra_init_sdmmc(3, TEGRA_SDMMC4_BASE, DIRQ(INT_SDMMC4), true, 0x400000);
+    tegra_sdmmc1_dev = tegra_init_sdmmc(0, TEGRA_SDMMC1_BASE, DIRQ(INT_SDMMC1), false, 0, &tegra_sdmmc1_vendor_dev);
+    tegra_sdmmc2_dev = tegra_init_sdmmc(1, TEGRA_SDMMC2_BASE, DIRQ(INT_SDMMC2), false, 0, &tegra_sdmmc2_vendor_dev);
+    tegra_sdmmc3_dev = tegra_init_sdmmc(2, TEGRA_SDMMC3_BASE, DIRQ(INT_SDMMC3), false, 0, &tegra_sdmmc3_vendor_dev);
+    tegra_sdmmc4_dev = tegra_init_sdmmc(3, TEGRA_SDMMC4_BASE, DIRQ(INT_SDMMC4), true, 0x400000, &tegra_sdmmc4_vendor_dev);
 
     /* Timer1 */
     tegra_timer1_dev = sysbus_create_simple("tegra.timer",

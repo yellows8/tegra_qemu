@@ -403,21 +403,21 @@ static void tegra2_init(MachineState *machine)
         BlockBackend *blk;
         DriveInfo *di;
 
-        tegra_sdhci4_dev = qdev_new(TYPE_SYSBUS_SDHCI);
-        qdev_prop_set_uint32(tegra_sdhci4_dev, "capareg", 0x5780A8A);
-        sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_sdhci4_dev), &error_fatal);
+        tegra_sdmmc4_dev = qdev_new(TYPE_SYSBUS_SDHCI);
+        qdev_prop_set_uint32(tegra_sdmmc4_dev, "capareg", 0x5780A8A);
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_sdmmc4_dev), &error_fatal);
 
-        sysbus_mmio_map(SYS_BUS_DEVICE(tegra_sdhci4_dev), 0, TEGRA_SDMMC4_BASE);
-        sysbus_connect_irq(SYS_BUS_DEVICE(tegra_sdhci4_dev), 0, DIRQ(INT_SDMMC4));
+        sysbus_mmio_map(SYS_BUS_DEVICE(tegra_sdmmc4_dev), 0, TEGRA_SDMMC4_BASE);
+        sysbus_connect_irq(SYS_BUS_DEVICE(tegra_sdmmc4_dev), 0, DIRQ(INT_SDMMC4));
 
         di = drive_get(IF_SD, 0, 0);
         blk = di ? blk_by_legacy_dinfo(di) : NULL;
         carddev = qdev_new(TYPE_SD_CARD);
         qdev_prop_set_drive(carddev, "drive", blk);
         qdev_prop_set_bit(carddev, "emmc", false);
-        qdev_realize_and_unref(carddev, qdev_get_child_bus(tegra_sdhci4_dev, "sd-bus"), &error_fatal);
+        qdev_realize_and_unref(carddev, qdev_get_child_bus(tegra_sdmmc4_dev, "sd-bus"), &error_fatal);
 
-//         tegra_sdhci4_dev = sysbus_create_simple("tegra.sdhci",
+//         tegra_sdmmc4_dev = sysbus_create_simple("tegra.sdhci",
 //                                                 TEGRA_SDMMC4_BASE, DIRQ(INT_SDMMC4));
     }
 
