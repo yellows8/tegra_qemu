@@ -22,10 +22,15 @@
 #ifndef TEGRA_ICTLR_H
 #define TEGRA_ICTLR_H
 
+#include "tegra_cpu.h"
 #include "arb_gnt_ictlr.h"
 
 #define TYPE_TEGRA_ICTLR "tegra.ictlr"
 #define TEGRA_ICTLR(obj) OBJECT_CHECK(tegra_ictlr, (obj), TYPE_TEGRA_ICTLR)
+
+#define TEGRA_ICTLR_NUM_BANKS_TEGRAX1 6
+#define TEGRA_ICTLR_NUM_BANKS_TEGRA2 4
+#define TEGRA_ICTLR_NUM_BANKS TEGRA_ICTLR_NUM_BANKS_TEGRAX1
 
 typedef struct tegra_ictlr_state {
     SysBusDevice parent_obj;
@@ -39,16 +44,19 @@ typedef struct tegra_ictlr_state {
     tegra_arb_gnt_ictlr arb_gnt_ictlr;
 
     MemoryRegion iomem;
-    uint32_t virq_cpu[4];
-    uint32_t virq_cop[4];
-    uint32_t vfiq_cpu[4];
-    uint32_t vfiq_cop[4];
-    uint32_t isr[4];
-    uint32_t fir[4];
-    uint32_t cpu_ier[4];
-    uint32_t cpu_iep_class[4];
-    uint32_t cop_ier[4];
-    uint32_t cop_iep_class[4];
+    uint32_t num_cpu;
+    uint32_t num_irq;
+    uint32_t num_banks;
+    uint32_t virq_cpu[TEGRA_CCPLEX_NCORES][TEGRA_ICTLR_NUM_BANKS];
+    uint32_t virq_cop[TEGRA_ICTLR_NUM_BANKS];
+    uint32_t vfiq_cpu[TEGRA_CCPLEX_NCORES][TEGRA_ICTLR_NUM_BANKS];
+    uint32_t vfiq_cop[TEGRA_ICTLR_NUM_BANKS];
+    uint32_t isr[TEGRA_ICTLR_NUM_BANKS];
+    uint32_t fir[TEGRA_ICTLR_NUM_BANKS];
+    uint32_t cpu_ier[TEGRA_CCPLEX_NCORES][TEGRA_ICTLR_NUM_BANKS];
+    uint32_t cpu_iep_class[TEGRA_CCPLEX_NCORES][TEGRA_ICTLR_NUM_BANKS];
+    uint32_t cop_ier[TEGRA_ICTLR_NUM_BANKS];
+    uint32_t cop_iep_class[TEGRA_ICTLR_NUM_BANKS];
 } tegra_ictlr;
 
 void tegra_flow_on_irq(int cpu_id);
@@ -101,5 +109,26 @@ int tegra_ictlr_is_irq_pending_on_cpu(int cpu_id);
 
 #define ICTLR_COP_IEP_CLASS_OFFSET 0x3C
 #define ICTLR_COP_IEP_CLASS_RESET  0x00000000
+
+#define ICTLR_VIRQ_CPU1_OFFSET 0x60
+#define ICTLR_VIRQ_CPU1_RESET  0x00000000
+
+#define ICTLR_VFIQ_CPU1_OFFSET 0x64
+#define ICTLR_VFIQ_CPU1_RESET 0x00000000
+
+#define ICTLR_CPU1_IER_OFFSET 0x68
+#define ICTLR_CPU1_IER_RESET 0x00000000
+
+#define ICTLR_CPU1_IER_SET_OFFSET 0x6C
+#define ICTLR_CPU1_IER_SET_RESET 0x00000000
+
+#define ICTLR_CPU1_IER_CLR_OFFSET 0x70
+#define ICTLR_CPU1_IER_CLR_RESET 0x00000000
+
+#define ICTLR_CPU1_IEP_CLASS_OFFSET 0x74
+#define ICTLR_CPU1_IEP_CLASS_RESET 0x00000000
+
+#define ICTLR_CPU3_IEP_CLASS_OFFSET 0xA4
+#define ICTLR_CPU3_IEP_CLASS_RESET  0x00000000
 
 #endif // TEGRA_ICTLR_H

@@ -37,16 +37,19 @@ static const VMStateDescription vmstate_tegra_ictlr = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(virq_cpu, tegra_ictlr, 4),
-        VMSTATE_UINT32_ARRAY(virq_cop, tegra_ictlr, 4),
-        VMSTATE_UINT32_ARRAY(vfiq_cpu, tegra_ictlr, 4),
-        VMSTATE_UINT32_ARRAY(vfiq_cop, tegra_ictlr, 4),
-        VMSTATE_UINT32_ARRAY(isr, tegra_ictlr, 4),
-        VMSTATE_UINT32_ARRAY(fir, tegra_ictlr, 4),
-        VMSTATE_UINT32_ARRAY(cpu_ier, tegra_ictlr, 4),
-        VMSTATE_UINT32_ARRAY(cpu_iep_class, tegra_ictlr, 4),
-        VMSTATE_UINT32_ARRAY(cop_ier, tegra_ictlr, 4),
-        VMSTATE_UINT32_ARRAY(cop_iep_class, tegra_ictlr, 4),
+        VMSTATE_UINT32(num_cpu, tegra_ictlr),
+        VMSTATE_UINT32(num_irq, tegra_ictlr),
+        VMSTATE_UINT32(num_banks, tegra_ictlr),
+        VMSTATE_UINT32_2DARRAY(virq_cpu, tegra_ictlr, TEGRA_CCPLEX_NCORES, TEGRA_ICTLR_NUM_BANKS),
+        VMSTATE_UINT32_ARRAY(virq_cop, tegra_ictlr, TEGRA_ICTLR_NUM_BANKS),
+        VMSTATE_UINT32_2DARRAY(vfiq_cpu, tegra_ictlr, TEGRA_CCPLEX_NCORES, TEGRA_ICTLR_NUM_BANKS),
+        VMSTATE_UINT32_ARRAY(vfiq_cop, tegra_ictlr, TEGRA_ICTLR_NUM_BANKS),
+        VMSTATE_UINT32_ARRAY(isr, tegra_ictlr, TEGRA_ICTLR_NUM_BANKS),
+        VMSTATE_UINT32_ARRAY(fir, tegra_ictlr, TEGRA_ICTLR_NUM_BANKS),
+        VMSTATE_UINT32_2DARRAY(cpu_ier, tegra_ictlr, TEGRA_CCPLEX_NCORES, TEGRA_ICTLR_NUM_BANKS),
+        VMSTATE_UINT32_2DARRAY(cpu_iep_class, tegra_ictlr, TEGRA_CCPLEX_NCORES, TEGRA_ICTLR_NUM_BANKS),
+        VMSTATE_UINT32_ARRAY(cop_ier, tegra_ictlr, TEGRA_ICTLR_NUM_BANKS),
+        VMSTATE_UINT32_ARRAY(cop_iep_class, tegra_ictlr, TEGRA_ICTLR_NUM_BANKS),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -55,7 +58,7 @@ static int tegra_ictlr_is_irq_pending(tegra_ictlr *s, uint32_t *reg, int fiq)
 {
     int i;
 
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < s->num_banks; i++) {
         if (reg[i]) {
 //             TPRINT("%s bank=%d %s reg=0x%08X\n",
 //                    __func__, i, fiq ? "FIQ" : "IRQ", reg[i]);
@@ -71,13 +74,16 @@ int tegra_ictlr_is_irq_pending_on_cpu(int cpu_id)
     tegra_ictlr *s = tegra_ictlr_dev;
     int ret = 0;
 
-    assert(tegra_ictlr_dev != NULL);
+    g_assert(tegra_ictlr_dev != NULL);
+    g_assert(cpu_id < s->num_cpu);
 
     switch (cpu_id) {
     case TEGRA_CCPLEX_CORE0:
     case TEGRA_CCPLEX_CORE1:
-        ret |= tegra_ictlr_is_irq_pending(s, s->virq_cpu, 0);
-        ret |= tegra_ictlr_is_irq_pending(s, s->vfiq_cpu, 1);
+    case TEGRA_CCPLEX_CORE2:
+    case TEGRA_CCPLEX_CORE3:
+        ret |= tegra_ictlr_is_irq_pending(s, s->virq_cpu[cpu_id], 0);
+        ret |= tegra_ictlr_is_irq_pending(s, s->vfiq_cpu[cpu_id], 1);
         break;
     case TEGRA_BPMP:
         ret |= tegra_ictlr_is_irq_pending(s, s->virq_cop, 0);
@@ -123,7 +129,7 @@ static void tegra_ictlr_update_irq(tegra_ictlr *s, uint32_t *virq, uint32_t *ier
     }
 
     /* TODO: Just track CPU IRQ status.  */
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < s->num_banks; i++) {
         new_irq_lvl = (i == bank) ? !!new_sts : !!virq[i];
 
         /* Any bank with VIRQ != 0 would interrupt CPU.  */
@@ -142,11 +148,13 @@ static void tegra_ictlr_update_irq(tegra_ictlr *s, uint32_t *virq, uint32_t *ier
 
 static void tegra_ictlr_update_irqs(tegra_ictlr *s, int bank)
 {
-    tegra_ictlr_update_irq(s, s->virq_cpu, s->cpu_ier, s->cpu_iep_class,
-                           0, s->cpu_irq, bank);
+    for (uint32_t i=0; i<s->num_cpu; i++) {
+        tegra_ictlr_update_irq(s, s->virq_cpu[i], s->cpu_ier[i], s->cpu_iep_class[i],
+                               0, s->cpu_irq, bank);
 
-    tegra_ictlr_update_irq(s, s->vfiq_cpu, s->cpu_ier, s->cpu_iep_class,
-                           1, s->cpu_fiq, bank);
+        tegra_ictlr_update_irq(s, s->vfiq_cpu[i], s->cpu_ier[i], s->cpu_iep_class[i],
+                               1, s->cpu_fiq, bank);
+    }
 
     tegra_ictlr_update_irq(s, s->virq_cop, s->cop_ier, s->cop_iep_class,
                            0, s->cop_irq, bank);
@@ -163,7 +171,7 @@ static void tegra_ictlr_irq_handler(void *opaque, int irq, int level)
 
 //     TPRINT("%s: irq %d level %d\n", __func__, irq, level);
 
-    assert(irq < INT_MAIN_NR);
+    g_assert(irq < s->num_irq);
 
     if (level)
         s->isr[bank] |= irq_mask;
@@ -177,20 +185,30 @@ static uint64_t tegra_ictlr_read(void *opaque, hwaddr offset, unsigned size)
 {
     tegra_ictlr *s = opaque;
     int bank = (offset >> 8);
+    int cpu_id = 0;
     uint64_t ret = 0;
 
-    if (bank >= 4)
+    if (bank >= s->num_banks)
         goto out;
+
+    if ( offset >= ICTLR_VIRQ_CPU1_OFFSET && offset <= ICTLR_CPU3_IEP_CLASS_OFFSET) {
+        if (s->num_cpu==1) goto out;
+        cpu_id = ((offset-ICTLR_VIRQ_CPU1_OFFSET) / 0x18) + 1;
+        offset -= ICTLR_VIRQ_CPU1_OFFSET;
+        offset = (offset % 0x18) + ICTLR_VIRQ_CPU1_OFFSET;
+    }
 
     switch (offset & 0xff) {
     case ICTLR_VIRQ_CPU_OFFSET:
-        ret = s->virq_cpu[bank];
+    case ICTLR_VIRQ_CPU1_OFFSET:
+        ret = s->virq_cpu[cpu_id][bank];
         break;
     case ICTLR_VIRQ_COP_OFFSET:
         ret = s->virq_cop[bank];
         break;
     case ICTLR_VFIQ_CPU_OFFSET:
-        ret = s->vfiq_cpu[bank];
+    case ICTLR_VFIQ_CPU1_OFFSET:
+        ret = s->vfiq_cpu[cpu_id][bank];
         break;
     case ICTLR_VFIQ_COP_OFFSET:
         ret = s->vfiq_cop[bank];
@@ -202,10 +220,12 @@ static uint64_t tegra_ictlr_read(void *opaque, hwaddr offset, unsigned size)
         ret = s->fir[bank];
         break;
     case ICTLR_CPU_IER_OFFSET:
-        ret = s->cpu_ier[bank];
+    case ICTLR_CPU1_IER_OFFSET:
+        ret = s->cpu_ier[cpu_id][bank];
         break;
     case ICTLR_CPU_IEP_CLASS_OFFSET:
-        ret = s->cpu_iep_class[bank];
+    case ICTLR_CPU1_IEP_CLASS_OFFSET:
+        ret = s->cpu_iep_class[cpu_id][bank];
         break;
     case ICTLR_COP_IER_OFFSET:
         ret = s->cop_ier[bank];
@@ -228,10 +248,21 @@ static void tegra_ictlr_write(void *opaque, hwaddr offset,
 {
     tegra_ictlr *s = opaque;
     int bank = (offset >> 8);
+    int cpu_id = 0;
 
-    if (bank >= 4) {
+    if (bank >= s->num_banks) {
         TRACE_WRITE(s->iomem.addr + bank * 0x100, offset, 0, value);
         return;
+    }
+
+    if ( offset >= ICTLR_VIRQ_CPU1_OFFSET && offset <= ICTLR_CPU3_IEP_CLASS_OFFSET) {
+        if (s->num_cpu==1) {
+            TRACE_WRITE(s->iomem.addr + bank * 0x100, offset, 0, value);
+            return;
+        }
+        cpu_id = ((offset-ICTLR_VIRQ_CPU1_OFFSET) / 0x18) + 1;
+        offset -= ICTLR_VIRQ_CPU1_OFFSET;
+        offset = (offset % 0x18) + ICTLR_VIRQ_CPU1_OFFSET;
     }
 
     switch (offset & 0xff) {
@@ -246,18 +277,21 @@ static void tegra_ictlr_write(void *opaque, hwaddr offset,
         break;
 
     case ICTLR_CPU_IER_SET_OFFSET:
-        TRACE_WRITE(s->iomem.addr + bank * 0x100, offset, s->cpu_ier[bank], value);
-        s->cpu_ier[bank] |= value;
+    case ICTLR_CPU1_IER_OFFSET:
+        TRACE_WRITE(s->iomem.addr + bank * 0x100, offset, s->cpu_ier[cpu_id][bank], value);
+        s->cpu_ier[cpu_id][bank] |= value;
         break;
 
     case ICTLR_CPU_IER_CLR_OFFSET:
-        TRACE_WRITE(s->iomem.addr + bank * 0x100, offset, s->cpu_ier[bank], value);
-        s->cpu_ier[bank] &= ~value;
+    case ICTLR_CPU1_IER_CLR_OFFSET:
+        TRACE_WRITE(s->iomem.addr + bank * 0x100, offset, s->cpu_ier[cpu_id][bank], value);
+        s->cpu_ier[cpu_id][bank] &= ~value;
         break;
 
     case ICTLR_CPU_IEP_CLASS_OFFSET:
-        TRACE_WRITE(s->iomem.addr + bank * 0x100, offset, s->cpu_iep_class[bank], value);
-        s->cpu_iep_class[bank] = value;
+    case ICTLR_CPU1_IEP_CLASS_OFFSET:
+        TRACE_WRITE(s->iomem.addr + bank * 0x100, offset, s->cpu_iep_class[cpu_id][bank], value);
+        s->cpu_iep_class[cpu_id][bank] = value;
         break;
 
     case ICTLR_COP_IER_SET_OFFSET:
@@ -321,11 +355,16 @@ static void tegra_ictlr_init(Object *obj)
 {
     tegra_ictlr *s = TEGRA_ICTLR(obj);
 
+    s->num_banks = s->num_irq / 32;
+    g_assert(s->num_cpu <= TEGRA_CCPLEX_NCORES);
+    g_assert(s->num_banks <= TEGRA_ICTLR_NUM_BANKS);
+    if (s->num_cpu < TEGRAX1_CCPLEX_NCORES) s->num_cpu = 1;
+
     object_initialize_child(obj, "arb_gnt_ictlr", &s->arb_gnt_ictlr,
                             TYPE_TEGRA_ARBGNT_ICTLR);
 
     memory_region_init_io(&s->iomem, obj, &tegra_ictlr_mem_ops, s,
-                          "tegra.ictlr", 0x400);
+                          "tegra.ictlr", s->num_banks*0x100);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 
     tegra_arb_gnt_ictlr_dev = &s->arb_gnt_ictlr;
@@ -337,10 +376,17 @@ static void tegra_ictlr_init(Object *obj)
     sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->cop_fiq);
 }
 
+static Property tegra_ictlr_properties[] = {
+    DEFINE_PROP_UINT32("num-cpu", tegra_ictlr, num_cpu, TEGRA_CCPLEX_NCORES), \
+    DEFINE_PROP_UINT32("num-irq", tegra_ictlr, num_irq, INT_MAIN_NR), \
+    DEFINE_PROP_END_OF_LIST(),
+};
+
 static void tegra_ictlr_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    device_class_set_props(dc, tegra_ictlr_properties);
     dc->vmsd = &vmstate_tegra_ictlr;
     dc->realize = tegra_ictlr_realize;
     dc->reset = tegra_ictlr_reset;

@@ -414,6 +414,8 @@ static void tegrax1_init(MachineState *machine)
     /* Legacy interrupt controller */
     tegra_ictlr_dev = qdev_new("tegra.ictlr");
     lic = SYS_BUS_DEVICE(tegra_ictlr_dev);
+    qdev_prop_set_uint32(DEVICE(tegra_ictlr_dev), "num-cpu", TEGRAX1_CCPLEX_NCORES);
+    qdev_prop_set_uint32(DEVICE(tegra_ictlr_dev), "num-irq", INT_MAIN_NR);
     sysbus_realize_and_unref(lic, &error_fatal);
     sysbus_mmio_map(lic, 0, TEGRA_PRIMARY_ICTLR_BASE);
 

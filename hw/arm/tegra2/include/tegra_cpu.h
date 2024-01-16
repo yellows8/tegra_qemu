@@ -17,6 +17,9 @@
  *  with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef TEGRA_CPU_H
+#define TEGRA_CPU_H
+
 #include "qemu/notify.h"
 
 enum {
@@ -46,3 +49,5 @@ void tegra_cpu_reset_init(void);
 int tegra_sibling_cpu(int cpu_id);
 int tegra_cpu_halted(int cpu_id);
 void set_is_tegra_cpu(int cpu_id);
+
+#endif // TEGRA_CPU_H
