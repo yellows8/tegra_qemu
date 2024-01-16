@@ -337,6 +337,17 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                 uint32_t dec_mode = (s->regs.SE_CONFIG >> 16) & 0xFF;
                 uint32_t enc_mode = (s->regs.SE_CONFIG >> 24) & 0xFF;
 
+                void* databuf_out = NULL;
+                dma_addr_t databuf_outsize = 0;
+
+                if (cfg_dst==2) { // KEYTABLE
+                    uint32_t dst_word = s->regs.SE_CRYPTO_KEYTABLE_DST & 0x3;
+                    uint32_t dst_keyindex = (s->regs.SE_CRYPTO_KEYTABLE_DST>>8) & 0xF;
+                    size_t keyoff = dst_keyindex*0x10 + dst_word*0x4;
+                    databuf_out = &s->aes_keytable[keyoff];
+                    databuf_outsize = sizeof(s->aes_keytable) - (keyoff<<2);
+                }
+
                 if (dec_alg == 0x1 || enc_alg == 0x1) { // AES
                     uint32_t cfg = s->regs.SE_CRYPTO_CONFIG;
                     bool hash_enable = cfg & 0x1;
@@ -390,20 +401,15 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 
                             if (cipher) {
                                 dma_addr_t tmplen_in = in_entry.size;
-                                dma_addr_t tmplen_out = out_entry.size;
-                                bool dma_out = out_entry.address!=0;
-                                if (cfg_dst==2) dma_out = false;
+                                bool dma_out = cfg_dst==0; // MEMORY
                                 void* databuf_in = dma_memory_map(&address_space_memory, in_entry.address, &tmplen_in, DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
-                                void* databuf_out = NULL;
-                                if (dma_out) databuf_out = dma_memory_map(&address_space_memory, out_entry.address, &tmplen_out, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
+                                if (dma_out) {
+                                    databuf_outsize = out_entry.size;
+                                    databuf_out = dma_memory_map(&address_space_memory, out_entry.address, &databuf_outsize, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
+                                }
 
                                 size_t datasize = (s->regs.SE_CRYPTO_LAST_BLOCK+1)*qcrypto_cipher_get_block_len(cipher_alg);
-                                if (cfg_dst==2) {
-                                    uint32_t dst_word = s->regs.SE_CRYPTO_KEYTABLE_DST & 0x3;
-                                    uint32_t dst_keyindex = (s->regs.SE_CRYPTO_KEYTABLE_DST>>8) & 0xF;
-                                    databuf_out = &s->aes_keytable[dst_keyindex*0x10 + dst_word*0x4];
-                                }
-                                if (datasize > tmplen_in) datasize = tmplen_in;
+                                if (datasize > databuf_outsize) datasize = databuf_outsize;
 
                                 if (databuf_in==NULL || (dma_out && databuf_out==NULL)) {
                                     error_setg(&err, "Failed to DMA map SE AES input/output buffer.");
@@ -443,7 +449,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                 }
 
                                 if (databuf_in) dma_memory_unmap(&address_space_memory, databuf_in, tmplen_in, DMA_DIRECTION_TO_DEVICE, tmplen_in);
-                                if (dma_out && databuf_out) dma_memory_unmap(&address_space_memory, databuf_out, tmplen_out, DMA_DIRECTION_FROM_DEVICE, datasize);
+                                if (dma_out && databuf_out) dma_memory_unmap(&address_space_memory, databuf_out, databuf_outsize, DMA_DIRECTION_FROM_DEVICE, datasize);
 
                                 qcrypto_cipher_free(cipher);
                             }
@@ -453,17 +459,21 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     if (err) error_report_err(err);
                 }
                 else if (enc_alg == 0x2) { // CONFIG_ENC_ALG RNG
-                    dma_addr_t tmplen_out = out_entry.size;
-                    size_t datasize = tmplen_out;
-                    void* databuf_out = dma_memory_map(&address_space_memory, out_entry.address, &tmplen_out, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
+                    size_t datasize = (s->regs.SE_CRYPTO_LAST_BLOCK+1)*qcrypto_cipher_get_block_len(QCRYPTO_CIPHER_ALG_AES_128);
+                    if (cfg_dst==0) { // MEMORY
+                        databuf_outsize = out_entry.size;
+                        databuf_out = dma_memory_map(&address_space_memory, out_entry.address, &databuf_outsize, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
+                    }
                     if (databuf_out==NULL) {
-                        error_setg(&err, "Failed to DMA map SE RNG output buffer.");
+                        if (cfg_dst==0) error_setg(&err, "Failed to DMA map SE RNG output buffer.");
+                        else error_setg(&err, "SE RNG: Ignoring cfg_dst=%d.", cfg_dst);
                         datasize = 0;
                     }
                     else {
+                        if(datasize>databuf_outsize) datasize = databuf_outsize;
                         qemu_guest_getrandom(databuf_out, datasize, &err);
                         //qemu_hexdump(stdout, "RNG output", databuf_out, datasize);
-                        dma_memory_unmap(&address_space_memory, databuf_out, tmplen_out, DMA_DIRECTION_FROM_DEVICE, datasize);
+                        if (cfg_dst==0) dma_memory_unmap(&address_space_memory, databuf_out, databuf_outsize, DMA_DIRECTION_FROM_DEVICE, datasize);
                     }
                     if (err) error_report_err(err);
                 }
