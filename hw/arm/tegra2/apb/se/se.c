@@ -33,6 +33,7 @@
 #include "crypto/akcipher.h"
 #include "crypto/akcipherpriv.h"
 #include "crypto/hash.h"
+#include "qemu/guest-random.h"
 #include "qapi/error.h"
 #include "qemu/bswap.h"
 
@@ -460,10 +461,8 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                         datasize = 0;
                     }
                     else {
-                        for (size_t i=0; i<datasize; i++) {
-                            ((uint8_t*)databuf_out)[i] = rand(); // TODO: Add option for using proper RNG?
-                        }
-                        //qemu_hexdump(stdout, "RMG output", databuf_out, datasize);
+                        qemu_guest_getrandom(databuf_out, datasize, &err);
+                        //qemu_hexdump(stdout, "RNG output", databuf_out, datasize);
                         dma_memory_unmap(&address_space_memory, databuf_out, tmplen_out, DMA_DIRECTION_FROM_DEVICE, datasize);
                     }
                     if (err) error_report_err(err);
