@@ -559,6 +559,10 @@ static void tegrax1_init(MachineState *machine)
     tegra_sdmmc3_dev = tegra_init_sdmmc(2, TEGRA_SDMMC3_BASE, DIRQ(INT_SDMMC3), false, 0, &tegra_sdmmc3_vendor_dev);
     tegra_sdmmc4_dev = tegra_init_sdmmc(3, TEGRA_SDMMC4_BASE, DIRQ(INT_SDMMC4), true, 0x400000, &tegra_sdmmc4_vendor_dev);
 
+    /* Timer0 */
+    tegra_timer10_dev = sysbus_create_simple("tegra.timer",
+                                            TEGRA_TMR0_BASE, DIRQ(INT_TMR0));
+
     /* Timer1 */
     tegra_timer1_dev = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR1_BASE, DIRQ(INT_TMR1));
@@ -578,6 +582,42 @@ static void tegrax1_init(MachineState *machine)
     /* Timer4 */
     tegra_timer4_dev = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR4_BASE, DIRQ(INT_TMR4));
+
+    /* Timer5 */
+    tegra_timer5_dev = sysbus_create_simple("tegra.timer",
+                                            TEGRA_TMR5_BASE, DIRQ(INT_TMR5));
+
+    /* Timer6 */
+    tegra_timer6_dev = sysbus_create_simple("tegra.timer",
+                                            TEGRA_TMR6_BASE, DIRQ(INT_TMR6));
+
+    /* Timer7 */
+    tegra_timer7_dev = sysbus_create_simple("tegra.timer",
+                                            TEGRA_TMR7_BASE, DIRQ(INT_TMR7));
+
+    /* Timer8 */
+    tegra_timer8_dev = sysbus_create_simple("tegra.timer",
+                                            TEGRA_TMR8_BASE, DIRQ(INT_TMR8));
+
+    /* Timer9 */
+    tegra_timer9_dev = sysbus_create_simple("tegra.timer",
+                                            TEGRA_TMR9_BASE, DIRQ(INT_TMR9));
+
+    /* Timer10 */
+    tegra_timer10_dev = sysbus_create_simple("tegra.timer",
+                                            TEGRA_TMR10_BASE, DIRQ(INT_TMR10));
+
+    /* Timer11 */
+    tegra_timer11_dev = sysbus_create_simple("tegra.timer",
+                                            TEGRA_TMR11_BASE, DIRQ(INT_TMR11));
+
+    /* Timer12 */
+    tegra_timer12_dev = sysbus_create_simple("tegra.timer",
+                                            TEGRA_TMR12_BASE, DIRQ(INT_TMR12));
+
+    /* Timer13 */
+    tegra_timer13_dev = sysbus_create_simple("tegra.timer",
+                                            TEGRA_TMR13_BASE, DIRQ(INT_TMR13));
 
     /* UART controllers */
     tegra_uarta_dev = serial_mm_init(sysmem, TEGRA_UARTA_BASE, 2,
