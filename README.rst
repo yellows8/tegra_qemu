@@ -40,9 +40,10 @@ Run Tegra X1
 
 .. code-block:: shell
 
-  ./qemu-system-aarch64 -machine tegrax1 -m 4G -bios {BPMP IRAM bootloader path} -drive if=sd,index=0,format=raw,file={sd image path} -drive if=sd,index=1,format=raw,file={emmc image path}
+  ./qemu-system-aarch64 -machine tegrax1 -m 4G -bios {BPMP IRAM bootloader path}
 
-* The emmc image must start with the 0x400000-byte BOOT0 and BOOT1 partitions, with the main MMC partition following that at byte-offset 0x800000.
+* The sd -drive index 0-3 corresponds to the SDMMC1-SDMMC4 controllers. To (optionally) attach storage to each controller: ``-drive if=sd,index={0-3},format=raw,file={image path}``
+* Use index=3 for emmc, and (for example) 0 for sd. The emmc image must start with the 0x400000-byte BOOT0 and BOOT1 partitions, with the main MMC partition following that at byte-offset 0x800000.
 
 * Each input ``-serial`` argument corresponds to UART-A - UART-D. If UART-A output with stdio instead of the default is wanted, this can be used for example: ``-chardev stdio,id=char0 -serial chardev:char0``
 

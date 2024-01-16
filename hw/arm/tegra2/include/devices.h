@@ -42,6 +42,8 @@ extern void * tegra_mc1_dev;
 extern void * tegra_pmc_dev;
 extern void * tegra_rtc_dev;
 extern void * tegra_sdhci1_dev;
+extern void * tegra_sdhci2_dev;
+extern void * tegra_sdhci3_dev;
 extern void * tegra_sdhci4_dev;
 extern void * tegra_timer1_dev;
 extern void * tegra_timer2_dev;
