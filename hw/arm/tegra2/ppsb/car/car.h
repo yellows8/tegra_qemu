@@ -761,7 +761,8 @@ typedef union plla_misc_u {
 } plla_misc_t;
 
 #define PLLU_BASE_OFFSET 0xC0
-#define PLLU_BASE_RESET  0x0000010C
+#define PLLU_BASE_TEGRA2_RESET   0x0000010C
+#define PLLU_BASE_TEGRAX1_RESET  0x00011902
 #define PLLU_BASE_WRMASK 0xF7FFFFFF
 typedef union pllu_base_u {
     struct {
@@ -2021,6 +2022,12 @@ typedef union rst_cpu_cmplx_clr_u {
 
     uint32_t reg32;
 } rst_cpu_cmplx_clr_t;
+
+#define UTMIP_PLL_CFG0_OFFSET 0x480
+#define UTMIP_PLL_CFG0_RESET  0x00190100
+typedef union utmip_pll_cfg0_u {
+    uint32_t reg32;
+} utmip_pll_cfg0_t;
 
 #define RST_CONTROLLER_PLLC4_BASE_OFFSET 0x5A4
 #define RST_CONTROLLER_PLLC4_BASE_RESET  0x000C2302
