@@ -57,6 +57,12 @@ typedef union apb_dma_u {
     uint32_t reg32;
 } apb_dma_t;
 
+#define AHB_MASTER_SWID_0_OFFSET 0x14
+#define AHB_MASTER_SWID_0_RESET  0x00000000
+typedef union ahb_master_swid_0_u {
+    uint32_t reg32;
+} ahb_master_swid_0_t;
+
 #define IDE_OFFSET 0x18
 #define IDE_RESET  0x000200BF
 typedef union ide_u {
@@ -176,6 +182,12 @@ typedef union vcp_ahb_bridge_u {
     uint32_t reg32;
 } vcp_ahb_bridge_t;
 
+#define AHB_MASTER_SWID_1_OFFSET 0x34
+#define AHB_MASTER_SWID_1_RESET  0x00000000
+typedef union ahb_master_swid_1_u {
+    uint32_t reg32;
+} ahb_master_swid_1_t;
+
 #define NAND_OFFSET 0x3C
 #define NAND_RESET  0x0000000A
 typedef union nand_u {
@@ -225,6 +237,18 @@ typedef union xio_u {
 
     uint32_t reg32;
 } xio_t;
+
+#define SE_OFFSET 0x4C
+#define SE_RESET  0x00020000
+typedef union se_u {
+    uint32_t reg32;
+} se_t;
+
+#define TZRAM_OFFSET 0x50
+#define TZRAM_RESET  0x00000081
+typedef union tzram_u {
+    uint32_t reg32;
+} tzram_t;
 
 #define BSEV_OFFSET 0x60
 #define BSEV_RESET  0x00000002
@@ -370,6 +394,42 @@ typedef union sdmmc3_u {
 
     uint32_t reg32;
 } sdmmc3_t;
+
+#define ARC_OFFSET 0x94
+#define ARC_RESET  0x00060000
+typedef union arc_u {
+    uint32_t reg32;
+} arc_t;
+
+#define WRQ_EMPTY_OFFSET 0xC0
+#define WRQ_EMPTY_RESET  0x00000000
+typedef union wrq_empty_u {
+    uint32_t reg32;
+} wrq_empty_t;
+
+#define MEM_PREFETCH_CFG5_OFFSET 0xC8
+#define MEM_PREFETCH_CFG5_RESET  0x14800800
+typedef union mem_prefetch_cfg5_u {
+    uint32_t reg32;
+} mem_prefetch_cfg5_t;
+
+#define MEM_PREFETCH_CFG6_OFFSET 0xCC
+#define MEM_PREFETCH_CFG6_RESET  0x18800800
+typedef union mem_prefetch_cfg6_u {
+    uint32_t reg32;
+} mem_prefetch_cfg6_t;
+
+#define MEM_PREFETCH_CFG7_OFFSET 0xD0
+#define MEM_PREFETCH_CFG7_RESET  0x1C800800
+typedef union mem_prefetch_cfg7_u {
+    uint32_t reg32;
+} mem_prefetch_cfg7_t;
+
+#define MEM_PREFETCH_CFG8_OFFSET 0xD4
+#define MEM_PREFETCH_CFG8_RESET  0x20800800
+typedef union mem_prefetch_cfg8_u {
+    uint32_t reg32;
+} mem_prefetch_cfg8_t;
 
 #define MEM_PREFETCH_CFG_X_OFFSET 0xD8
 #define MEM_PREFETCH_CFG_X_RESET  0x00000000
@@ -564,7 +624,20 @@ typedef union ahb_arbitration_cop_abort_addr_u {
     uint32_t reg32;
 } ahb_arbitration_cop_abort_addr_t;
 
-#define AHB_AVPC_MCCIF_FIFOCTRL_OFFSET 0x23C
+#define AHB_SPARE_REG_OFFSET 0x10C
+#define AHB_SPARE_REG_RESET  0x00000060
+typedef union ahb_spare_reg_u {
+    uint32_t reg32;
+} ahb_spare_reg_t;
+
+#define XBAR_SPARE_REG_OFFSET 0x110
+#define XBAR_SPARE_REG_RESET  0x00000000
+typedef union xbar_spare_reg_u {
+    uint32_t reg32;
+} xbar_spare_reg_t;
+
+#define AHB_AVPC_MCCIF_FIFOCTRL_TEGRA2_OFFSET 0x23C
+#define AHB_AVPC_MCCIF_FIFOCTRL_TEGRAX1_OFFSET 0x12C
 #define AHB_AVPC_MCCIF_FIFOCTRL_RESET  0x00000000
 typedef union ahb_avpc_mccif_fifoctrl_u {
     struct {
@@ -578,7 +651,8 @@ typedef union ahb_avpc_mccif_fifoctrl_u {
     uint32_t reg32;
 } ahb_avpc_mccif_fifoctrl_t;
 
-#define AHB_TIMEOUT_WCOAL_AVPC_OFFSET 0x240
+#define AHB_TIMEOUT_WCOAL_AVPC_TEGRA2_OFFSET 0x240
+#define AHB_TIMEOUT_WCOAL_AVPC_TEGRAX1_OFFSET 0x120
 #define AHB_TIMEOUT_WCOAL_AVPC_RESET  0x00000032
 typedef union ahb_timeout_wcoal_avpc_u {
     struct {
@@ -588,6 +662,12 @@ typedef union ahb_timeout_wcoal_avpc_u {
 
     uint32_t reg32;
 } ahb_timeout_wcoal_avpc_t;
+
+#define AHB_MPCORE_MCCIF_FIFOCTRL_OFFSET 0x124
+#define AHB_MPCORE_MCCIF_FIFOCTRL_RESET  0x00000000
+typedef union ahb_mpcore_mccif_fifoctrl_u {
+    uint32_t reg32;
+} ahb_mpcore_mccif_fifoctrl_t;
 
 #define AHB_ARBITRATION_DISABLE_OFFSET 0x0
 #define AHB_ARBITRATION_DISABLE_RESET  0x00000000

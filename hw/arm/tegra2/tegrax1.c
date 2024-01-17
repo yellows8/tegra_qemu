@@ -503,8 +503,8 @@ static void tegrax1_init(MachineState *machine)
                                              DIRQ(INT_AHB_DMA));
 
     /* AHB Gizmo controller */
-    /*tegra_ahb_gizmo_dev = sysbus_create_simple("tegra.ahb_gizmo",
-                                               TEGRA_AHB_GIZMO_BASE, NULL);*/
+    tegra_ahb_gizmo_dev = sysbus_create_simple("tegra.ahb_gizmo",
+                                               TEGRA_AHB_GIZMO_BASE, NULL);
 
     /* APB FUSE controller */
     tegra_fuse_dev = sysbus_create_simple("tegra.fuse", TEGRA_FUSE_BASE, NULL);
