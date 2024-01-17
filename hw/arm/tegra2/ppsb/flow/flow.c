@@ -687,7 +687,7 @@ static void tegra_flow_priv_reset(DeviceState *dev)
     s->csr[TEGRA_CCPLEX_CORE3].reg32 = CPU_CSR_RESET;
 
     s->halt_events[TEGRA_BPMP].reg32 = HALT_COP_EVENTS_RESET;
-    if (s->num_cpu>=TEGRAX1_CCPLEX_NCORES) s->halt_events[TEGRA_BPMP].reg32 |= (2<<29); // Tell secmon BPMP is halted. TODO: Handle this properly.
+    //if (s->num_cpu>=TEGRAX1_CCPLEX_NCORES) s->halt_events[TEGRA_BPMP].reg32 |= (2<<29); // Tell secmon BPMP is halted. This is only needed when not emulating the BPMP.
     s->csr[TEGRA_BPMP].reg32 = COP_CSR_RESET;
 
     s->xrq_events.reg32 = XRQ_EVENTS_RESET;
