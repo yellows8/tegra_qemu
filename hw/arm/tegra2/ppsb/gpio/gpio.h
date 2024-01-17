@@ -260,6 +260,12 @@ typedef union gpio_msk_out_u {
     uint32_t reg32;
 } gpio_msk_out_t;
 
+#define GPIO_DB_CTRL_OFFSET 0x830
+#define GPIO_DB_CTRL_RESET  0x00000000
+typedef union gpio_db_ctrl_u {
+    uint32_t reg32;
+} gpio_db_ctrl_t;
+
 #define GPIO_MSK_INT_STA_OFFSET 0x840
 #define GPIO_MSK_INT_STA_RESET  0x00000000
 typedef union gpio_msk_int_sta_u {
@@ -337,5 +343,11 @@ typedef union gpio_msk_int_lvl_u {
 
     uint32_t reg32;
 } gpio_msk_int_lvl_t;
+
+#define GPIO_DB_CNT_OFFSET 0x870
+#define GPIO_DB_CNT_RESET  0x00000000
+typedef union gpio_db_cnt_u {
+    uint32_t reg32;
+} gpio_db_cnt_t;
 
 #endif // TEGRA_GPIO_H

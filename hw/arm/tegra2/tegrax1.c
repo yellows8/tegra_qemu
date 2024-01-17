@@ -545,7 +545,8 @@ static void tegrax1_init(MachineState *machine)
                                             DIRQ(INT_GPIO1), DIRQ(INT_GPIO2),
                                             DIRQ(INT_GPIO3), DIRQ(INT_GPIO4),
                                             DIRQ(INT_GPIO5), DIRQ(INT_GPIO6),
-                                            DIRQ(INT_GPIO7), NULL);
+                                            DIRQ(INT_GPIO7), DIRQ(INT_GPIO8),
+                                            NULL);
 
     /* Power managment controller */
     tegra_pmc_dev = sysbus_create_simple("tegra.pmc", TEGRA_PMC_BASE, NULL);
