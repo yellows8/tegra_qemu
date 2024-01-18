@@ -506,6 +506,18 @@ typedef union osc_freq_det_status_u {
     uint32_t reg32;
 } osc_freq_det_status_t;
 
+#define PLLE_SS_CNTL_OFFSET 0x68
+#define PLLE_SS_CNTL_RESET  0x00005C00
+typedef union plle_ss_cntl_u {
+    uint32_t reg32;
+} plle_ss_cntl_t;
+
+#define PLLE_MISC1_OFFSET 0x6C
+#define PLLE_MISC1_RESET  0x00000010
+typedef union plle_misc1_u {
+    uint32_t reg32;
+} plle_misc1_t;
+
 #define PLLC_BASE_OFFSET 0x80
 #define PLLC_BASE_RESET  0x0000010C
 #define PLLC_BASE_WRMASK 0xF7FFFFFF
@@ -541,9 +553,16 @@ typedef union pllc_out_u {
     uint32_t reg32;
 } pllc_out_t;
 
-#define PLLC_MISC_OFFSET 0x8C
-#define PLLC_MISC_RESET  0x00000100
+#define PLLC_MISC_OFFSET 0x88
+#define PLLC_MISC_RESET  0x40000000
 typedef union pllc_misc_u {
+    uint32_t reg32;
+} pllc_misc_t;
+
+#define PLLC_MISC_1_OFFSET 0x8C
+#define PLLC_MISC_1_TEGRA2_RESET  0x00000100
+#define PLLC_MISC_1_TEGRAX1_RESET 0x08000000
+typedef union pllc_misc_1_u {
     struct {
         unsigned int pllc_vcocon:4;         /* Base PLLC VCO range setup control */
         unsigned int pllc_lfcon:4;          /* Base PLLC loop filter setup control */
@@ -560,7 +579,7 @@ typedef union pllc_misc_u {
     };
 
     uint32_t reg32;
-} pllc_misc_t;
+} pllc_misc_1_t;
 
 #define PLLM_BASE_OFFSET 0x90
 #define PLLM_BASE_RESET  0x0000010C
@@ -597,9 +616,16 @@ typedef union pllm_out_u {
     uint32_t reg32;
 } pllm_out_t;
 
-#define PLLM_MISC_OFFSET 0x9C
-#define PLLM_MISC_RESET  0x00000100
-typedef union pllm_misc_u {
+#define PLLM_MISC1_OFFSET 0x98
+#define PLLM_MISC1_RESET  0x00000000
+typedef union pllm_misc1_u {
+    uint32_t reg32;
+} pllm_misc1_t;
+
+#define PLLM_MISC2_OFFSET 0x9C
+#define PLLM_MISC2_TEGRA2_RESET  0x00000100
+#define PLLM_MISC2_TEGRAX1_RESET 0x00000010
+typedef union pllm_misc2_u {
     struct {
         unsigned int pllm_vcocon:4;         /* Base PLLM VCO range setup control */
         unsigned int pllm_lfcon:4;          /* Base PLLM loop filter setup control */
@@ -617,7 +643,7 @@ typedef union pllm_misc_u {
     };
 
     uint32_t reg32;
-} pllm_misc_t;
+} pllm_misc2_t;
 
 #define PLLP_BASE_OFFSET 0xA0
 #define PLLP_BASE_RESET  0x0000010C
@@ -739,8 +765,15 @@ typedef union plla_out_u {
     uint32_t reg32;
 } plla_out_t;
 
+#define PLLA_MISC1_OFFSET 0xB8
+#define PLLA_MISC1_RESET  0x00000000
+typedef union plla_misc1_u {
+    uint32_t reg32;
+} plla_misc1_t;
+
 #define PLLA_MISC_OFFSET 0xBC
-#define PLLA_MISC_RESET  0x00000100
+#define PLLA_MISC_TEGRA2_RESET  0x00000100
+#define PLLA_MISC_TEGRAX1_RESET 0x12000000
 typedef union plla_misc_u {
     struct {
         unsigned int plla_vcocon:4;         /* Base PLLA VCO range setup control */
@@ -786,8 +819,21 @@ typedef union pllu_base_u {
     uint32_t reg32;
 } pllu_base_t;
 
+#define PLLU_OUTA_OFFSET 0xC4
+#define PLLU_OUTA_RESET  0x00020002
+typedef union pllu_outa_u {
+    uint32_t reg32;
+} pllu_outa_t;
+
+#define PLLU_MISC1_OFFSET 0xC8
+#define PLLU_MISC1_RESET  0x00020002
+typedef union pllu_misc1_u {
+    uint32_t reg32;
+} pllu_misc1_t;
+
 #define PLLU_MISC_OFFSET 0xCC
-#define PLLU_MISC_RESET  0x00000100
+#define PLLU_MISC_TEGRA2_RESET  0x00000100
+#define PLLU_MISC_TEGRAX1_RESET 0x00000000
 typedef union pllu_misc_u {
     struct {
         unsigned int pllu_vcocon:4;         /* Base PLLU VCO range setup control */
@@ -824,6 +870,12 @@ typedef union plld_base_u {
 
     uint32_t reg32;
 } plld_base_t;
+
+#define PLLD_MISC1_OFFSET 0xD8
+#define PLLD_MISC1_RESET  0x00000000
+typedef union plld_misc1_u {
+    uint32_t reg32;
+} plld_misc1_t;
 
 #define PLLD_MISC_OFFSET 0xDC
 #define PLLD_MISC_RESET  0x00000100
@@ -925,6 +977,30 @@ typedef union plle_misc_u {
 
     uint32_t reg32;
 } plle_misc_t;
+
+#define PLLE_SS_CNTL1_OFFSET 0xF0
+#define PLLE_SS_CNTL1_RESET  0x00000000
+typedef union plle_ss_cntl1_u {
+    uint32_t reg32;
+} plle_ss_cntl1_t;
+
+#define PLLE_SS_CNTL2_OFFSET 0xF4
+#define PLLE_SS_CNTL2_RESET  0x00000000
+typedef union plle_ss_cntl2_u {
+    uint32_t reg32;
+} plle_ss_cntl2_t;
+
+#define LVL2_CLK_GATE_OVRA_OFFSET 0xF8
+#define LVL2_CLK_GATE_OVRA_RESET  0x00000000
+typedef union lvl2_clk_gate_ovra_u {
+    uint32_t reg32;
+} lvl2_clk_gate_ovra_t;
+
+#define LVL2_CLK_GATE_OVRB_OFFSET 0xFC
+#define LVL2_CLK_GATE_OVRB_RESET  0x00000000
+typedef union lvl2_clk_gate_ovrb_u {
+    uint32_t reg32;
+} lvl2_clk_gate_ovrb_t;
 
 #define CLK_SOURCE_I2S1_OFFSET 0x100
 #define CLK_SOURCE_I2S1_RESET  0xD0000000

@@ -65,27 +65,39 @@ typedef struct tegra_car_state {
     DEFINE_REG32(pll_lfsr);
     DEFINE_REG32(osc_freq_det);
     DEFINE_REG32(osc_freq_det_status);
+    DEFINE_REG32(plle_ss_cntl);
+    DEFINE_REG32(plle_misc1);
     DEFINE_REG32(pllc_base);
     DEFINE_REG32(pllc_out);
     DEFINE_REG32(pllc_misc);
+    DEFINE_REG32(pllc_misc_1);
     DEFINE_REG32(pllm_base);
     DEFINE_REG32(pllm_out);
-    DEFINE_REG32(pllm_misc);
+    DEFINE_REG32(pllm_misc1);
+    DEFINE_REG32(pllm_misc2);
     DEFINE_REG32(pllp_base);
     DEFINE_REG32(pllp_outa);
     DEFINE_REG32(pllp_outb);
     DEFINE_REG32(pllp_misc);
     DEFINE_REG32(plla_base);
     DEFINE_REG32(plla_out);
+    DEFINE_REG32(plla_misc1);
     DEFINE_REG32(plla_misc);
     DEFINE_REG32(pllu_base);
+    DEFINE_REG32(pllu_outa);
+    DEFINE_REG32(pllu_misc1);
     DEFINE_REG32(pllu_misc);
     DEFINE_REG32(plld_base);
+    DEFINE_REG32(plld_misc1);
     DEFINE_REG32(plld_misc);
     DEFINE_REG32(pllx_base);
     DEFINE_REG32(pllx_misc);
     DEFINE_REG32(plle_base);
     DEFINE_REG32(plle_misc);
+    DEFINE_REG32(plle_ss_cntl1);
+    DEFINE_REG32(plle_ss_cntl2);
+    DEFINE_REG32(lvl2_clk_gate_ovra);
+    DEFINE_REG32(lvl2_clk_gate_ovrb);
     DEFINE_REG32(clk_source_i2s1);
     DEFINE_REG32(clk_source_i2s2);
     DEFINE_REG32(clk_source_spdif_out);
@@ -139,6 +151,7 @@ typedef struct tegra_car_state {
     DEFINE_REG32(utmip_pll_cfg0);
     DEFINE_REG32(rst_controller_pllc4_base);
     DEFINE_REG32(rst_controller_pllmb_base);
+    uint32_t regs[0x748>>2];
 } tegra_car;
 
 static const VMStateDescription vmstate_tegra_car = {
@@ -169,27 +182,39 @@ static const VMStateDescription vmstate_tegra_car = {
         VMSTATE_UINT32(pll_lfsr.reg32, tegra_car),
         VMSTATE_UINT32(osc_freq_det.reg32, tegra_car),
         VMSTATE_UINT32(osc_freq_det_status.reg32, tegra_car),
+        VMSTATE_UINT32(plle_ss_cntl.reg32, tegra_car),
+        VMSTATE_UINT32(plle_misc1.reg32, tegra_car),
         VMSTATE_UINT32(pllc_base.reg32, tegra_car),
         VMSTATE_UINT32(pllc_out.reg32, tegra_car),
         VMSTATE_UINT32(pllc_misc.reg32, tegra_car),
+        VMSTATE_UINT32(pllc_misc_1.reg32, tegra_car),
         VMSTATE_UINT32(pllm_base.reg32, tegra_car),
         VMSTATE_UINT32(pllm_out.reg32, tegra_car),
-        VMSTATE_UINT32(pllm_misc.reg32, tegra_car),
+        VMSTATE_UINT32(pllm_misc1.reg32, tegra_car),
+        VMSTATE_UINT32(pllm_misc2.reg32, tegra_car),
         VMSTATE_UINT32(pllp_base.reg32, tegra_car),
         VMSTATE_UINT32(pllp_outa.reg32, tegra_car),
         VMSTATE_UINT32(pllp_outb.reg32, tegra_car),
         VMSTATE_UINT32(pllp_misc.reg32, tegra_car),
         VMSTATE_UINT32(plla_base.reg32, tegra_car),
         VMSTATE_UINT32(plla_out.reg32, tegra_car),
+        VMSTATE_UINT32(plla_misc1.reg32, tegra_car),
         VMSTATE_UINT32(plla_misc.reg32, tegra_car),
         VMSTATE_UINT32(pllu_base.reg32, tegra_car),
+        VMSTATE_UINT32(pllu_outa.reg32, tegra_car),
+        VMSTATE_UINT32(pllu_misc1.reg32, tegra_car),
         VMSTATE_UINT32(pllu_misc.reg32, tegra_car),
         VMSTATE_UINT32(plld_base.reg32, tegra_car),
+        VMSTATE_UINT32(plld_misc1.reg32, tegra_car),
         VMSTATE_UINT32(plld_misc.reg32, tegra_car),
         VMSTATE_UINT32(pllx_base.reg32, tegra_car),
         VMSTATE_UINT32(pllx_misc.reg32, tegra_car),
         VMSTATE_UINT32(plle_base.reg32, tegra_car),
         VMSTATE_UINT32(plle_misc.reg32, tegra_car),
+        VMSTATE_UINT32(plle_ss_cntl1.reg32, tegra_car),
+        VMSTATE_UINT32(plle_ss_cntl2.reg32, tegra_car),
+        VMSTATE_UINT32(lvl2_clk_gate_ovra.reg32, tegra_car),
+        VMSTATE_UINT32(lvl2_clk_gate_ovrb.reg32, tegra_car),
         VMSTATE_UINT32(clk_source_i2s1.reg32, tegra_car),
         VMSTATE_UINT32(clk_source_i2s2.reg32, tegra_car),
         VMSTATE_UINT32(clk_source_spdif_out.reg32, tegra_car),
@@ -243,6 +268,7 @@ static const VMStateDescription vmstate_tegra_car = {
         VMSTATE_UINT32(rst_controller_pllc4_base.reg32, tegra_car),
         VMSTATE_UINT32(rst_controller_pllmb_base.reg32, tegra_car),
         VMSTATE_UINT32(clk_source_la.reg32, tegra_car),
+        VMSTATE_UINT32_ARRAY(regs, tegra_car, 0x748>>2),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -497,6 +523,12 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
     case OSC_FREQ_DET_STATUS_OFFSET:
         ret = s->osc_freq_det_status.reg32;
         break;
+    case PLLE_SS_CNTL_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->plle_ss_cntl.reg32;
+        break;
+    case PLLE_MISC1_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->plle_misc1.reg32;
+        break;
     case PLLC_BASE_OFFSET:
         ret = s->pllc_base.reg32;
         break;
@@ -504,7 +536,10 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
         ret = s->pllc_out.reg32;
         break;
     case PLLC_MISC_OFFSET:
-        ret = s->pllc_misc.reg32;
+        if (tegra_board == TEGRAX1_BOARD) ret = s->pllc_misc.reg32;
+        break;
+    case PLLC_MISC_1_OFFSET:
+        ret = s->pllc_misc_1.reg32;
         break;
     case PLLM_BASE_OFFSET:
         ret = s->pllm_base.reg32;
@@ -512,8 +547,11 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
     case PLLM_OUT_OFFSET:
         ret = s->pllm_out.reg32;
         break;
-    case PLLM_MISC_OFFSET:
-        ret = s->pllm_misc.reg32;
+    case PLLM_MISC1_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->pllm_misc1.reg32;
+        break;
+    case PLLM_MISC2_OFFSET:
+        ret = s->pllm_misc2.reg32;
         break;
     case PLLP_BASE_OFFSET:
         ret = s->pllp_base.reg32;
@@ -533,17 +571,29 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
     case PLLA_OUT_OFFSET:
         ret = s->plla_out.reg32;
         break;
+    case PLLA_MISC1_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->plla_misc1.reg32;
+        break;
     case PLLA_MISC_OFFSET:
         ret = s->plla_misc.reg32;
         break;
     case PLLU_BASE_OFFSET:
         ret = s->pllu_base.reg32;
         break;
+    case PLLU_OUTA_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->pllu_outa.reg32;
+        break;
+    case PLLU_MISC1_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->pllu_misc1.reg32;
+        break;
     case PLLU_MISC_OFFSET:
         ret = s->pllu_misc.reg32;
         break;
     case PLLD_BASE_OFFSET:
         ret = s->plld_base.reg32;
+        break;
+    case PLLD_MISC1_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->plld_misc1.reg32;
         break;
     case PLLD_MISC_OFFSET:
         ret = s->plld_misc.reg32;
@@ -559,6 +609,18 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
         break;
     case PLLE_MISC_OFFSET:
         ret = s->plle_misc.reg32;
+        break;
+    case PLLE_SS_CNTL1_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->plle_ss_cntl1.reg32;
+        break;
+    case PLLE_SS_CNTL2_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->plle_ss_cntl2.reg32;
+        break;
+    case LVL2_CLK_GATE_OVRA_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->lvl2_clk_gate_ovra.reg32;
+        break;
+    case LVL2_CLK_GATE_OVRB_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->lvl2_clk_gate_ovrb.reg32;
         break;
     case CLK_SOURCE_I2S1_OFFSET:
         ret = s->clk_source_i2s1.reg32;
@@ -720,10 +782,10 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
         ret = s->clk_source_la.reg32;
         break;
     default:
+        if (offset == s->rst_cpu_cmplx_clr_offset) ret = s->rst_cpu_cmplx_set.reg32;
+        else if (tegra_board == TEGRAX1_BOARD && offset <= sizeof(s->regs)-4) ret = s->regs[offset>>2];
         break;
     }
-
-    if (offset == s->rst_cpu_cmplx_clr_offset) ret = s->rst_cpu_cmplx_set.reg32;
 
     TRACE_READ(s->iomem.addr, offset, ret);
 
@@ -838,6 +900,14 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->osc_freq_det.reg32, value);
         s->osc_freq_det.reg32 = value;
         break;
+    case PLLE_SS_CNTL_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->plle_ss_cntl.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD) s->plle_ss_cntl.reg32 = value;
+        break;
+    case PLLE_MISC1_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->plle_misc1.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD) s->plle_misc1.reg32 = value;
+        break;
     case PLLC_BASE_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pllc_base.reg32, value & PLLC_BASE_WRMASK);
         WR_MASKED(s->pllc_base.reg32, value, PLLC_BASE);
@@ -848,7 +918,11 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         break;
     case PLLC_MISC_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pllc_misc.reg32, value);
-        s->pllc_misc.reg32 = value;
+        if (tegra_board == TEGRAX1_BOARD) s->pllc_misc.reg32 = value;
+        break;
+    case PLLC_MISC_1_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->pllc_misc_1.reg32, value);
+        s->pllc_misc_1.reg32 = value;
         break;
     case PLLM_BASE_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pllm_base.reg32, value & PLLM_BASE_WRMASK);
@@ -858,9 +932,13 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->pllm_out.reg32, value);
         s->pllm_out.reg32 = value;
         break;
-    case PLLM_MISC_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->pllm_misc.reg32, value);
-        s->pllm_misc.reg32 = value;
+    case PLLM_MISC1_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->pllm_misc1.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD) s->pllm_misc1.reg32 = value;
+        break;
+    case PLLM_MISC2_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->pllm_misc2.reg32, value);
+        s->pllm_misc2.reg32 = value;
         break;
     case PLLP_BASE_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pllp_base.reg32, value & PLLP_BASE_WRMASK);
@@ -886,6 +964,10 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->plla_out.reg32, value);
         s->plla_out.reg32 = value;
         break;
+    case PLLA_MISC1_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->plla_misc1.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD) s->plla_misc1.reg32 = value;
+        break;
     case PLLA_MISC_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->plla_misc.reg32, value);
         s->plla_misc.reg32 = value;
@@ -894,6 +976,14 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->pllu_base.reg32, value & PLLU_BASE_WRMASK);
         WR_MASKED(s->pllu_base.reg32, value, PLLU_BASE);
         break;
+    case PLLU_OUTA_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->pllu_outa.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD) s->pllu_outa.reg32 = value;
+        break;
+    case PLLU_MISC1_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->pllu_misc1.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD) s->pllu_misc1.reg32 = value;
+        break;
     case PLLU_MISC_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pllu_misc.reg32, value);
         s->pllu_misc.reg32 = value;
@@ -901,6 +991,10 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
     case PLLD_BASE_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->plld_base.reg32, value & PLLD_BASE_WRMASK);
         WR_MASKED(s->plld_base.reg32, value, PLLD_BASE);
+        break;
+    case PLLD_MISC1_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->plld_misc1.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD) s->plld_misc1.reg32 = value;
         break;
     case PLLD_MISC_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->plld_misc.reg32, value);
@@ -921,6 +1015,22 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
     case PLLE_MISC_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->plle_misc.reg32, value & PLLE_MISC_WRMASK);
         WR_MASKED(s->plle_misc.reg32, value, PLLE_MISC);
+        break;
+    case PLLE_SS_CNTL1_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->plle_ss_cntl1.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD) s->plle_ss_cntl1.reg32 = value;
+        break;
+    case PLLE_SS_CNTL2_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->plle_ss_cntl2.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD) s->plle_ss_cntl2.reg32 = value;
+        break;
+    case LVL2_CLK_GATE_OVRA_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->lvl2_clk_gate_ovra.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD) s->lvl2_clk_gate_ovra.reg32 = value;
+        break;
+    case LVL2_CLK_GATE_OVRB_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->lvl2_clk_gate_ovrb.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD) s->lvl2_clk_gate_ovrb.reg32 = value;
         break;
     case CLK_SOURCE_I2S1_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->clk_source_i2s1.reg32, value);
@@ -1241,7 +1351,11 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         s->clk_source_la.reg32 = value;
         break;
     default:
-        TRACE_WRITE(s->iomem.addr, offset, 0, value);
+        if (offset != s->rst_cpu_cmplx_clr_offset && offset <= sizeof(s->regs)-4) {
+            TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
+            s->regs[offset>>2] = value;
+        }
+        else TRACE_WRITE(s->iomem.addr, offset, 0, value);
         break;
     }
 
@@ -1296,26 +1410,34 @@ static void tegra_car_priv_reset(DeviceState *dev)
     s->pll_lfsr.reg32 = PLL_LFSR_RESET;
     s->osc_freq_det.reg32 = OSC_FREQ_DET_RESET;
     s->osc_freq_det_status.reg32 = OSC_FREQ_DET_STATUS_RESET;
+    s->plle_ss_cntl.reg32 = PLLE_SS_CNTL_RESET;
+    s->plle_misc1.reg32 = PLLE_MISC1_OFFSET;
     s->pllc_base.reg32 = PLLC_BASE_RESET | PLL_LOCKED;
     s->pllc_out.reg32 = PLLC_OUT_RESET;
     s->pllc_misc.reg32 = PLLC_MISC_RESET;
     s->pllm_base.reg32 = PLLM_BASE_RESET | PLL_LOCKED;
     s->pllm_out.reg32 = PLLM_OUT_RESET;
-    s->pllm_misc.reg32 = PLLM_MISC_RESET;
+    s->pllm_misc1.reg32 = PLLM_MISC1_RESET;
     s->pllp_base.reg32 = PLLP_BASE_RESET | PLL_LOCKED;
     s->pllp_outa.reg32 = PLLP_OUTA_RESET;
     s->pllp_outb.reg32 = PLLP_OUTB_RESET;
     s->pllp_misc.reg32 = PLLP_MISC_RESET;
     s->plla_base.reg32 = PLLA_BASE_RESET | PLL_LOCKED;
     s->plla_out.reg32 = PLLA_OUT_RESET;
-    s->plla_misc.reg32 = PLLA_MISC_RESET;
-    s->pllu_misc.reg32 = PLLU_MISC_RESET;
+    s->plla_misc1.reg32 = PLLA_MISC1_RESET;
+    s->pllu_outa.reg32 = PLLU_OUTA_RESET;
+    s->pllu_misc1.reg32 = PLLU_MISC1_RESET;
     s->plld_base.reg32 = PLLD_BASE_RESET | PLL_LOCKED;
+    s->plld_misc1.reg32 = PLLD_MISC1_RESET;
     s->plld_misc.reg32 = PLLD_MISC_RESET;
     s->pllx_base.reg32 = PLLX_BASE_RESET | PLL_LOCKED;
     s->pllx_misc.reg32 = PLLX_MISC_RESET;
     s->plle_base.reg32 = PLLE_BASE_RESET | PLL_LOCKED;
     s->plle_misc.reg32 = PLLE_MISC_RESET;
+    s->plle_ss_cntl1.reg32 = PLLE_SS_CNTL1_RESET;
+    s->plle_ss_cntl2.reg32 = PLLE_SS_CNTL2_RESET;
+    s->lvl2_clk_gate_ovra.reg32 = LVL2_CLK_GATE_OVRA_RESET;
+    s->lvl2_clk_gate_ovrb.reg32 = LVL2_CLK_GATE_OVRB_RESET;
     s->clk_source_i2s1.reg32 = CLK_SOURCE_I2S1_RESET;
     s->clk_source_i2s2.reg32 = CLK_SOURCE_I2S2_RESET;
     s->clk_source_spdif_out.reg32 = CLK_SOURCE_SPDIF_OUT_RESET;
@@ -1385,15 +1507,25 @@ static void tegra_car_priv_reset(DeviceState *dev)
     s->osc_freq_det_status.osc_freq_det_cnt = 1587;
 
     if (tegra_board == TEGRAX1_BOARD) {
+        s->pllc_misc_1.reg32 = PLLC_MISC_1_TEGRAX1_RESET;
+        s->pllm_misc2.reg32 = PLLM_MISC2_TEGRAX1_RESET;
+        s->plla_misc.reg32 = PLLA_MISC_TEGRAX1_RESET;
+        s->pllu_misc.reg32 = PLLU_MISC_TEGRAX1_RESET;
         s->pllu_base.reg32 = PLLU_BASE_TEGRAX1_RESET | PLL_LOCKED;
         s->rst_cpu_cmplx_clr_offset = RST_CPU_CMPLX_CLR_TEGRAX1_OFFSET;
         s->rst_cpu_cmplx_set.reg32 = RST_CPU_CMPLX_SET_TEGRAX1_RESET;
     }
     else {
+        s->pllc_misc_1.reg32 = PLLC_MISC_1_TEGRA2_RESET;
+        s->pllm_misc2.reg32 = PLLM_MISC2_TEGRA2_RESET;
+        s->plla_misc.reg32 = PLLA_MISC_TEGRA2_RESET;
+        s->pllu_misc.reg32 = PLLU_MISC_TEGRA2_RESET;
         s->pllu_base.reg32 = PLLU_BASE_TEGRA2_RESET | PLL_LOCKED;
         s->rst_cpu_cmplx_clr_offset = RST_CPU_CMPLX_CLR_TEGRA2_OFFSET;
         s->rst_cpu_cmplx_set.reg32 = RST_CPU_CMPLX_SET_TEGRA2_RESET;
     }
+
+    memset(s->regs, 0, sizeof(s->regs));
 }
 
 static const MemoryRegionOps tegra_car_mem_ops = {
