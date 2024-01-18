@@ -70,6 +70,7 @@ extern void * tegra_uartb_dev;
 extern void * tegra_uartc_dev;
 extern void * tegra_uartd_dev;
 extern void * tegra_dc1_dev;
+extern void * tegra_dsi_dev;
 extern void * tegra_mipical_dev;
 extern void * tegra_ehci1_dev;
 extern void * tegra_ehci2_dev;

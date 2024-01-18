@@ -743,6 +743,10 @@ static void tegrax1_init(MachineState *machine)
     tegra_dc1_dev = sysbus_create_simple("tegra.dc", TEGRA_DISPLAY_BASE,
                                          DIRQ(INT_DISPLAY_GENERAL));
 
+    /* DSI */
+    tegra_dsi_dev = sysbus_create_simple("tegra.dsi", TEGRA_DSI_BASE,
+                                         NULL);
+
     /* Process generator tag */
     //sysbus_create_simple("tegra.pg", 0x60000000, NULL);
 
