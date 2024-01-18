@@ -77,7 +77,10 @@ typedef struct tegra_flow_state {
     DEFINE_REG32(halt_events)[TEGRA_NCPUS];
     DEFINE_REG32(csr)[TEGRA_NCPUS];
     DEFINE_REG32(xrq_events);
+    DEFINE_REG32(cluster_control);
+    DEFINE_REG32(cpu_pwr_csr);
     DEFINE_REG32(ram_repair);
+    uint32_t regs[(0x9C-FLOW_DBG_SEL_OFFSET)>>2];
     uint8_t cop_stalled;
 } tegra_flow;
 
@@ -93,7 +96,10 @@ static const VMStateDescription vmstate_tegra_flow = {
         VMSTATE_ARRAY(csr, tegra_flow, TEGRA_NCPUS, 0,
                       vmstate_info_uint32, csr_t),
         VMSTATE_UINT32(xrq_events.reg32, tegra_flow),
+        VMSTATE_UINT32(cluster_control.reg32, tegra_flow),
+        VMSTATE_UINT32(cpu_pwr_csr.reg32, tegra_flow),
         VMSTATE_UINT32(ram_repair.reg32, tegra_flow),
+        VMSTATE_UINT32_ARRAY(regs, tegra_flow, (0x9C-FLOW_DBG_SEL_OFFSET)>>2),
         VMSTATE_UINT8(cop_stalled, tegra_flow),
         VMSTATE_END_OF_LIST()
     }
@@ -277,6 +283,12 @@ static uint64_t tegra_flow_priv_read(void *opaque, hwaddr offset,
     case HALT_CPU1_EVENTS_OFFSET:
         ret = s->halt_events[TEGRA_CCPLEX_CORE1].reg32;
         break;
+    case HALT_CPU2_EVENTS_OFFSET:
+        if (s->num_cpu > 2) ret = s->halt_events[TEGRA_CCPLEX_CORE2].reg32;
+        break;
+    case HALT_CPU3_EVENTS_OFFSET:
+        if (s->num_cpu > 2) ret = s->halt_events[TEGRA_CCPLEX_CORE3].reg32;
+        break;
     case HALT_COP_EVENTS_OFFSET:
         ret = s->halt_events[TEGRA_BPMP].reg32;
         break;
@@ -291,6 +303,20 @@ static uint64_t tegra_flow_priv_read(void *opaque, hwaddr offset,
         s->csr[TEGRA_CCPLEX_CORE1].pwr_off_sts = tegra_cpu_is_powergated(TEGRA_CCPLEX_CORE1);
         ret = s->csr[TEGRA_CCPLEX_CORE1].reg32;
         break;
+    case CPU2_CSR_OFFSET:
+        if (s->num_cpu > 2) {
+            s->csr[TEGRA_CCPLEX_CORE2].halt = tegra_cpu_halted(TEGRA_CCPLEX_CORE2);
+            s->csr[TEGRA_CCPLEX_CORE2].pwr_off_sts = tegra_cpu_is_powergated(TEGRA_CCPLEX_CORE2);
+            ret = s->csr[TEGRA_CCPLEX_CORE2].reg32;
+        }
+        break;
+    case CPU3_CSR_OFFSET:
+        if (s->num_cpu > 2) {
+            s->csr[TEGRA_CCPLEX_CORE3].halt = tegra_cpu_halted(TEGRA_CCPLEX_CORE3);
+            s->csr[TEGRA_CCPLEX_CORE3].pwr_off_sts = tegra_cpu_is_powergated(TEGRA_CCPLEX_CORE3);
+            ret = s->csr[TEGRA_CCPLEX_CORE3].reg32;
+        }
+        break;
     case COP_CSR_OFFSET:
         s->csr[TEGRA_BPMP].halt = tegra_cpu_halted(TEGRA_BPMP);
         s->csr[TEGRA_BPMP].pwr_off_sts = tegra_cpu_is_powergated(TEGRA_BPMP);
@@ -300,8 +326,23 @@ static uint64_t tegra_flow_priv_read(void *opaque, hwaddr offset,
     case XRQ_EVENTS_OFFSET:
         ret = s->xrq_events.reg32;
         break;
+    case CLUSTER_CONTROL_OFFSET:
+        if (s->num_cpu > 2) ret = s->cluster_control.reg32;
+        break;
+    case CPU_PWR_CSR_OFFSET:
+        if (s->num_cpu > 2) ret = s->cpu_pwr_csr.reg32;
+        break;
+    case MPID_OFFSET:
+        if (s->num_cpu > 2) {
+            CPUState *cs = current_cpu;
+            ret = cs->cpu_index & 0x3;
+        }
+        break;
     case RAM_REPAIR_OFFSET:
         ret = s->ram_repair.reg32;
+        break;
+    case FLOW_DBG_SEL_OFFSET ... BPMP_CLUSTER_CONTROL_OFFSET:
+        if (s->num_cpu > 2) ret = s->regs[(offset-FLOW_DBG_SEL_OFFSET)>>2];
         break;
     default:
         break;
@@ -638,6 +679,12 @@ static void tegra_flow_priv_write(void *opaque, hwaddr offset,
     case HALT_CPU1_EVENTS_OFFSET:
         tegra_flow_event_write(s, offset, value, TEGRA_CCPLEX_CORE1);
         break;
+    case HALT_CPU2_EVENTS_OFFSET:
+        if (s->num_cpu > 2) tegra_flow_event_write(s, offset, value, TEGRA_CCPLEX_CORE2);
+        break;
+    case HALT_CPU3_EVENTS_OFFSET:
+        if (s->num_cpu > 2) tegra_flow_event_write(s, offset, value, TEGRA_CCPLEX_CORE3);
+        break;
     case HALT_COP_EVENTS_OFFSET:
         tegra_flow_event_write(s, offset, value, TEGRA_BPMP);
         break;
@@ -648,6 +695,12 @@ static void tegra_flow_priv_write(void *opaque, hwaddr offset,
     case CPU1_CSR_OFFSET:
         tegra_flow_csr_write(s, offset, value, TEGRA_CCPLEX_CORE1);
         break;
+    case CPU2_CSR_OFFSET:
+        if (s->num_cpu > 2) tegra_flow_csr_write(s, offset, value, TEGRA_CCPLEX_CORE2);
+        break;
+    case CPU3_CSR_OFFSET:
+        if (s->num_cpu > 2) tegra_flow_csr_write(s, offset, value, TEGRA_CCPLEX_CORE3);
+        break;
     case COP_CSR_OFFSET:
         tegra_flow_csr_write(s, offset, value, TEGRA_BPMP);
         break;
@@ -655,6 +708,23 @@ static void tegra_flow_priv_write(void *opaque, hwaddr offset,
     case XRQ_EVENTS_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->xrq_events.reg32, value);
         s->xrq_events.reg32 = value;
+        break;
+
+    case CLUSTER_CONTROL_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->cluster_control.reg32, value);
+        if (s->num_cpu > 2) s->cluster_control.reg32 = value;
+        break;
+
+    case CPU_PWR_CSR_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->cpu_pwr_csr.reg32, value);
+        if (s->num_cpu > 2) s->cpu_pwr_csr.reg32 = value;
+        break;
+
+    case MPID_OFFSET:
+        if (s->num_cpu > 2) {
+            CPUState *cs = current_cpu;
+            TRACE_WRITE(s->iomem.addr, offset, cs->cpu_index & 0x3, value);
+        }
         break;
 
     case RAM_REPAIR_OFFSET:
@@ -665,6 +735,11 @@ static void tegra_flow_priv_write(void *opaque, hwaddr offset,
             value |= 1<<1; // STS
         }
         s->ram_repair.reg32 = value;
+        break;
+
+    case FLOW_DBG_SEL_OFFSET ... BPMP_CLUSTER_CONTROL_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->regs[(offset-FLOW_DBG_SEL_OFFSET)>>2], value);
+        if (s->num_cpu > 2) s->regs[offset>>2] = value;
         break;
 
     default:
@@ -691,7 +766,15 @@ static void tegra_flow_priv_reset(DeviceState *dev)
     s->csr[TEGRA_BPMP].reg32 = COP_CSR_RESET;
 
     s->xrq_events.reg32 = XRQ_EVENTS_RESET;
+    s->cluster_control.reg32 = CLUSTER_CONTROL_RESET;
+    s->cpu_pwr_csr.reg32 = CPU_PWR_CSR_RESET;
     s->ram_repair.reg32 = RAM_REPAIR_RESET;
+
+    memset(s->regs, 0, sizeof(s->regs));
+    s->regs[(FLOW_CTLR_SPARE_OFFSET-FLOW_DBG_SEL_OFFSET)>>2] = FLOW_CTLR_SPARE_RESET;
+    s->regs[(CC4_FC_STATUS_OFFSET-FLOW_DBG_SEL_OFFSET)>>2] = CC4_FC_STATUS_RESET;
+    s->regs[(L2FLUSH_CONTROL_OFFSET-FLOW_DBG_SEL_OFFSET)>>2] = L2FLUSH_CONTROL_RESET;
+
     s->cop_stalled = 0;
 }
 

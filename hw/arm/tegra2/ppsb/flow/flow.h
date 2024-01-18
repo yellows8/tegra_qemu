@@ -103,11 +103,48 @@ typedef union xrq_events_u {
 
 #define HALT_CPU1_EVENTS_OFFSET 0x14
 #define CPU1_CSR_OFFSET 0x18
+#define HALT_CPU2_EVENTS_OFFSET 0x1C
+#define CPU2_CSR_OFFSET 0x20
+#define HALT_CPU3_EVENTS_OFFSET 0x24
+#define CPU3_CSR_OFFSET 0x28
+
+#define CLUSTER_CONTROL_OFFSET 0x2C
+#define CLUSTER_CONTROL_RESET  0x04004000
+typedef union cluster_control_u {
+    uint32_t reg32;
+} cluster_control_t;
+
+#define CPU_PWR_CSR_OFFSET 0x38
+#define CPU_PWR_CSR_RESET  0x00000100
+typedef union cpu_pwr_csr_u {
+    uint32_t reg32;
+} cpu_pwr_csr_t;
+
+#define MPID_OFFSET 0x3C
+#define MPID_RESET  0x00000000
+typedef union mpid_u {
+    uint32_t reg32;
+} mpid_t;
 
 #define RAM_REPAIR_OFFSET 0x40
 #define RAM_REPAIR_RESET  0x00000004
 typedef union ram_repair_u {
     uint32_t reg32;
 } ram_repair_t;
+
+#define FLOW_DBG_SEL_OFFSET 0x44
+#define FLOW_DBG_SEL_RESET  0x00000000
+
+#define FLOW_CTLR_SPARE_OFFSET 0x54
+#define FLOW_CTLR_SPARE_RESET  0xFFFF0000
+
+#define CC4_FC_STATUS_OFFSET 0x68
+#define CC4_FC_STATUS_RESET  0x00000001
+
+#define L2FLUSH_CONTROL_OFFSET 0x94
+#define L2FLUSH_CONTROL_RESET  0x00000001
+
+#define BPMP_CLUSTER_CONTROL_OFFSET 0x98
+#define BPMP_CLUSTER_CONTROL_RESET  0x00000000
 
 #endif // TEGRA_FLOW_CTRL_H
