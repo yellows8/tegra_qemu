@@ -241,6 +241,12 @@ typedef union pp_misc_usb_otg_u {
     uint32_t reg32;
 } pp_misc_usb_otg_t;
 
+#define PP_PINMUX_GLOBAL_OFFSET 0x40
+#define PP_PINMUX_GLOBAL_RESET  0x00000000
+typedef union pp_pinmux_global_u {
+    uint32_t reg32;
+} pp_pinmux_global_t;
+
 #define PP_USB_PHY_PARAM_OFFSET 0x64
 #define PP_USB_PHY_PARAM_RESET  0x00000000
 typedef union pp_usb_phy_param_u {
@@ -705,6 +711,12 @@ typedef union gp_hidrev_u {
 
     uint32_t reg32;
 } gp_hidrev_t;
+
+#define GP_ASDBGREG_OFFSET 0x810
+#define GP_ASDBGREG_RESET  0x00000000
+typedef union gp_asdbgreg_u {
+    uint32_t reg32;
+} gp_asdbgreg_t;
 
 #define GP_EMU_REVID_OFFSET 0x860
 #define GP_EMU_REVID_RESET  0x00000000
@@ -1550,6 +1562,45 @@ typedef union gp_uadcfgpadctrl_u {
     uint32_t reg32;
 } gp_uadcfgpadctrl_t;
 
+#define GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET 0x910
+#define GP_BUTTON_VOL_DOWN_CFGPADCTRL_RESET 0x00000000
+
+#define GP_QSPI_COMP_CFGPADCTRL_OFFSET 0xA78
+#define GP_QSPI_COMP_CFGPADCTRL_RESET 0x00808000
+
+#define GP_QSPI_SCK_CFGPADCTRL_OFFSET 0xA90
+#define GP_QSPI_SCK_CFGPADCTRL_RESET 0x50000000
+
+#define GP_SDMMC1_PAD_CFGPADCTRL_OFFSET 0xA98
+#define GP_SDMMC1_PAD_CFGPADCTRL_RESET 0x00808000
+
+#define GP_EMMC2_PAD_CFGPADCTRL_OFFSET 0xA9C
+#define GP_EMMC2_PAD_CFGPADCTRL_RESET 0x07FFC310
+
+#define GP_EMMC2_PAD_DRV_TYPE_CFGPADCTRL_OFFSET 0xAA0
+#define GP_EMMC2_PAD_DRV_TYPE_CFGPADCTRL_RESET 0x00155555
+
+#define GP_EMMC2_PAD_PUPD_CFGPADCTRL_OFFSET 0xAA4
+#define GP_EMMC2_PAD_PUPD_CFGPADCTRL_RESET 0x026aaaa6
+
+#define GP_SDMMC3_PAD_CFGPADCTRL_OFFSET 0xAB0
+#define GP_SDMMC3_PAD_CFGPADCTRL_RESET 0x00808000
+
+#define GP_EMMC4_PAD_CFGPADCTRL_OFFSET 0xAB4
+#define GP_EMMC4_PAD_CFGPADCTRL_RESET 0x07FFC310
+
+#define GP_EMMC4_PAD_DRV_TYPE_CFGPADCTRL_OFFSET 0xAB8
+#define GP_EMMC4_PAD_DRV_TYPE_CFGPADCTRL_RESET 0x00155555
+
+#define GP_EMMC4_PAD_PUPD_CFGPADCTRL_OFFSET 0xABC
+#define GP_EMMC4_PAD_PUPD_CFGPADCTRL_RESET 0x026aaaa6
+
+#define GP_VGPIO_GPIO_MUX_SEL_OFFSET 0xB74
+#define GP_VGPIO_GPIO_MUX_SEL_RESET 0x0000000F
+
+#define GP_QSPI_SCK_LPBK_CONTROL_OFFSET 0xB78
+#define GP_QSPI_SCK_LPBK_CONTROL_RESET 0x00000001
+
 #define DAS_DAP_CTRL_SEL_OFFSET 0xC00
 #define DAS_DAP_CTRL_SEL_RESET  0x00000000
 typedef union das_dap_ctrl_sel_u {
@@ -1614,6 +1665,18 @@ typedef union async_emcpaden_u {
 
     uint32_t reg32;
 } async_emcpaden_t;
+
+#define SC1X_PADS_VIP_VCLKCTRL_OFFSET 0x428
+#define SC1X_PADS_VIP_VCLKCTRL_RESET  0x00000000
+typedef union sc1x_pads_vip_vclkctrl_u {
+    struct {
+        unsigned int vclk_pad_ie:1;         /* VCLK input enable */
+        unsigned int vclk_pad_inversion:1;  /* VCLK invert enable */
+        unsigned int undefined_bits_2_31:30;
+    };
+
+    uint32_t reg32;
+} sc1x_pads_vip_vclkctrl_t;
 
 #define ASYNC_VCLKCTRL_OFFSET 0x42C
 #define ASYNC_VCLKCTRL_RESET  0x00000000

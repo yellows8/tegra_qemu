@@ -41,6 +41,7 @@ typedef struct tegra_apb_misc_state {
     DEFINE_REG32(pp_tristate_reg_d);
     DEFINE_REG32(pp_config_ctl);
     DEFINE_REG32(pp_misc_usb_otg);
+    DEFINE_REG32(pp_pinmux_global);
     DEFINE_REG32(pp_usb_phy_param);
     DEFINE_REG32(pp_usb_phy_vbus_sensors);
     DEFINE_REG32(pp_usb_phy_vbus_wakeup_id);
@@ -61,6 +62,7 @@ typedef struct tegra_apb_misc_state {
     DEFINE_REG32(pp_misc_usb_clk_rst_ctl);
     DEFINE_REG32(gp_modereg);
     DEFINE_REG32(gp_hidrev);
+    DEFINE_REG32(gp_asdbgreg);
     DEFINE_REG32(gp_emu_revid);
     DEFINE_REG32(gp_transactor_scratch);
     DEFINE_REG32(gp_aocfg1padctrl);
@@ -110,6 +112,7 @@ typedef struct tegra_apb_misc_state {
     DEFINE_REG32(pp_misc_save_the_day);
     DEFINE_REG32(async_corepwrconfig);
     DEFINE_REG32(async_emcpaden);
+    DEFINE_REG32(sc1x_pads_vip_vclkctrl);
     DEFINE_REG32(async_vclkctrl);
     DEFINE_REG32(async_tvdacvhsyncctrl);
     DEFINE_REG32(async_tvdaccntl);
@@ -125,6 +128,7 @@ typedef struct tegra_apb_misc_state {
     DEFINE_REG32(das_dap_ctrl_sel_4);
     DEFINE_REG32(das_dac_input_data_clk_sel_1);
     DEFINE_REG32(das_dac_input_data_clk_sel_2);
+    uint32_t regs[(0xB7C-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2];
 } tegra_apb_misc;
 
 static const VMStateDescription vmstate_tegra_apb_misc = {
@@ -139,6 +143,7 @@ static const VMStateDescription vmstate_tegra_apb_misc = {
         VMSTATE_UINT32(pp_tristate_reg_d.reg32, tegra_apb_misc),
         VMSTATE_UINT32(pp_config_ctl.reg32, tegra_apb_misc),
         VMSTATE_UINT32(pp_misc_usb_otg.reg32, tegra_apb_misc),
+        VMSTATE_UINT32(pp_pinmux_global.reg32, tegra_apb_misc),
         VMSTATE_UINT32(pp_usb_phy_param.reg32, tegra_apb_misc),
         VMSTATE_UINT32(pp_usb_phy_vbus_sensors.reg32, tegra_apb_misc),
         VMSTATE_UINT32(pp_usb_phy_vbus_wakeup_id.reg32, tegra_apb_misc),
@@ -159,6 +164,7 @@ static const VMStateDescription vmstate_tegra_apb_misc = {
         VMSTATE_UINT32(pp_misc_usb_clk_rst_ctl.reg32, tegra_apb_misc),
         VMSTATE_UINT32(gp_modereg.reg32, tegra_apb_misc),
         VMSTATE_UINT32(gp_hidrev.reg32, tegra_apb_misc),
+        VMSTATE_UINT32(gp_asdbgreg.reg32, tegra_apb_misc),
         VMSTATE_UINT32(gp_emu_revid.reg32, tegra_apb_misc),
         VMSTATE_UINT32(gp_transactor_scratch.reg32, tegra_apb_misc),
         VMSTATE_UINT32(gp_aocfg1padctrl.reg32, tegra_apb_misc),
@@ -208,6 +214,7 @@ static const VMStateDescription vmstate_tegra_apb_misc = {
         VMSTATE_UINT32(pp_misc_save_the_day.reg32, tegra_apb_misc),
         VMSTATE_UINT32(async_corepwrconfig.reg32, tegra_apb_misc),
         VMSTATE_UINT32(async_emcpaden.reg32, tegra_apb_misc),
+        VMSTATE_UINT32(sc1x_pads_vip_vclkctrl.reg32, tegra_apb_misc),
         VMSTATE_UINT32(async_vclkctrl.reg32, tegra_apb_misc),
         VMSTATE_UINT32(async_tvdacvhsyncctrl.reg32, tegra_apb_misc),
         VMSTATE_UINT32(async_tvdaccntl.reg32, tegra_apb_misc),
@@ -223,6 +230,7 @@ static const VMStateDescription vmstate_tegra_apb_misc = {
         VMSTATE_UINT32(das_dap_ctrl_sel_4.reg32, tegra_apb_misc),
         VMSTATE_UINT32(das_dac_input_data_clk_sel_1.reg32, tegra_apb_misc),
         VMSTATE_UINT32(das_dac_input_data_clk_sel_2.reg32, tegra_apb_misc),
+        VMSTATE_UINT32_ARRAY(regs, tegra_apb_misc, (0xB7C-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -254,6 +262,9 @@ static uint64_t tegra_apb_misc_priv_read(void *opaque, hwaddr offset,
         break;
     case PP_MISC_USB_OTG_OFFSET:
         ret = s->pp_misc_usb_otg.reg32;
+        break;
+    case PP_PINMUX_GLOBAL_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->pp_pinmux_global.reg32;
         break;
     case PP_USB_PHY_PARAM_OFFSET:
         ret = s->pp_usb_phy_param.reg32;
@@ -314,6 +325,9 @@ static uint64_t tegra_apb_misc_priv_read(void *opaque, hwaddr offset,
         break;
     case GP_HIDREV_OFFSET:
         ret = s->gp_hidrev.reg32;
+        break;
+    case GP_ASDBGREG_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->gp_asdbgreg.reg32;
         break;
     case GP_EMU_REVID_OFFSET:
         ret = s->gp_emu_revid.reg32;
@@ -447,6 +461,9 @@ static uint64_t tegra_apb_misc_priv_read(void *opaque, hwaddr offset,
     case GP_UADCFGPADCTRL_OFFSET:
         ret = s->gp_uadcfgpadctrl.reg32;
         break;
+    case GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET ... GP_QSPI_SCK_LPBK_CONTROL_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->regs[(offset - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2];
+        break;
     case DAS_DAP_CTRL_SEL_OFFSET:
         ret = s->das_dap_ctrl_sel.reg32;
         break;
@@ -461,6 +478,9 @@ static uint64_t tegra_apb_misc_priv_read(void *opaque, hwaddr offset,
         break;
     case ASYNC_EMCPADEN_OFFSET:
         ret = s->async_emcpaden.reg32;
+        break;
+    case SC1X_PADS_VIP_VCLKCTRL_OFFSET:
+        if (tegra_board == TEGRAX1_BOARD) ret = s->sc1x_pads_vip_vclkctrl.reg32;
         break;
     case ASYNC_VCLKCTRL_OFFSET:
         ret = s->async_vclkctrl.reg32;
@@ -550,6 +570,10 @@ static void tegra_apb_misc_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->pp_misc_usb_otg.reg32, value & PP_MISC_USB_OTG_WRMASK);
         WR_MASKED(s->pp_misc_usb_otg.reg32, value, PP_MISC_USB_OTG);
         break;
+    case PP_PINMUX_GLOBAL_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->pp_pinmux_global.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD) s->pp_pinmux_global.reg32 = value;
+        break;
     case PP_USB_PHY_PARAM_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pp_usb_phy_param.reg32, value);
         s->pp_usb_phy_param.reg32 = value;
@@ -617,6 +641,10 @@ static void tegra_apb_misc_priv_write(void *opaque, hwaddr offset,
     case PP_MISC_USB_CLK_RST_CTL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pp_misc_usb_clk_rst_ctl.reg32, value);
         s->pp_misc_usb_clk_rst_ctl.reg32 = value;
+        break;
+    case GP_ASDBGREG_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->gp_asdbgreg.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD) s->gp_asdbgreg.reg32 = value;
         break;
     case GP_TRANSACTOR_SCRATCH_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->gp_transactor_scratch.reg32, value);
@@ -790,6 +818,10 @@ static void tegra_apb_misc_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->gp_uadcfgpadctrl.reg32, value);
         s->gp_uadcfgpadctrl.reg32 = value;
         break;
+    case GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET ... GP_QSPI_SCK_LPBK_CONTROL_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->regs[(offset - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] , value);
+        if (tegra_board == TEGRAX1_BOARD) s->regs[(offset - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = value;
+        break;
     case DAS_DAP_CTRL_SEL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->das_dap_ctrl_sel.reg32, value);
         s->das_dap_ctrl_sel.reg32 = value;
@@ -809,6 +841,10 @@ static void tegra_apb_misc_priv_write(void *opaque, hwaddr offset,
     case ASYNC_EMCPADEN_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->async_emcpaden.reg32, value);
         s->async_emcpaden.reg32 = value;
+        break;
+    case SC1X_PADS_VIP_VCLKCTRL_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->sc1x_pads_vip_vclkctrl.reg32, value);
+        if (tegra_board == TEGRAX1_BOARD) s->sc1x_pads_vip_vclkctrl.reg32 = value;
         break;
     case ASYNC_VCLKCTRL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->async_vclkctrl.reg32, value);
@@ -887,6 +923,7 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
     s->pp_tristate_reg_d.reg32 = PP_TRISTATE_REG_D_RESET;
     s->pp_config_ctl.reg32 = PP_CONFIG_CTL_RESET;
     s->pp_misc_usb_otg.reg32 = PP_MISC_USB_OTG_RESET;
+    s->pp_pinmux_global.reg32 = PP_PINMUX_GLOBAL_RESET;
     s->pp_usb_phy_param.reg32 = PP_USB_PHY_PARAM_RESET;
     s->pp_usb_phy_vbus_sensors.reg32 = PP_USB_PHY_VBUS_SENSORS_RESET;
     s->pp_usb_phy_vbus_wakeup_id.reg32 = PP_USB_PHY_VBUS_WAKEUP_ID_RESET;
@@ -907,6 +944,7 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
     s->pp_misc_usb_clk_rst_ctl.reg32 = PP_MISC_USB_CLK_RST_CTL_RESET;
     s->gp_modereg.reg32 = GP_MODEREG_RESET;
     s->gp_hidrev.reg32 = GP_HIDREV_RESET;
+    s->gp_asdbgreg.reg32 = GP_ASDBGREG_RESET;
     s->gp_emu_revid.reg32 = GP_EMU_REVID_RESET;
     s->gp_transactor_scratch.reg32 = GP_TRANSACTOR_SCRATCH_RESET;
     s->gp_aocfg1padctrl.reg32 = GP_AOCFG1PADCTRL_RESET;
@@ -956,6 +994,7 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
     s->pp_misc_save_the_day.reg32 = PP_MISC_SAVE_THE_DAY_RESET;
     s->async_corepwrconfig.reg32 = ASYNC_COREPWRCONFIG_RESET;
     s->async_emcpaden.reg32 = ASYNC_EMCPADEN_RESET;
+    s->sc1x_pads_vip_vclkctrl.reg32 = SC1X_PADS_VIP_VCLKCTRL_RESET;
     s->async_vclkctrl.reg32 = ASYNC_VCLKCTRL_RESET;
     s->async_tvdacvhsyncctrl.reg32 = ASYNC_TVDACVHSYNCCTRL_RESET;
     s->async_tvdaccntl.reg32 = ASYNC_TVDACCNTL_RESET;
@@ -971,6 +1010,20 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
     s->das_dap_ctrl_sel_4.reg32 = DAS_DAP_CTRL_SEL_4_RESET;
     s->das_dac_input_data_clk_sel_1.reg32 = DAS_DAC_INPUT_DATA_CLK_SEL_1_RESET;
     s->das_dac_input_data_clk_sel_2.reg32 = DAS_DAC_INPUT_DATA_CLK_SEL_2_RESET;
+
+    memset(s->regs, 0, sizeof(s->regs));
+    s->regs[(GP_QSPI_COMP_CFGPADCTRL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_QSPI_COMP_CFGPADCTRL_RESET;
+    s->regs[(GP_QSPI_SCK_CFGPADCTRL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_QSPI_SCK_CFGPADCTRL_RESET;
+    s->regs[(GP_SDMMC1_PAD_CFGPADCTRL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_SDMMC1_PAD_CFGPADCTRL_RESET;
+    s->regs[(GP_EMMC2_PAD_CFGPADCTRL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_EMMC2_PAD_CFGPADCTRL_RESET;
+    s->regs[(GP_EMMC2_PAD_DRV_TYPE_CFGPADCTRL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_EMMC2_PAD_DRV_TYPE_CFGPADCTRL_RESET;
+    s->regs[(GP_EMMC2_PAD_PUPD_CFGPADCTRL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_EMMC2_PAD_PUPD_CFGPADCTRL_RESET;
+    s->regs[(GP_SDMMC3_PAD_CFGPADCTRL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_SDMMC3_PAD_CFGPADCTRL_RESET;
+    s->regs[(GP_EMMC4_PAD_CFGPADCTRL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_EMMC4_PAD_CFGPADCTRL_RESET;
+    s->regs[(GP_EMMC4_PAD_DRV_TYPE_CFGPADCTRL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_EMMC4_PAD_DRV_TYPE_CFGPADCTRL_RESET;
+    s->regs[(GP_EMMC4_PAD_PUPD_CFGPADCTRL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_EMMC4_PAD_PUPD_CFGPADCTRL_RESET;
+    s->regs[(GP_VGPIO_GPIO_MUX_SEL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_VGPIO_GPIO_MUX_SEL_RESET;
+    s->regs[(GP_QSPI_SCK_LPBK_CONTROL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_QSPI_SCK_LPBK_CONTROL_RESET;
 
     s->gp_hidrev.chipid = 0x20;
     s->gp_hidrev.hidfam = 0x7;
