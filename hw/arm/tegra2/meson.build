@@ -38,6 +38,7 @@ arm_ss.add(files(
   'ahb/gizmo/gizmo.c',
   'ahb/usb/usb.c',
 
+  'apb/pinmuxaux/pinmuxaux.c',
   'apb/fuse/fuse.c',
   'apb/i2c/i2c.c',
   'apb/pmc/pmc.c',
@@ -45,6 +46,7 @@ arm_ss.add(files(
   'apb/uart/uart.c',
   'apb/se/se.c',
   'apb/sdmmcvendor/sdmmcvendor.c',
+  'apb/mipical/mipical.c',
   'apb/sysctr0/sysctr0.c',
 
   'cpu/arm_op.c',

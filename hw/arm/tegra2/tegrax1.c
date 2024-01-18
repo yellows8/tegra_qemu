@@ -527,6 +527,10 @@ static void tegrax1_init(MachineState *machine)
     tegra_apb_misc_dev = sysbus_create_simple("tegra.apb_misc",
                                               TEGRA_APB_MISC_BASE, NULL);
 
+    /* PINMUX_AUX */
+    tegra_pinmuxaux_dev = sysbus_create_simple("tegra.pinmuxaux",
+                                              TEGRA_PINMUX_AUX_BASE, NULL);
+
     /* Clock and reset controller */
     tegra_car_dev = sysbus_create_simple("tegra.car",
                                          TEGRA_CLK_RESET_BASE, NULL);
@@ -640,6 +644,10 @@ static void tegrax1_init(MachineState *machine)
                                      DIRQ(INT_UARTD), 115200,
                                      serial_hd(3),
                                      DEVICE_LITTLE_ENDIAN);
+
+    /* MIPI_CAL */
+    tegra_mipical_dev = sysbus_create_simple("tegra.mipical",
+                                             TEGRA_MIPI_CAL_BASE, NULL);
 
     /* USB2 controllers */
     tegra_ehci1_dev = sysbus_create_simple("tegra.usb",
