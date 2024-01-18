@@ -93,6 +93,7 @@ void *tegra_grhost_dev = NULL;
 void *tegra_arb_sema_dev = NULL;
 void *tegra_arb_gnt_ictlr_dev = NULL;
 void *tegra_irq_dispatcher_dev = NULL;
+void *tegra_mselect_dev = NULL;
 void *tegra_evp_dev = NULL;
 void *tegra_ictlr_dev = NULL;
 void *tegra_gr2d_dev = NULL;

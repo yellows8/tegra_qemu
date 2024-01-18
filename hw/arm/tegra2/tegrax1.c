@@ -472,6 +472,10 @@ static void tegrax1_init(MachineState *machine)
     /* Cache controller */
     //sysbus_create_simple("l2x0", TEGRA_ARM_PL310_BASE, NULL);
 
+    /* MSELECT */
+    tegra_mselect_dev = sysbus_create_simple("tegra.mselect",
+                                         TEGRA_MSELECT_BASE, NULL);
+
     /* Exception vectors */
     tegra_evp_dev = sysbus_create_simple("tegra.evp",
                                          TEGRA_EXCEPTION_VECTORS_BASE, NULL);
