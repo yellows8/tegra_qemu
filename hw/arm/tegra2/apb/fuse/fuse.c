@@ -39,6 +39,7 @@ typedef struct tegra_fuse_state {
 
     MemoryRegion iomem;
     DEFINE_REG32(fuse_fusebypass);
+    DEFINE_REG32(fuse_privatekeydisable);
     DEFINE_REG32(fuse_write_access_sw);
     DEFINE_REG32(fuse_jtag_secureid_0);
     DEFINE_REG32(fuse_jtag_secureid_1);
@@ -49,6 +50,11 @@ typedef struct tegra_fuse_state {
     DEFINE_REG32(fuse_dac_hdtv_calib);
     DEFINE_REG32(fuse_dac_sdtv_calib);
     DEFINE_REG32(fuse_reserved_production);
+    DEFINE_REG32(fuse_private_key0);
+    DEFINE_REG32(fuse_private_key1);
+    DEFINE_REG32(fuse_private_key2);
+    DEFINE_REG32(fuse_private_key3);
+    DEFINE_REG32(fuse_private_key4);
     DEFINE_REG32(fuse_reserved_odm0);
     DEFINE_REG32(fuse_reserved_odm1);
     DEFINE_REG32(fuse_reserved_odm2);
@@ -127,6 +133,7 @@ static const VMStateDescription vmstate_tegra_fuse = {
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
         VMSTATE_UINT32(fuse_fusebypass.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_privatekeydisable.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_write_access_sw.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_jtag_secureid_0.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_jtag_secureid_1.reg32, tegra_fuse),
@@ -137,6 +144,11 @@ static const VMStateDescription vmstate_tegra_fuse = {
         VMSTATE_UINT32(fuse_dac_hdtv_calib.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_dac_sdtv_calib.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_reserved_production.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_private_key0.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_private_key1.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_private_key2.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_private_key3.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_private_key4.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_reserved_odm0.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_reserved_odm1.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_reserved_odm2.reg32, tegra_fuse),
@@ -221,6 +233,9 @@ static uint64_t tegra_fuse_priv_read(void *opaque, hwaddr offset,
     case FUSE_FUSEBYPASS_OFFSET:
         ret = s->fuse_fusebypass.reg32;
         break;
+    case FUSE_PRIVATEKEYDISABLE_OFFSET:
+        ret = s->fuse_privatekeydisable.reg32;
+        break;
     case FUSE_WRITE_ACCESS_SW_OFFSET:
         ret = s->fuse_write_access_sw.reg32;
         break;
@@ -250,6 +265,21 @@ static uint64_t tegra_fuse_priv_read(void *opaque, hwaddr offset,
         break;
     case FUSE_RESERVED_PRODUCTION_OFFSET:
         ret = s->fuse_reserved_production.reg32;
+        break;
+    case FUSE_PRIVATE_KEY0_OFFSET:
+        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key0.reg32;
+        break;
+    case FUSE_PRIVATE_KEY1_OFFSET:
+        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key1.reg32;
+        break;
+    case FUSE_PRIVATE_KEY2_OFFSET:
+        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key2.reg32;
+        break;
+    case FUSE_PRIVATE_KEY3_OFFSET:
+        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key3.reg32;
+        break;
+    case FUSE_PRIVATE_KEY4_OFFSET:
+        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key4.reg32;
         break;
     case FUSE_RESERVED_ODM0_OFFSET:
         ret = s->fuse_reserved_odm0.reg32;
@@ -482,6 +512,10 @@ static void tegra_fuse_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_fusebypass.reg32, value);
         s->fuse_fusebypass.reg32 = value;
         break;
+    case FUSE_PRIVATEKEYDISABLE_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_privatekeydisable.reg32, value);
+        s->fuse_privatekeydisable.reg32 |= value & 0x11;
+        break;
     case FUSE_WRITE_ACCESS_SW_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_write_access_sw.reg32, value);
         s->fuse_write_access_sw.reg32 = value;
@@ -521,6 +555,26 @@ static void tegra_fuse_priv_write(void *opaque, hwaddr offset,
     case FUSE_RESERVED_PRODUCTION_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_production.reg32, value);
         s->fuse_reserved_production.reg32 = value;
+        break;
+    case FUSE_PRIVATE_KEY0_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_private_key0.reg32, value);
+        s->fuse_private_key0.reg32 = value;
+        break;
+    case FUSE_PRIVATE_KEY1_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_private_key1.reg32, value);
+        s->fuse_private_key1.reg32 = value;
+        break;
+    case FUSE_PRIVATE_KEY2_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_private_key2.reg32, value);
+        s->fuse_private_key2.reg32 = value;
+        break;
+    case FUSE_PRIVATE_KEY3_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_private_key3.reg32, value);
+        s->fuse_private_key3.reg32 = value;
+        break;
+    case FUSE_PRIVATE_KEY4_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_private_key4.reg32, value);
+        s->fuse_private_key4.reg32 = value;
         break;
     case FUSE_RESERVED_ODM0_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm0.reg32, value);
@@ -813,6 +867,7 @@ static void tegra_fuse_priv_reset(DeviceState *dev)
     tegra_fuse *s = TEGRA_FUSE(dev);
 
     s->fuse_fusebypass.reg32 = 0x1;
+    s->fuse_privatekeydisable.reg32 = FUSE_PRIVATEKEYDISABLE_RESET;
     s->fuse_write_access_sw.reg32 = 0x0;
     s->fuse_jtag_secureid_0.reg32 = FUSE_JTAG_SECUREID_0_RESET;
     s->fuse_jtag_secureid_1.reg32 = FUSE_JTAG_SECUREID_1_RESET;
@@ -823,6 +878,11 @@ static void tegra_fuse_priv_reset(DeviceState *dev)
     s->fuse_dac_hdtv_calib.reg32 = FUSE_DAC_HDTV_CALIB_RESET;
     s->fuse_dac_sdtv_calib.reg32 = 0xC8;
     s->fuse_reserved_production.reg32 = 0x2;
+    s->fuse_private_key0.reg32 = 0xFFFFFFFF;
+    s->fuse_private_key1.reg32 = 0xFFFFFFFF;
+    s->fuse_private_key2.reg32 = 0xFFFFFFFF;
+    s->fuse_private_key3.reg32 = 0xFFFFFFFF;
+    s->fuse_private_key4.reg32 = 0xFFFFFFFF;
     s->fuse_reserved_odm0.reg32 = 0x0;
     s->fuse_reserved_odm1.reg32 = 0x0;
     s->fuse_reserved_odm2.reg32 = 0x0;

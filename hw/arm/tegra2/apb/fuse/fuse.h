@@ -34,6 +34,12 @@ typedef union fuse_fusebypass_u {
     uint32_t reg32;
 } fuse_fusebypass_t;
 
+#define FUSE_PRIVATEKEYDISABLE_OFFSET 0x28
+#define FUSE_PRIVATEKEYDISABLE_RESET  0x00000000
+typedef union fuse_privatekeydisable_u {
+    uint32_t reg32;
+} fuse_privatekeydisable_t;
+
 #define FUSE_WRITE_ACCESS_SW_OFFSET 0x30
 #define FUSE_WRITE_ACCESS_SW_RESET  0x00000001
 typedef union fuse_write_access_sw_u {
@@ -143,6 +149,31 @@ typedef union fuse_reserved_production_u {
 
     uint32_t reg32;
 } fuse_reserved_production_t;
+
+#define FUSE_PRIVATE_KEY0_OFFSET 0x1A4
+typedef union fuse_private_key0_u {
+    uint32_t reg32;
+} fuse_private_key0_t;
+
+#define FUSE_PRIVATE_KEY1_OFFSET 0x1A8
+typedef union fuse_private_key1_u {
+    uint32_t reg32;
+} fuse_private_key1_t;
+
+#define FUSE_PRIVATE_KEY2_OFFSET 0x1AC
+typedef union fuse_private_key2_u {
+    uint32_t reg32;
+} fuse_private_key2_t;
+
+#define FUSE_PRIVATE_KEY3_OFFSET 0x1B0
+typedef union fuse_private_key3_u {
+    uint32_t reg32;
+} fuse_private_key3_t;
+
+#define FUSE_PRIVATE_KEY4_OFFSET 0x1B4
+typedef union fuse_private_key4_u {
+    uint32_t reg32;
+} fuse_private_key4_t;
 
 #define FUSE_RESERVED_ODM0_OFFSET 0x1C8
 #define FUSE_RESERVED_ODM0_RESET  0x00000000
