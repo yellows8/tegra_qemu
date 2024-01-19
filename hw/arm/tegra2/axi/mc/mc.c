@@ -1103,7 +1103,7 @@ static void tegra_mc_priv_reset(DeviceState *dev)
 {
     tegra_mc *s = TEGRA_MC(dev);
 
-    if (tegra_board == TEGRAX1_BOARD) {
+    if (tegra_board >= TEGRAX1_BOARD) {
         s->emem_cfg_offset = EMEM_CFG_TEGRAX1_OFFSET;
         s->emem_cfg.reg32 = s->ram_size_kb / SZ_1K;
     }

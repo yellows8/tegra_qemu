@@ -168,7 +168,7 @@ static uint64_t tegra_gpio_priv_read(void *opaque, hwaddr offset,
         ret = p->gpio_msk_out.reg32 & 0xFF;
         break;
     case GPIO_DB_CTRL_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = p->gpio_db_ctrl.reg32 & 0xFF;
+        if (tegra_board >= TEGRAX1_BOARD) ret = p->gpio_db_ctrl.reg32 & 0xFF;
         break;
     case GPIO_MSK_INT_STA_OFFSET:
         ret = p->gpio_msk_int_sta.reg32 & 0xFF;
@@ -180,7 +180,7 @@ static uint64_t tegra_gpio_priv_read(void *opaque, hwaddr offset,
         ret = p->gpio_msk_int_lvl.reg32 & 0xFF;
         break;
     case GPIO_DB_CNT_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = p->gpio_db_cnt.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = p->gpio_db_cnt.reg32;
         break;
     default:
         break;
@@ -258,7 +258,7 @@ static void tegra_gpio_priv_write(void *opaque, hwaddr offset,
         break;
     case GPIO_DB_CTRL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, p->gpio_db_ctrl.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) WR_GPIO_MASKED(p->gpio_db_ctrl.reg32, value);
+        if (tegra_board >= TEGRAX1_BOARD) WR_GPIO_MASKED(p->gpio_db_ctrl.reg32, value);
         break;
     case GPIO_MSK_INT_STA_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, p->gpio_msk_int_sta.reg32, value);
@@ -277,7 +277,7 @@ static void tegra_gpio_priv_write(void *opaque, hwaddr offset,
         break;
     case GPIO_DB_CNT_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, p->gpio_db_cnt.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) p->gpio_db_cnt.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) p->gpio_db_cnt.reg32 = value;
         break;
     default:
         TRACE_WRITE(s->iomem.addr, offset, 0, value);
@@ -323,7 +323,7 @@ static void tegra_gpio_priv_realize(DeviceState *dev, Error **errp)
     tegra_gpio *s = TEGRA_GPIO(dev);
     int i;
 
-    if (tegra_board == TEGRAX1_BOARD) {
+    if (tegra_board >= TEGRAX1_BOARD) {
         s->num_banks = BANKS_NB_TEGRAX1;
         s->bank_shift = 8;
         s->offset_mask = 0x70;

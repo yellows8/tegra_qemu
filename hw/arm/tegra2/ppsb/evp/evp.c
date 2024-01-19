@@ -118,7 +118,7 @@ static void tegra_evp_priv_write(void *opaque, hwaddr offset,
                         value);
             s->evp_regs[cpu_index][reg_id] = value;
 
-            if (tegra_board == TEGRAX1_BOARD && cpu_index==0 && reg_id == EVP_RESET_VECTOR_OFFSET) {
+            if (tegra_board >= TEGRAX1_BOARD && cpu_index==0 && reg_id == EVP_RESET_VECTOR_OFFSET) {
                 tegra_cpu_set_rvbar(value);
             }
             break;
@@ -174,7 +174,7 @@ static void tegra_evp_priv_reset(DeviceState *dev)
         s->evp_regs[i][35] = EVP_PRI_FIQ_VEC_3_RESET;
     }
 
-    if (tegra_board == TEGRAX1_BOARD) {
+    if (tegra_board >= TEGRAX1_BOARD) {
         s->evp_regs[0][0] = 0x040030000; // CCPLEX RESET vector
     }
 }

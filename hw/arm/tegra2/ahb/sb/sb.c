@@ -78,7 +78,7 @@ static void tegra_sb_priv_write(void *opaque, hwaddr offset,
     s->regs[offset/sizeof(uint32_t)] = (s->regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
 
     if (offset == AA64_RESET_LOW_OFFSET || offset == AA64_RESET_HIGH_OFFSET) {
-        if (tegra_board == TEGRAX1_BOARD) tegra_cpu_set_rvbar(*((uint64_t*)&s->regs[AA64_RESET_LOW_OFFSET>>2]) & 0xFFFFFFFFFFEULL);
+        if (tegra_board >= TEGRAX1_BOARD) tegra_cpu_set_rvbar(*((uint64_t*)&s->regs[AA64_RESET_LOW_OFFSET>>2]) & 0xFFFFFFFFFFEULL);
     }
 }
 

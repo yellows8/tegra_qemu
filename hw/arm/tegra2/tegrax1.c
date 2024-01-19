@@ -315,7 +315,7 @@ static void* tegra_init_sdmmc(int index, hwaddr base, qemu_irq irq, bool emmc, u
     return tmpdev;
 }
 
-static void tegrax1_init(MachineState *machine)
+static void __tegrax1_init(MachineState *machine)
 {
     MemoryRegion *cop_sysmem = g_new(MemoryRegion, 1);
     AddressSpace *cop_as = g_new(AddressSpace, 1);
@@ -324,8 +324,6 @@ static void tegrax1_init(MachineState *machine)
     DeviceState *cpudev;
     CPUState *cs;
     int i, j;
-
-    tegra_board = TEGRAX1_BOARD;
 
     /* Main RAM */
     assert(machine->ram_size <= TEGRA_DRAM_SIZE);
@@ -517,7 +515,9 @@ static void tegrax1_init(MachineState *machine)
 
     /* SE */
     tegra_se_dev = sysbus_create_simple("tegra.se", TEGRA_SE_BASE, NULL);
-    tegra_se2_dev = sysbus_create_simple("tegra.se", TEGRA_SE2_BASE, NULL);
+    if (tegra_board == TEGRAX1PLUS_BOARD) {
+        tegra_se2_dev = sysbus_create_simple("tegra.se", TEGRA_SE2_BASE, NULL);
+    }
 
     /* SYSCTR0 */
     tegra_sysctr0_dev = sysbus_create_simple("tegra.sysctr0", TEGRA_TSC_BASE, NULL);
@@ -859,6 +859,18 @@ static void tegrax1_init(MachineState *machine)
     tegra_cpu_reset_init();
 }
 
+static void tegrax1_init(MachineState *machine)
+{
+    tegra_board = TEGRAX1_BOARD;
+    __tegrax1_init(machine);
+}
+
+static void tegrax1plus_init(MachineState *machine)
+{
+    tegra_board = TEGRAX1PLUS_BOARD;
+    __tegrax1_init(machine);
+}
+
 static void tegrax1_reset(MachineState *state, ShutdownCause cause)
 {
 //     remote_io_init("10.1.1.3:45312");
@@ -871,9 +883,9 @@ static void tegrax1_reset(MachineState *state, ShutdownCause cause)
         tegra_cpu_reset_deassert(TEGRA_CCPLEX_CORE0, 1);
 }
 
-static void __tegrax1_machine_init(MachineClass *mc)
+static void __tegrax1_machine_init(MachineClass *mc, const char *desc)
 {
-    mc->desc = "ARM NVIDIA Tegra X1";
+    mc->desc = desc;
     mc->init = tegrax1_init;
     mc->reset = tegrax1_reset;
     mc->default_cpus = TEGRAX1_NCPUS;
@@ -884,8 +896,15 @@ static void __tegrax1_machine_init(MachineClass *mc)
 
 static void tegrax1_machine_init(MachineClass *mc)
 {
-    __tegrax1_machine_init(mc);
+    __tegrax1_machine_init(mc, "ARM NVIDIA Tegra X1");
+}
+
+static void tegrax1plus_machine_init(MachineClass *mc)
+{
+    __tegrax1_machine_init(mc, "ARM NVIDIA Tegra X1+");
+    mc->init = tegrax1plus_init;
 }
 
 DEFINE_MACHINE("tegrax1", tegrax1_machine_init)
+DEFINE_MACHINE("tegrax1plus", tegrax1plus_machine_init)
 

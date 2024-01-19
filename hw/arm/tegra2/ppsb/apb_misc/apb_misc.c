@@ -264,7 +264,7 @@ static uint64_t tegra_apb_misc_priv_read(void *opaque, hwaddr offset,
         ret = s->pp_misc_usb_otg.reg32;
         break;
     case PP_PINMUX_GLOBAL_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->pp_pinmux_global.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->pp_pinmux_global.reg32;
         break;
     case PP_USB_PHY_PARAM_OFFSET:
         ret = s->pp_usb_phy_param.reg32;
@@ -327,7 +327,7 @@ static uint64_t tegra_apb_misc_priv_read(void *opaque, hwaddr offset,
         ret = s->gp_hidrev.reg32;
         break;
     case GP_ASDBGREG_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->gp_asdbgreg.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->gp_asdbgreg.reg32;
         break;
     case GP_EMU_REVID_OFFSET:
         ret = s->gp_emu_revid.reg32;
@@ -462,7 +462,7 @@ static uint64_t tegra_apb_misc_priv_read(void *opaque, hwaddr offset,
         ret = s->gp_uadcfgpadctrl.reg32;
         break;
     case GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET ... GP_QSPI_SCK_LPBK_CONTROL_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->regs[(offset - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2];
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->regs[(offset - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2];
         break;
     case DAS_DAP_CTRL_SEL_OFFSET:
         ret = s->das_dap_ctrl_sel.reg32;
@@ -480,7 +480,7 @@ static uint64_t tegra_apb_misc_priv_read(void *opaque, hwaddr offset,
         ret = s->async_emcpaden.reg32;
         break;
     case SC1X_PADS_VIP_VCLKCTRL_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->sc1x_pads_vip_vclkctrl.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->sc1x_pads_vip_vclkctrl.reg32;
         break;
     case ASYNC_VCLKCTRL_OFFSET:
         ret = s->async_vclkctrl.reg32;
@@ -572,7 +572,7 @@ static void tegra_apb_misc_priv_write(void *opaque, hwaddr offset,
         break;
     case PP_PINMUX_GLOBAL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pp_pinmux_global.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->pp_pinmux_global.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->pp_pinmux_global.reg32 = value;
         break;
     case PP_USB_PHY_PARAM_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pp_usb_phy_param.reg32, value);
@@ -644,7 +644,7 @@ static void tegra_apb_misc_priv_write(void *opaque, hwaddr offset,
         break;
     case GP_ASDBGREG_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->gp_asdbgreg.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->gp_asdbgreg.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->gp_asdbgreg.reg32 = value;
         break;
     case GP_TRANSACTOR_SCRATCH_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->gp_transactor_scratch.reg32, value);
@@ -820,7 +820,7 @@ static void tegra_apb_misc_priv_write(void *opaque, hwaddr offset,
         break;
     case GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET ... GP_QSPI_SCK_LPBK_CONTROL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->regs[(offset - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] , value);
-        if (tegra_board == TEGRAX1_BOARD) s->regs[(offset - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->regs[(offset - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = value;
         break;
     case DAS_DAP_CTRL_SEL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->das_dap_ctrl_sel.reg32, value);
@@ -844,7 +844,7 @@ static void tegra_apb_misc_priv_write(void *opaque, hwaddr offset,
         break;
     case SC1X_PADS_VIP_VCLKCTRL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->sc1x_pads_vip_vclkctrl.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->sc1x_pads_vip_vclkctrl.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->sc1x_pads_vip_vclkctrl.reg32 = value;
         break;
     case ASYNC_VCLKCTRL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->async_vclkctrl.reg32, value);

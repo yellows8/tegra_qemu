@@ -118,7 +118,7 @@ void *tegra_ahb_dma_dev = NULL;
 
 void tegra_a9mpcore_reset(void)
 {
-    if (tegra_board != TEGRAX1_BOARD) {
+    if (tegra_board < TEGRAX1_BOARD) {
         A9MPPrivState *a9mpcore = A9MPCORE_PRIV(tegra_a9mpcore_dev);
 
         tegra_device_reset(&a9mpcore->scu);

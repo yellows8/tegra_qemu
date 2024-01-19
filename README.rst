@@ -42,6 +42,8 @@ Run Tegra X1
 
   ./qemu-system-aarch64 -machine tegrax1 -m 4G -bios {BPMP IRAM bootloader path}
 
+* Use ``-machine tegrax1plus`` for TX1+.
+
 * The sd -drive index 0-3 corresponds to the SDMMC1-SDMMC4 controllers. To (optionally) attach storage to each controller: ``-drive if=sd,index={0-3},format=raw,file={image path}``
 * Use index=3 for emmc, and (for example) 0 for sd. The emmc image must start with the 0x400000-byte BOOT0 and BOOT1 partitions, with the main MMC partition following that at byte-offset 0x800000.
 

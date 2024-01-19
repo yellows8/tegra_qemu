@@ -134,7 +134,7 @@ void tegra_cpu_reset_deassert(int cpu_id, int flow)
     if (tcpu_in_reset[cpu_id]) {
         tcpu_in_reset[cpu_id] = 0;
 
-        if (tegra_board == TEGRAX1_BOARD)
+        if (tegra_board >= TEGRAX1_BOARD)
             arm_set_cpu_on_and_reset(cpu_id);
         else {
             if (cpu_id == TEGRA_BPMP)

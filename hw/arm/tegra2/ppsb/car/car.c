@@ -524,10 +524,10 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
         ret = s->osc_freq_det_status.reg32;
         break;
     case PLLE_SS_CNTL_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->plle_ss_cntl.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->plle_ss_cntl.reg32;
         break;
     case PLLE_MISC1_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->plle_misc1.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->plle_misc1.reg32;
         break;
     case PLLC_BASE_OFFSET:
         ret = s->pllc_base.reg32;
@@ -536,7 +536,7 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
         ret = s->pllc_out.reg32;
         break;
     case PLLC_MISC_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->pllc_misc.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->pllc_misc.reg32;
         break;
     case PLLC_MISC_1_OFFSET:
         ret = s->pllc_misc_1.reg32;
@@ -548,7 +548,7 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
         ret = s->pllm_out.reg32;
         break;
     case PLLM_MISC1_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->pllm_misc1.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->pllm_misc1.reg32;
         break;
     case PLLM_MISC2_OFFSET:
         ret = s->pllm_misc2.reg32;
@@ -572,7 +572,7 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
         ret = s->plla_out.reg32;
         break;
     case PLLA_MISC1_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->plla_misc1.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->plla_misc1.reg32;
         break;
     case PLLA_MISC_OFFSET:
         ret = s->plla_misc.reg32;
@@ -581,10 +581,10 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
         ret = s->pllu_base.reg32;
         break;
     case PLLU_OUTA_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->pllu_outa.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->pllu_outa.reg32;
         break;
     case PLLU_MISC1_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->pllu_misc1.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->pllu_misc1.reg32;
         break;
     case PLLU_MISC_OFFSET:
         ret = s->pllu_misc.reg32;
@@ -593,7 +593,7 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
         ret = s->plld_base.reg32;
         break;
     case PLLD_MISC1_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->plld_misc1.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->plld_misc1.reg32;
         break;
     case PLLD_MISC_OFFSET:
         ret = s->plld_misc.reg32;
@@ -611,16 +611,16 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
         ret = s->plle_misc.reg32;
         break;
     case PLLE_SS_CNTL1_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->plle_ss_cntl1.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->plle_ss_cntl1.reg32;
         break;
     case PLLE_SS_CNTL2_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->plle_ss_cntl2.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->plle_ss_cntl2.reg32;
         break;
     case LVL2_CLK_GATE_OVRA_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->lvl2_clk_gate_ovra.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->lvl2_clk_gate_ovra.reg32;
         break;
     case LVL2_CLK_GATE_OVRB_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->lvl2_clk_gate_ovrb.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->lvl2_clk_gate_ovrb.reg32;
         break;
     case CLK_SOURCE_I2S1_OFFSET:
         ret = s->clk_source_i2s1.reg32;
@@ -770,20 +770,20 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
         ret = s->rst_cpu_cmplx_set.reg32;
         break;
     case UTMIP_PLL_CFG0_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->utmip_pll_cfg0.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->utmip_pll_cfg0.reg32;
         break;
     case RST_CONTROLLER_PLLC4_BASE_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->rst_controller_pllc4_base.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->rst_controller_pllc4_base.reg32;
         break;
     case RST_CONTROLLER_PLLMB_BASE_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->rst_controller_pllmb_base.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->rst_controller_pllmb_base.reg32;
         break;
     case CLK_SOURCE_LA_OFFSET:
         ret = s->clk_source_la.reg32;
         break;
     default:
         if (offset == s->rst_cpu_cmplx_clr_offset) ret = s->rst_cpu_cmplx_set.reg32;
-        else if (tegra_board == TEGRAX1_BOARD && offset <= sizeof(s->regs)-4) ret = s->regs[offset>>2];
+        else if (tegra_board >= TEGRAX1_BOARD && offset <= sizeof(s->regs)-4) ret = s->regs[offset>>2];
         break;
     }
 
@@ -902,11 +902,11 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         break;
     case PLLE_SS_CNTL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->plle_ss_cntl.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->plle_ss_cntl.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->plle_ss_cntl.reg32 = value;
         break;
     case PLLE_MISC1_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->plle_misc1.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->plle_misc1.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->plle_misc1.reg32 = value;
         break;
     case PLLC_BASE_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pllc_base.reg32, value & PLLC_BASE_WRMASK);
@@ -918,7 +918,7 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         break;
     case PLLC_MISC_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pllc_misc.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->pllc_misc.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->pllc_misc.reg32 = value;
         break;
     case PLLC_MISC_1_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pllc_misc_1.reg32, value);
@@ -934,7 +934,7 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         break;
     case PLLM_MISC1_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pllm_misc1.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->pllm_misc1.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->pllm_misc1.reg32 = value;
         break;
     case PLLM_MISC2_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pllm_misc2.reg32, value);
@@ -966,7 +966,7 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         break;
     case PLLA_MISC1_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->plla_misc1.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->plla_misc1.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->plla_misc1.reg32 = value;
         break;
     case PLLA_MISC_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->plla_misc.reg32, value);
@@ -978,11 +978,11 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         break;
     case PLLU_OUTA_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pllu_outa.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->pllu_outa.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->pllu_outa.reg32 = value;
         break;
     case PLLU_MISC1_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pllu_misc1.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->pllu_misc1.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->pllu_misc1.reg32 = value;
         break;
     case PLLU_MISC_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pllu_misc.reg32, value);
@@ -994,7 +994,7 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         break;
     case PLLD_MISC1_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->plld_misc1.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->plld_misc1.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->plld_misc1.reg32 = value;
         break;
     case PLLD_MISC_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->plld_misc.reg32, value);
@@ -1018,19 +1018,19 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         break;
     case PLLE_SS_CNTL1_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->plle_ss_cntl1.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->plle_ss_cntl1.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->plle_ss_cntl1.reg32 = value;
         break;
     case PLLE_SS_CNTL2_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->plle_ss_cntl2.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->plle_ss_cntl2.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->plle_ss_cntl2.reg32 = value;
         break;
     case LVL2_CLK_GATE_OVRA_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->lvl2_clk_gate_ovra.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->lvl2_clk_gate_ovra.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->lvl2_clk_gate_ovra.reg32 = value;
         break;
     case LVL2_CLK_GATE_OVRB_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->lvl2_clk_gate_ovrb.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->lvl2_clk_gate_ovrb.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->lvl2_clk_gate_ovrb.reg32 = value;
         break;
     case CLK_SOURCE_I2S1_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->clk_source_i2s1.reg32, value);
@@ -1319,7 +1319,7 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
             tegra_cpu_reset_assert(TEGRA_CCPLEX_CORE1);
         }
 
-        if (tegra_board == TEGRAX1_BOARD) {
+        if (tegra_board >= TEGRAX1_BOARD) {
             if (rst.set_cpureset2) {
                 tegra_cpu_reset_assert(TEGRA_CCPLEX_CORE2);
             }
@@ -1332,15 +1332,15 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
     }
     case UTMIP_PLL_CFG0_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->utmip_pll_cfg0.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->utmip_pll_cfg0.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->utmip_pll_cfg0.reg32 = value;
         break;
     case RST_CONTROLLER_PLLC4_BASE_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->rst_controller_pllc4_base.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->rst_controller_pllc4_base.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->rst_controller_pllc4_base.reg32 = value;
         break;
     case RST_CONTROLLER_PLLMB_BASE_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->rst_controller_pllmb_base.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD)  {
+        if (tegra_board >= TEGRAX1_BOARD)  {
             value &= ~(3<<26);
             value |= s->rst_controller_pllmb_base.reg32 & (3<<26);
             s->rst_controller_pllmb_base.reg32 = value;
@@ -1372,7 +1372,7 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
             tegra_cpu_reset_deassert(TEGRA_CCPLEX_CORE1, 0);
         }
 
-        if (tegra_board == TEGRAX1_BOARD) {
+        if (tegra_board >= TEGRAX1_BOARD) {
             if (rst.clr_cpureset2) {
                 tegra_cpu_reset_deassert(TEGRA_CCPLEX_CORE2, 0);
             }
@@ -1506,7 +1506,7 @@ static void tegra_car_priv_reset(DeviceState *dev)
 
     s->osc_freq_det_status.osc_freq_det_cnt = 1587;
 
-    if (tegra_board == TEGRAX1_BOARD) {
+    if (tegra_board >= TEGRAX1_BOARD) {
         s->pllc_misc_1.reg32 = PLLC_MISC_1_TEGRAX1_RESET;
         s->pllm_misc2.reg32 = PLLM_MISC2_TEGRAX1_RESET;
         s->plla_misc.reg32 = PLLA_MISC_TEGRAX1_RESET;

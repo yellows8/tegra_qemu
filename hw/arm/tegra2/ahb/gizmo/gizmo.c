@@ -163,7 +163,7 @@ static uint64_t tegra_ahb_gizmo_priv_read(void *opaque, hwaddr offset,
         ret = s->apb_dma.reg32;
         break;
     case AHB_MASTER_SWID_0_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->ahb_master_swid_0.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->ahb_master_swid_0.reg32;
         break;
     case IDE_OFFSET:
         ret = s->ide.reg32;
@@ -187,7 +187,7 @@ static uint64_t tegra_ahb_gizmo_priv_read(void *opaque, hwaddr offset,
         ret = s->vcp_ahb_bridge.reg32;
         break;
     case AHB_MASTER_SWID_1_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->ahb_master_swid_1.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->ahb_master_swid_1.reg32;
         break;
     case NAND_OFFSET:
         ret = s->nand.reg32;
@@ -199,10 +199,10 @@ static uint64_t tegra_ahb_gizmo_priv_read(void *opaque, hwaddr offset,
         ret = s->xio.reg32;
         break;
     case TZRAM_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->tzram.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->tzram.reg32;
         break;
     case SE_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->se.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->se.reg32;
         break;
     case BSEV_OFFSET:
         ret = s->bsev.reg32;
@@ -229,22 +229,22 @@ static uint64_t tegra_ahb_gizmo_priv_read(void *opaque, hwaddr offset,
         ret = s->sdmmc3.reg32;
         break;
     case ARC_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->arc.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->arc.reg32;
         break;
     case WRQ_EMPTY_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->wrq_empty.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->wrq_empty.reg32;
         break;
     case MEM_PREFETCH_CFG5_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->mem_prefetch_cfg5.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->mem_prefetch_cfg5.reg32;
         break;
     case MEM_PREFETCH_CFG6_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->mem_prefetch_cfg6.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->mem_prefetch_cfg6.reg32;
         break;
     case MEM_PREFETCH_CFG7_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->mem_prefetch_cfg7.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->mem_prefetch_cfg7.reg32;
         break;
     case MEM_PREFETCH_CFG8_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->mem_prefetch_cfg8.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->mem_prefetch_cfg8.reg32;
         break;
     case MEM_PREFETCH_CFG_X_OFFSET:
         ret = s->mem_prefetch_cfg_x.reg32;
@@ -286,10 +286,10 @@ static uint64_t tegra_ahb_gizmo_priv_read(void *opaque, hwaddr offset,
         ret = s->ahb_arbitration_cop_abort_addr.reg32;
         break;
     case AHB_SPARE_REG_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->ahb_spare_reg.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->ahb_spare_reg.reg32;
         break;
     case AHB_MPCORE_MCCIF_FIFOCTRL_OFFSET:
-        if (tegra_board == TEGRAX1_BOARD) ret = s->ahb_mpcore_mccif_fifoctrl.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->ahb_mpcore_mccif_fifoctrl.reg32;
         break;
     case AHB_ARBITRATION_DISABLE_OFFSET:
         ret = s->ahb_arbitration_disable.reg32;
@@ -332,7 +332,7 @@ static void tegra_ahb_gizmo_priv_write(void *opaque, hwaddr offset,
         break;
     case AHB_MASTER_SWID_0_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->ahb_master_swid_0.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->ahb_master_swid_0.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->ahb_master_swid_0.reg32 = value;
         break;
     case IDE_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->ide.reg32, value);
@@ -364,7 +364,7 @@ static void tegra_ahb_gizmo_priv_write(void *opaque, hwaddr offset,
         break;
     case AHB_MASTER_SWID_1_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->ahb_master_swid_1.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->ahb_master_swid_1.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->ahb_master_swid_1.reg32 = value;
         break;
     case NAND_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->nand.reg32, value);
@@ -380,11 +380,11 @@ static void tegra_ahb_gizmo_priv_write(void *opaque, hwaddr offset,
         break;
     case TZRAM_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->tzram.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->tzram.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->tzram.reg32 = value;
         break;
     case SE_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->se.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->se.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->se.reg32 = value;
         break;
     case BSEV_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->bsev.reg32, value);
@@ -420,27 +420,27 @@ static void tegra_ahb_gizmo_priv_write(void *opaque, hwaddr offset,
         break;
     case ARC_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->arc.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->arc.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->arc.reg32 = value;
         break;
     case WRQ_EMPTY_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->wrq_empty.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->wrq_empty.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->wrq_empty.reg32 = value;
         break;
     case MEM_PREFETCH_CFG5_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->mem_prefetch_cfg5.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->mem_prefetch_cfg5.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->mem_prefetch_cfg5.reg32 = value;
         break;
     case MEM_PREFETCH_CFG6_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->mem_prefetch_cfg6.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->mem_prefetch_cfg6.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->mem_prefetch_cfg6.reg32 = value;
         break;
     case MEM_PREFETCH_CFG7_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->mem_prefetch_cfg7.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->mem_prefetch_cfg7.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->mem_prefetch_cfg7.reg32 = value;
         break;
     case MEM_PREFETCH_CFG8_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->mem_prefetch_cfg8.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->mem_prefetch_cfg8.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->mem_prefetch_cfg8.reg32 = value;
         break;
     case MEM_PREFETCH_CFG_X_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->mem_prefetch_cfg_x.reg32, value);
@@ -472,11 +472,11 @@ static void tegra_ahb_gizmo_priv_write(void *opaque, hwaddr offset,
         break;
     case AHB_SPARE_REG_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->ahb_spare_reg.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->ahb_spare_reg.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->ahb_spare_reg.reg32 = value;
         break;
     case AHB_MPCORE_MCCIF_FIFOCTRL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->ahb_mpcore_mccif_fifoctrl.reg32, value);
-        if (tegra_board == TEGRAX1_BOARD) s->ahb_mpcore_mccif_fifoctrl.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->ahb_mpcore_mccif_fifoctrl.reg32 = value;
         break;
     case AHB_ARBITRATION_DISABLE_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->ahb_arbitration_disable.reg32, value);
@@ -559,7 +559,7 @@ static void tegra_ahb_gizmo_priv_reset(DeviceState *dev)
     s->ahb_arbitration_priority_ctrl.reg32 = AHB_ARBITRATION_PRIORITY_CTRL_RESET;
     s->ahb_arbitration_usr_protect.reg32 = AHB_ARBITRATION_USR_PROTECT_RESET;
 
-    if (tegra_board == TEGRAX1_BOARD) {
+    if (tegra_board >= TEGRAX1_BOARD) {
         s->ahb_avpc_mccif_fifoctrl_offset = AHB_AVPC_MCCIF_FIFOCTRL_TEGRAX1_OFFSET;
         s->ahb_timeout_wcoal_avpc_offset = AHB_TIMEOUT_WCOAL_AVPC_TEGRAX1_OFFSET;
     }

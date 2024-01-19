@@ -273,7 +273,7 @@ static uint64_t tegra_i2c_read(void *opaque, hwaddr offset, unsigned size)
     case 0x6c /* I2C_CLK_DIVISOR */:
         return s->clk_divisor;
     case 0x8c /* I2C_I2C_CONFIG_LOAD */:
-        if (tegra_board == TEGRAX1_BOARD) return s->config_load;
+        if (tegra_board >= TEGRAX1_BOARD) return s->config_load;
         break;
     default:
         error_setg(&err, "tegra_i2c_read: Bad offset 0x%x", (uint32_t) offset);
@@ -371,7 +371,7 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
         s->clk_divisor = value;
         break;
     case 0x8c /* I2C_I2C_CONFIG_LOAD */:
-        if (tegra_board == TEGRAX1_BOARD) {
+        if (tegra_board >= TEGRAX1_BOARD) {
             value &= ~0x7;
             s->config_load = value;
         }

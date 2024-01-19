@@ -601,7 +601,7 @@ static void tegra_se_priv_reset(DeviceState *dev)
     // Setup SE as secmon requires. Proper way to do this would be to start emulation from BPMP bootrom/bootloader.
 
     s->regs.SE_SE_SECURITY = (1 << 0); // SE_SECURITY SE_HARD_SETTING
-    s->regs.SE_SE_SECURITY |= 1<<5; // SE_SECURITY Mariko sticky bit
+    if (tegra_board == TEGRAX1PLUS_BOARD) s->regs.SE_SE_SECURITY |= 1<<5; // SE_SECURITY Mariko sticky bit
     s->regs.SE_CRYPTO_SECURITY_PERKEY = 0xFFFF;
 
     Error *err = NULL;

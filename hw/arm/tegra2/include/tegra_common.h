@@ -29,6 +29,7 @@ enum tegra_board_type {
     TEGRA2_BOARD_QEMU,
     TEGRA2_BOARD_PICASSO,
     TEGRAX1_BOARD,
+    TEGRAX1PLUS_BOARD,
 };
 
 extern enum tegra_board_type tegra_board;

@@ -600,7 +600,7 @@ static uint64_t tegra_emc_priv_read(void *opaque, hwaddr offset,
         break;
     case DLL_XFORM_QUSE_OFFSET:
         ret = s->dll_xform_quse.reg32;
-        if (tegra_board == TEGRAX1_BOARD) s->dll_xform_quse.reg32 &= ~(1<<15); // EMC_DIG_DLL_STATUS DLL_LOCK
+        if (tegra_board >= TEGRAX1_BOARD) s->dll_xform_quse.reg32 &= ~((1<<15) | (1<<17)); // EMC_DIG_DLL_STATUS DLL_LOCK, DLL_PRIV_UPDATED
         break;
     case DIG_DLL_UPPER_STATUS_OFFSET:
         ret = s->dig_dll_upper_status.reg32;
@@ -843,7 +843,7 @@ static void tegra_emc_priv_write(void *opaque, hwaddr offset,
     case INTSTATUS_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->intstatus.reg32, value);
         s->intstatus.reg32 = value;
-        if (tegra_board == TEGRAX1_BOARD) {
+        if (tegra_board >= TEGRAX1_BOARD) {
             emc_chan = tegra_emc0_dev;
             emc_chan->intstatus.reg32 = value;
             emc_chan = tegra_emc1_dev;
@@ -1066,7 +1066,7 @@ static void tegra_emc_priv_write(void *opaque, hwaddr offset,
     case MRR_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->mrr.reg32, value);
         s->mrr.reg32 = value;
-        if (tegra_board == TEGRAX1_BOARD) {
+        if (tegra_board >= TEGRAX1_BOARD) {
             emc_chan = tegra_emc0_dev;
             emc_chan->emc_status.reg32 |= 0x100000;
             emc_chan = tegra_emc1_dev;
@@ -1148,14 +1148,16 @@ static void tegra_emc_priv_write(void *opaque, hwaddr offset,
     case CFG_DIG_DLL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->cfg_dig_dll.reg32, value & CFG_DIG_DLL_WRMASK);
         WR_MASKED(s->cfg_dig_dll.reg32, value, CFG_DIG_DLL);
-        if (tegra_board == TEGRAX1_BOARD) {
-            s->dll_xform_quse.reg32 |= 0x28000; // EMC_DIG_DLL_STATUS: DLL_LOCK, DLL_PRIV_UPDATED
+        if (tegra_board >= TEGRAX1_BOARD) {
+            uint32_t mask = 0x28000; // EMC_DIG_DLL_STATUS: DLL_LOCK, DLL_PRIV_UPDATED
+            if (tegra_board == TEGRAX1PLUS_BOARD) mask |= 1 << 2; // TX1+: EMC_DIG_DLL_STATUS: DLL_LOCK
+            s->dll_xform_quse.reg32 |= mask;
             emc_chan = tegra_emc0_dev;
             emc_chan->cfg_dig_dll.reg32 = s->cfg_dig_dll.reg32;
-            emc_chan->dll_xform_quse.reg32 |= 1 << 2; // TX1+: EMC_DIG_DLL_STATUS: DLL_LOCK
+            emc_chan->dll_xform_quse.reg32 |= mask;
             emc_chan = tegra_emc1_dev;
             emc_chan->cfg_dig_dll.reg32 = s->cfg_dig_dll.reg32;
-            emc_chan->dll_xform_quse.reg32 |= 1 << 2; // TX1+: EMC_DIG_DLL_STATUS: DLL_LOCK
+            emc_chan->dll_xform_quse.reg32 |= mask;
         }
         break;
     case DLL_XFORM_DQS_OFFSET:
