@@ -111,7 +111,7 @@ static void tegra_timer_priv_write(void *opaque, hwaddr offset,
 
 //         TPRINT("[%lu] timer set to %d\n", qemu_clock_get_us(QEMU_CLOCK_VIRTUAL), s->ptv.tmr_ptv);
 
-        assert((s->ptv.tmr_ptv && s->ptv.per) || !s->ptv.per);
+        //assert((s->ptv.tmr_ptv && s->ptv.per) || !s->ptv.per);
 
         ptimer_set_limit(s->ptimer, s->ptv.tmr_ptv + 1, 1);
         ptimer_run(s->ptimer, !s->ptv.per);
