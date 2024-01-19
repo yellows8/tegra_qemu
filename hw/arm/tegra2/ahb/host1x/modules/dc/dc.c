@@ -23,6 +23,7 @@
 #include "hw/ptimer.h"
 #include "hw/sysbus.h"
 #include "ui/console.h"
+#include "sysemu/sysemu.h"
 
 #include "registers/dc.h"
 #include "window.h"
@@ -312,14 +313,47 @@ static void tegra_dc_compose_window(QemuConsole *console, display_window *win)
     if (!win->regs_active.win_options.win_enable || !win->surface)
         return;
 
+    int x = win->regs_active.win_position.h_position;
+    int y = win->regs_active.win_position.v_position;
+    int width = win->regs_active.win_size.h_size;
+    int height = win->regs_active.win_size.v_size;
+
+    if (graphic_rotate) {
+        struct pixman_transform transform={};
+        pixman_fixed_t fw = pixman_int_to_fixed(width), fh = pixman_int_to_fixed(height);
+        pixman_transform_init_identity(&transform);
+
+        switch (graphic_rotate) {
+        case 90:
+            pixman_transform_rotate(&transform, NULL, 0, -pixman_fixed_1);
+            pixman_transform_translate(&transform, NULL, 0, fh);
+            break;
+        case 180:
+            pixman_transform_rotate(&transform, NULL, -pixman_fixed_1, 0);
+            pixman_transform_translate(&transform, NULL, fw, fh);
+            break;
+        case 270:
+            pixman_transform_rotate(&transform, NULL, 0, pixman_fixed_1);
+            pixman_transform_translate(&transform, NULL, fw, 0);
+            break;
+        }
+
+        pixman_image_set_transform(win->surface->image, &transform);
+
+        if (graphic_rotate == 90 || graphic_rotate == 270) {
+            x = win->regs_active.win_position.v_position;
+            y = win->regs_active.win_position.h_position;
+            width = win->regs_active.win_size.v_size;
+            height = win->regs_active.win_size.h_size;
+        }
+    }
+
     pixman_image_composite(PIXMAN_OP_SRC,
                            win->surface->image, NULL,
                            qemu_console_surface(console)->image,
                            0, 0, 0, 0,
-                           win->regs_active.win_position.h_position,
-                           win->regs_active.win_position.v_position,
-                           win->regs_active.win_size.h_size,
-                           win->regs_active.win_size.v_size);
+                           x, y,
+                           width, height);
 }
 
 static void tegra_dc_vblank(void *opaque)
@@ -372,15 +406,20 @@ static void tegra_dc_compose(void *opaque)
         return;
     }
 
-    qemu_console_resize(s->console, s->dc.disp_disp_active.h_disp_active, s->dc.disp_disp_active.v_disp_active); // This will internally do nothing if resize isn't needed.
+    int width = s->dc.disp_disp_active.h_disp_active;
+    int height = s->dc.disp_disp_active.v_disp_active;
+    if (graphic_rotate == 90 || graphic_rotate == 270) {
+        width = s->dc.disp_disp_active.v_disp_active;
+        height = s->dc.disp_disp_active.h_disp_active;
+    }
+
+    qemu_console_resize(s->console, width, height); // This will internally do nothing if resize isn't needed.
 
     tegra_dc_compose_window(s->console, &s->win_a);
     tegra_dc_compose_window(s->console, &s->win_b);
     tegra_dc_compose_window(s->console, &s->win_c);
 
-    dpy_gfx_update(s->console, 0, 0,
-                   s->dc.disp_disp_active.h_disp_active,
-                   s->dc.disp_disp_active.v_disp_active);
+    dpy_gfx_update(s->console, 0, 0, width, height);
 }
 
 static const GraphicHwOps tegra_dc_ops = {
