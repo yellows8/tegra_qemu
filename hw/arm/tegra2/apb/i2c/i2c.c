@@ -23,11 +23,12 @@
 
 #include "hw/irq.h"
 #include "hw/sysbus.h"
+#include "qapi/error.h"
 #include "hw/i2c/i2c.h"
 
 #include "i2c.h"
 
-#define DEBUG_I2C 1
+//#define DEBUG_I2C 1
 
 #ifdef DEBUG_I2C
 #define DPRINTF(fmt, ...) \
@@ -147,13 +148,14 @@ static void tegra_i2c_fill_rx(TegraI2CState *s)
 static void tegra_i2c_xfer_packet(TegraI2CState *s, uint32_t value)
 {
     int b = 0, ret;
+    Error *err = NULL;
 
     switch (s->state) {
     case I2C_HEADER0:
         /* 23->16 : PKTID 7:4 proto 1=I2c 2:0 PKtType*/
         if (((value & 0xf0) != PACKET_HEADER0_PROTOCOL_I2C) ||
             (value & 0x30000000)) {
-            printf("tegra_i2c: Invalid protocol, we only support I2C\n");
+            error_setg(&err, "tegra_i2c: Invalid protocol, we only support I2C");
         }
         s->header = value;
         s->packet_transfer_status = value &
@@ -196,12 +198,18 @@ static void tegra_i2c_xfer_packet(TegraI2CState *s, uint32_t value)
         }
         break;
     }
+
+    if (err) {
+        error_report_err(err);
+        err = NULL;
+    }
 }
 
 static uint64_t tegra_i2c_read(void *opaque, hwaddr offset, unsigned size)
 {
     TegraI2CState *s = opaque;
     uint32_t value, shift;
+    Error *err = NULL;
     DPRINTF("READ at 0x%x\n", (uint32_t) offset);
 
     if (s->is_dvc) {
@@ -268,8 +276,13 @@ static uint64_t tegra_i2c_read(void *opaque, hwaddr offset, unsigned size)
         if (tegra_board == TEGRAX1_BOARD) return s->config_load;
         break;
     default:
-        /*hw_error*/printf("tegra_i2c_read: Bad offset 0x%x\n", (uint32_t) offset);
+        error_setg(&err, "tegra_i2c_read: Bad offset 0x%x", (uint32_t) offset);
         return 0;
+    }
+
+    if (err) {
+        error_report_err(err);
+        err = NULL;
     }
 
     return 0;
@@ -280,6 +293,7 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
 {
     TegraI2CState *s = opaque;
     DPRINTF("WRITE at 0x%x <= 0x%x\n", (uint32_t) offset, (uint32_t) value);
+    Error *err = NULL;
 
     if (s->is_dvc) {
         if (offset < 0x40) {
@@ -363,8 +377,13 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
         }
         break;
     default:
-        /*hw_error*/printf("tegra_i2c_write: Bad offset %x\n", (int)offset);
+        error_setg(&err, "tegra_i2c_write: Bad offset %x", (int)offset);
         break;
+    }
+
+    if (err) {
+        error_report_err(err);
+        err = NULL;
     }
 }
 
