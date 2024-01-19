@@ -120,6 +120,7 @@ static uint32_t tegra_bootmon[] = {
 };
 #endif
 
+#if 0
 static uint32_t tegra_bootmon[] = { // CCPLEX reset vector
     0xd29e201e, /*mov     x30, #0xf100*/
     0xf2ac001e, /*movk    x30, #0x6000, lsl #16*/
@@ -133,6 +134,7 @@ static uint32_t tegra_bootmon[] = { // CCPLEX reset vector
 /* jump:*/
     0xd61f03c0, /*br      x30*/
 };
+#endif
 
 static uint32_t tegra_bootrom[] = {
     0xea000006, /* b reset_addr */
@@ -202,7 +204,7 @@ static void tegrax1_create_cpus(void)
 
         object_property_set_int(cpuobj, "reset-cbar", TEGRA_ARM_PERIF_BASE, &error_abort);
         object_property_set_bool(cpuobj, "has_el3", true, &error_abort);
-        object_property_set_int(cpuobj, "rvbar", BOOTMON_BASE, &error_abort);
+        object_property_set_int(cpuobj, "rvbar", 0x040030000, &error_abort); // Updated when writing to the EVP/SB regs.
         object_property_set_bool(cpuobj, "start-powered-off", true, &error_abort);
         object_property_set_uint(cpuobj, "cntfrq", SYSTEM_TICK_FREQ, &error_abort); // This must be configured manually since qemu doesn't update the timer frequency when the cntfrq reg is written.
         qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
@@ -271,12 +273,12 @@ static void load_memory_images(MachineState *machine)
     rom_add_blob_fixed("bpmp.lovec", tegra_bootrom, sizeof(tegra_bootrom),
                        BOOTROM_LOVEC_BASE);
 
-    for (tmp = 0; tmp < ARRAY_SIZE(tegra_bootmon); tmp++)
-        tegra_bootmon[tmp] = tswap32(tegra_bootmon[tmp]);
+    /*for (tmp = 0; tmp < ARRAY_SIZE(tegra_bootmon); tmp++)
+        tegra_bootmon[tmp] = tswap32(tegra_bootmon[tmp]);*/
 
     /* Load boot monitor */
-    rom_add_blob_fixed("bootmon", tegra_bootmon, sizeof(tegra_bootmon),
-                       BOOTMON_BASE);
+    /*rom_add_blob_fixed("bootmon", tegra_bootmon, sizeof(tegra_bootmon),
+                       BOOTMON_BASE);*/
 
     /*if (machine->firmware != NULL) { // secmon
         tmp = load_image_targphys(machine->firmware, 0x040030000, 128*1024);
@@ -333,8 +335,8 @@ static void tegrax1_init(MachineState *machine)
     /*memory_region_add_and_init_ram(sysmem, "tegra.hi-vec",
                                    0xffff0000, SZ_64K, RW);*/
 
-    memory_region_add_and_init_ram(sysmem, "tegra.bootmon",
-                                   BOOTMON_BASE, TARGET_PAGE_SIZE, RO);
+    /*memory_region_add_and_init_ram(sysmem, "tegra.bootmon",
+                                   BOOTMON_BASE, TARGET_PAGE_SIZE, RO);*/
 
     /* Internal static RAM */
     memory_region_add_and_init_ram(sysmem, "tegra.iram",
@@ -351,10 +353,6 @@ static void tegrax1_init(MachineState *machine)
 
     memory_region_add_and_init_ram(sysmem, "tegra.irom",
                                    BOOTROM_BASE, 0x10000, RO);
-
-    /* Secure boot stub */
-    memory_region_add_and_init_ram(sysmem, "tegra.secure_boot",
-                                   TEGRA_SB_BASE, TEGRA_SB_SIZE, RW);
 
     memory_region_add_and_init_ram(sysmem, "tegra.ahb_a1",
                                    0x78000000, SZ_16M, RW);
@@ -479,6 +477,10 @@ static void tegrax1_init(MachineState *machine)
     /* Exception vectors */
     tegra_evp_dev = sysbus_create_simple("tegra.evp",
                                          TEGRA_EXCEPTION_VECTORS_BASE, NULL);
+
+    /* Secure boot */
+    tegra_sb_dev = sysbus_create_simple("tegra.sb",
+                                        TEGRA_SB_BASE, NULL);
 
     /* Embedded memory controller */
     tegra_emc_dev = sysbus_create_simple("tegra.emc", TEGRA_EMC_BASE, NULL);
@@ -830,9 +832,9 @@ static void tegrax1_init(MachineState *machine)
                                 BOOTROM_BASE,
                                 BOOTROM_BASE, 0x10000);
 
-    cop_memory_region_add_alias(cop_sysmem, "tegra.cop-bootmon", sysmem,
+    /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-bootmon", sysmem,
                                 BOOTMON_BASE,
-                                BOOTMON_BASE, TARGET_PAGE_SIZE);
+                                BOOTMON_BASE, TARGET_PAGE_SIZE);*/
 
     /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-mmu", sysmem,
                                 0xF0000000,

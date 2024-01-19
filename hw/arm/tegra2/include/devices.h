@@ -91,6 +91,7 @@ extern void * tegra_arb_gnt_ictlr_dev;
 extern void * tegra_irq_dispatcher_dev;
 extern void * tegra_mselect_dev;
 extern void * tegra_evp_dev;
+extern void * tegra_sb_dev;
 extern void * tegra_ictlr_dev;
 extern void * tegra_gr2d_dev;
 extern void * tegra_host1x_dev;

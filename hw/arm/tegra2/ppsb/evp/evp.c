@@ -117,6 +117,10 @@ static void tegra_evp_priv_write(void *opaque, hwaddr offset,
             TRACE_WRITE(s->iomem.addr, offset, s->evp_regs[cpu_index][reg_id],
                         value);
             s->evp_regs[cpu_index][reg_id] = value;
+
+            if (tegra_board == TEGRAX1_BOARD && cpu_index==0 && reg_id == EVP_RESET_VECTOR_OFFSET) {
+                tegra_cpu_set_rvbar(value);
+            }
             break;
         }
         /* Fallthrough */

@@ -39,6 +39,7 @@ arm_ss.add(files(
   'ahb/mselect/mselect.c',
   'ahb/dsi/dsi.c',
   'ahb/tsec/tsec.c',
+  'ahb/sb/sb.c',
   'ahb/usb/usb.c',
 
   'apb/pinmuxaux/pinmuxaux.c',

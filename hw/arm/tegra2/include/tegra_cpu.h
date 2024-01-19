@@ -40,6 +40,7 @@ void tegra_cpu_halt(int cpu_id);
 void tegra_cpu_unhalt(int cpu_id);
 void tegra_cpu_reset_assert(int cpu_id);
 void tegra_cpu_reset_deassert(int cpu_id, int flow);
+void tegra_cpu_set_rvbar(uint64_t value);
 int tegra_cpu_is_powergated(int cpu_id);
 void tegra_cpu_powergate(int cpu_id);
 void tegra_cpu_unpowergate(int cpu_id);

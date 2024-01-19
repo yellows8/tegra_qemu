@@ -25,6 +25,8 @@
 #include "sysemu/sysemu.h"
 #include "target/arm/arm-powerctl.h"
 #include "cpu.h"
+#include "qapi/error.h"
+#include "qemu/error-report.h"
 
 #include "devices.h"
 #include "tegra_cpu.h"
@@ -146,6 +148,17 @@ void tegra_cpu_reset_deassert(int cpu_id, int flow)
 
         if (tegra_cpu_halted(cpu_id)) {
             cpu_interrupt(cs, CPU_INTERRUPT_HALT);
+        }
+    }
+}
+
+void tegra_cpu_set_rvbar(uint64_t value)
+{
+    CPUState *csX;
+    CPU_FOREACH(csX) {
+        if (csX->cpu_index != TEGRA_BPMP) {
+            Object *obj = OBJECT(csX);
+            object_property_set_int(obj, "rvbar", value, &error_abort);
         }
     }
 }

@@ -97,6 +97,7 @@ void *tegra_arb_gnt_ictlr_dev = NULL;
 void *tegra_irq_dispatcher_dev = NULL;
 void *tegra_mselect_dev = NULL;
 void *tegra_evp_dev = NULL;
+void *tegra_sb_dev = NULL;
 void *tegra_ictlr_dev = NULL;
 void *tegra_gr2d_dev = NULL;
 void *tegra_host1x_dev = NULL;
