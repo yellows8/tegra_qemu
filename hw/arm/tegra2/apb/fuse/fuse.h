@@ -936,4 +936,6 @@ typedef union fuse_spare_bit_61_u {
     uint32_t reg32;
 } fuse_spare_bit_61_t;
 
+#define KFUSE_STATE_OFFSET 0x80
+
 #endif // TEGRA_FUSE_H

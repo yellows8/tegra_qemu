@@ -461,6 +461,8 @@ static uint64_t tegra_fuse_priv_read(void *opaque, hwaddr offset,
     case FUSE_SPARE_BIT_61_OFFSET:
         ret = s->fuse_spare_bit_61.reg32;
         break;
+    case TEGRA_FUSE_SIZE + KFUSE_STATE_OFFSET:
+        ret = 0x3<<16; // STATE_DONE = DONE, STATE_CRCPASS = PASS
     default:
         break;
     }
@@ -932,7 +934,7 @@ static void tegra_fuse_priv_realize(DeviceState *dev, Error **errp)
     tegra_fuse *s = TEGRA_FUSE(dev);
 
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_fuse_mem_ops, s,
-                          "tegra.fuse", TEGRA_FUSE_SIZE);
+                          "tegra.fuse", TEGRA_FUSE_SIZE + TEGRA_KFUSE_SIZE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 }
 
