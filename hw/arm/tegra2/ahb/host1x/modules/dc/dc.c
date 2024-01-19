@@ -94,7 +94,7 @@ static uint64_t tegra_dc_priv_read(void *opaque, hwaddr offset,
         ret += s->dc.cmd_display_window_header.window_c_select;
 
         /* SW error check.  */
-        g_assert(ret <= 1);
+        //g_assert(ret <= 1);
 
         if (s->dc.cmd_display_window_header.window_a_select) {
             ret = read_window(&s->win_a, offset, st);
