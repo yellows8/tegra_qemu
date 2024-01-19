@@ -132,10 +132,14 @@ void tegra_cpu_reset_deassert(int cpu_id, int flow)
     if (tcpu_in_reset[cpu_id]) {
         tcpu_in_reset[cpu_id] = 0;
 
-        if (cpu_id == TEGRA_BPMP)
-            arm_set_cpu_on(cpu_id, 0x0, 0, 1, 0);
-        else
-            arm_set_cpu_on(cpu_id, 0xf0010000, 0, 3, 1);
+        if (tegra_board == TEGRAX1_BOARD)
+            arm_set_cpu_on_and_reset(cpu_id);
+        else {
+            if (cpu_id == TEGRA_BPMP)
+                arm_set_cpu_on(cpu_id, 0x0, 0, 1, 0);
+            else
+                arm_set_cpu_on(cpu_id, 0xf0010000, 0, 3, 1);
+        }
 
         /* Force poweroff work queuing.  */
         cpu->power_state = PSCI_ON;

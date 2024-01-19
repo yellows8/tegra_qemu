@@ -202,7 +202,7 @@ static void tegrax1_create_cpus(void)
 
         object_property_set_int(cpuobj, "reset-cbar", TEGRA_ARM_PERIF_BASE, &error_abort);
         object_property_set_bool(cpuobj, "has_el3", true, &error_abort);
-        object_property_set_bool(cpuobj, "reset-hivecs", true, &error_abort);
+        object_property_set_int(cpuobj, "rvbar", BOOTMON_BASE, &error_abort);
         object_property_set_bool(cpuobj, "start-powered-off", true, &error_abort);
         object_property_set_uint(cpuobj, "cntfrq", SYSTEM_TICK_FREQ, &error_abort); // This must be configured manually since qemu doesn't update the timer frequency when the cntfrq reg is written.
         qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
