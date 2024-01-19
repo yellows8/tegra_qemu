@@ -77,6 +77,7 @@ void *tegra_uartc_dev = NULL;
 void *tegra_uartd_dev = NULL;
 void *tegra_dc1_dev = NULL;
 void *tegra_dsi_dev = NULL;
+void *tegra_tsec_dev = NULL;
 void *tegra_mipical_dev = NULL;
 void *tegra_ehci1_dev = NULL;
 void *tegra_ehci2_dev = NULL;

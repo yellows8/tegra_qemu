@@ -38,6 +38,7 @@ arm_ss.add(files(
   'ahb/gizmo/gizmo.c',
   'ahb/mselect/mselect.c',
   'ahb/dsi/dsi.c',
+  'ahb/tsec/tsec.c',
   'ahb/usb/usb.c',
 
   'apb/pinmuxaux/pinmuxaux.c',
