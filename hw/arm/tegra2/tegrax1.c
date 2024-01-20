@@ -30,6 +30,7 @@
 #include "qemu/config-file.h"
 #include "qapi/qmp/qlist.h"
 #include "cpu.h"
+#include "hw/cpu/cluster.h"
 #include "exec/address-spaces.h"
 #include "hw/boards.h"
 #include "hw/sysbus.h"
@@ -199,8 +200,13 @@ static void tegrax1_create_cpus(void)
 {
     int i;
 
+    Object *cluster = object_new(TYPE_CPU_CLUSTER);
+    qdev_prop_set_uint32(DEVICE(cluster), "cluster-id", 0);
+
     for (i = 0; i < TEGRAX1_CCPLEX_NCORES; i++) {
         Object *cpuobj = object_new(ARM_CPU_TYPE_NAME("cortex-a57"));
+
+        object_property_add_child(cluster, "cpu[*]", cpuobj);
 
         object_property_set_int(cpuobj, "reset-cbar", TEGRA_ARM_PERIF_BASE, &error_abort);
         object_property_set_bool(cpuobj, "has_el3", true, &error_abort);
@@ -217,10 +223,17 @@ static void tegrax1_create_cpus(void)
         env->cp15.oslsr_el1 = 0;*/
     }
 
+    qdev_realize(DEVICE(cluster), NULL, &error_fatal);
+    cluster = object_new(TYPE_CPU_CLUSTER);
+    qdev_prop_set_uint32(DEVICE(cluster), "cluster-id", 1);
+
     /* BPMP */
     Object *cpuobj = object_new(ARM_CPU_TYPE_NAME("arm7tdmi"));
+    object_property_add_child(cluster, "cpu[*]", cpuobj);
     object_property_set_bool(cpuobj, "start-powered-off", true, &error_abort);
     qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
+
+    qdev_realize(DEVICE(cluster), NULL, &error_fatal);
 
     set_is_tegra_cpu(TEGRA_CCPLEX_CORE0);
     set_is_tegra_cpu(TEGRA_CCPLEX_CORE1);
