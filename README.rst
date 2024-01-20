@@ -40,9 +40,11 @@ Run Tegra X1
 
 .. code-block:: shell
 
-  ./qemu-system-aarch64 -machine tegrax1 -m 4G -bios {BPMP IRAM bootloader path}
+  ./qemu-system-aarch64 -machine tegrax1 -m 4G -bootloader {BPMP IRAM bootloader path}
 
 * Use ``-machine tegrax1plus`` for TX1+.
+
+* ``-bios {path}`` can also be used for running the BPMP IROM. If neither are specified, CCPLEX core0 is started in EL3. It's assumed the user loaded the required data, such as with (repeating as needed for each file): ``-device loader,addr={value},{force-raw=true},file={path}``. To set the reset vector for this: ``-global driver=tegra.evp,property=cpu-reset-vector,value={addr}``.
 
 * The sd -drive index 0-3 corresponds to the SDMMC1-SDMMC4 controllers. To (optionally) attach storage to each controller: ``-drive if=sd,index={0-3},format=raw,file={image path}``
 * Use index=3 for emmc, and (for example) 0 for sd. The emmc image must start with the 0x400000-byte BOOT0 and BOOT1 partitions, with the main MMC partition following that at byte-offset 0x800000.

@@ -210,7 +210,7 @@ static void tegrax1_create_cpus(void)
 
         object_property_set_int(cpuobj, "reset-cbar", TEGRA_ARM_PERIF_BASE, &error_abort);
         object_property_set_bool(cpuobj, "has_el3", true, &error_abort);
-        object_property_set_int(cpuobj, "rvbar", 0x040030000, &error_abort); // Updated when writing to the EVP/SB regs.
+        // rvbar is configured in reset.c.
         object_property_set_bool(cpuobj, "start-powered-off", true, &error_abort);
         object_property_set_uint(cpuobj, "cntfrq", SYSTEM_TICK_FREQ, &error_abort); // This must be configured manually since qemu doesn't update the timer frequency when the cntfrq reg is written.
         qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
@@ -246,8 +246,6 @@ static void tegrax1_create_cpus(void)
 //    .board_id = -1, /* device-tree-only board */
 //};
 
-// TODO: Update this for loading more than just bootloader.
-
 static void load_memory_images(MachineState *machine)
 {
     //const char *iram_path = machine->iram;
@@ -258,17 +256,11 @@ static void load_memory_images(MachineState *machine)
     for (tmp = 0; tmp < ARRAY_SIZE(tegra_bootrom); tmp++)
         tegra_bootrom[tmp] = tswap32(tegra_bootrom[tmp]);
 
-    #if 1
-    if (machine->firmware != NULL) {
+    if (machine->bootloader != NULL) {
         /* Load bootloader */
-        assert(load_image_targphys(machine->firmware, BOOTLOADER_BASE,
+        assert(load_image_targphys(machine->bootloader, BOOTLOADER_BASE,
                                    128*1024) > 0);
-    } /*else {
-        printf("-bootloader not specified, falling back to bundled tegra u-boot\n");
-        rom_add_blob_fixed_as("bootloader", u_boot_tegra_bin, u_boot_tegra_bin_len,
-                              BOOTLOADER_BASE, &address_space_memory);
-    }*/
-    #endif
+    }
 
     #if 0
     if (iram_path != NULL) {
@@ -283,8 +275,14 @@ static void load_memory_images(MachineState *machine)
     #endif
 
     /* Load IROM */
-    rom_add_blob_fixed("bpmp.lovec", tegra_bootrom, sizeof(tegra_bootrom),
-                       BOOTROM_LOVEC_BASE);
+    if (machine->firmware == NULL) {
+        rom_add_blob_fixed("bpmp.lovec", tegra_bootrom, sizeof(tegra_bootrom),
+                           BOOTROM_LOVEC_BASE);
+    }
+    else {
+        assert(load_image_targphys(machine->firmware, BOOTROM_LOVEC_BASE,
+                                   0x100000) > 0);
+    }
 
     /*for (tmp = 0; tmp < ARRAY_SIZE(tegra_bootmon); tmp++)
         tegra_bootmon[tmp] = tswap32(tegra_bootmon[tmp]);*/
@@ -360,10 +358,10 @@ static void __tegrax1_init(MachineState *machine)
 //                          TEGRA_IRAM_BASE + TEGRA_RESET_HANDLER_SIZE, NULL);
 
     memory_region_add_and_init_ram(sysmem, "tegra.irom_lovec",
-                                   BOOTROM_LOVEC_BASE, 0x10000, RO);
+                                   BOOTROM_LOVEC_BASE, 0x100000, RO);
 
-    memory_region_add_and_init_ram(sysmem, "tegra.irom",
-                                   BOOTROM_BASE, 0x10000, RO);
+    /*memory_region_add_and_init_ram(sysmem, "tegra.irom",
+                                   BOOTROM_BASE, 0x18000, RO);*/
 
     memory_region_add_and_init_ram(sysmem, "tegra.ahb_a1",
                                    0x78000000, SZ_16M, RW);
@@ -839,11 +837,11 @@ static void __tegrax1_init(MachineState *machine)
 
     cop_memory_region_add_alias(cop_sysmem, "tegra.bpmp-IROM_LOVEC", sysmem,
                                 BOOTROM_LOVEC_BASE,
-                                BOOTROM_LOVEC_BASE, 0x10000);
+                                BOOTROM_LOVEC_BASE, 0x100000);
 
     cop_memory_region_add_alias(cop_sysmem, "tegra.cop-IROM", sysmem,
                                 BOOTROM_BASE,
-                                BOOTROM_BASE, 0x10000);
+                                BOOTROM_LOVEC_BASE, 0x18000);
 
     /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-bootmon", sysmem,
                                 BOOTMON_BASE,
@@ -890,7 +888,7 @@ static void tegrax1_reset(MachineState *state, ShutdownCause cause)
     //tegra_trace_init();
     qemu_devices_reset(cause);
 
-    if (state->firmware != NULL)
+    if (state->firmware != NULL || state->bootloader != NULL)
         tegra_cpu_reset_deassert(TEGRA_BPMP, 1);
     else
         tegra_cpu_reset_deassert(TEGRA_CCPLEX_CORE0, 1);

@@ -26,6 +26,7 @@
 #include "iomap.h"
 #include "tegra_cpu.h"
 #include "tegra_trace.h"
+#include "devices.h"
 
 #include "sb.h"
 
@@ -50,6 +51,12 @@ static const VMStateDescription vmstate_tegra_sb = {
         VMSTATE_END_OF_LIST()
     }
 };
+
+uint64_t tegra_sb_get_cpu_reset_vector(void) {
+    tegra_sb *s = TEGRA_SB(tegra_sb_dev);
+
+    return *((uint64_t*)&s->regs[AA64_RESET_LOW_OFFSET>>2]) & 0xFFFFFFFFFFFULL;
+}
 
 static uint64_t tegra_sb_priv_read(void *opaque, hwaddr offset,
                                      unsigned size)
@@ -76,10 +83,6 @@ static void tegra_sb_priv_write(void *opaque, hwaddr offset,
     TRACE_WRITE(s->iomem.addr, offset, 0, value);
 
     s->regs[offset/sizeof(uint32_t)] = (s->regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
-
-    if (offset == AA64_RESET_LOW_OFFSET || offset == AA64_RESET_HIGH_OFFSET) {
-        if (tegra_board >= TEGRAX1_BOARD) tegra_cpu_set_rvbar(*((uint64_t*)&s->regs[AA64_RESET_LOW_OFFSET>>2]) & 0xFFFFFFFFFFEULL);
-    }
 }
 
 static void tegra_sb_priv_reset(DeviceState *dev)

@@ -26,4 +26,6 @@
 #define AA64_RESET_LOW_OFFSET 0x30
 #define AA64_RESET_HIGH_OFFSET 0x34
 
+uint64_t tegra_sb_get_cpu_reset_vector(void);
+
 #endif // TEGRA_SB_H

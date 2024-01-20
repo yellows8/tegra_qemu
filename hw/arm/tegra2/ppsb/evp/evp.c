@@ -30,6 +30,7 @@
 #include "iomap.h"
 #include "tegra_cpu.h"
 #include "tegra_trace.h"
+#include "devices.h"
 
 #include "evp.h"
 
@@ -70,6 +71,12 @@ static int tegra_evp_cpu_index(uint64_t offset)
     }
 
     return cpu_index;
+}
+
+uint64_t tegra_evp_get_cpu_reset_vector(void) {
+    tegra_evp *s = TEGRA_EVP(tegra_evp_dev);
+
+    return s->evp_regs[0][0];
 }
 
 static uint64_t tegra_evp_priv_read(void *opaque, hwaddr offset,
@@ -117,10 +124,6 @@ static void tegra_evp_priv_write(void *opaque, hwaddr offset,
             TRACE_WRITE(s->iomem.addr, offset, s->evp_regs[cpu_index][reg_id],
                         value);
             s->evp_regs[cpu_index][reg_id] = value;
-
-            if (tegra_board >= TEGRAX1_BOARD && cpu_index==0 && reg_id == EVP_RESET_VECTOR_OFFSET) {
-                tegra_cpu_set_rvbar(value);
-            }
             break;
         }
         /* Fallthrough */
@@ -136,7 +139,8 @@ static void tegra_evp_priv_reset(DeviceState *dev)
     int i;
 
     for (i = 0; i < 2; i++) {
-        s->evp_regs[i][0]  = EVP_RESET_VECTOR_RESET;
+        if (i!=0)
+            s->evp_regs[i][0]  = EVP_RESET_VECTOR_RESET;
         s->evp_regs[i][1]  = EVP_UNDEF_VECTOR_RESET;
         s->evp_regs[i][2]  = EVP_SWI_VECTOR_RESET;
         s->evp_regs[i][3]  = EVP_PREFETCH_ABORT_VECTOR_RESET;
@@ -172,10 +176,6 @@ static void tegra_evp_priv_reset(DeviceState *dev)
         s->evp_regs[i][33] = EVP_PRI_FIQ_VEC_2_RESET;
         s->evp_regs[i][34] = EVP_PRI_FIQ_NUM_3_RESET;
         s->evp_regs[i][35] = EVP_PRI_FIQ_VEC_3_RESET;
-    }
-
-    if (tegra_board >= TEGRAX1_BOARD) {
-        s->evp_regs[0][0] = 0x040030000; // CCPLEX RESET vector
     }
 }
 
@@ -251,10 +251,16 @@ static void tegra_evp_priv_realize(DeviceState *dev, Error **errp)
     arm_register_el_change_hook(cpu, tegra_cpu_do_interrupt, cs);
 }
 
+static Property tegra_evp_properties[] = {
+    DEFINE_PROP_UINT32("cpu-reset-vector", tegra_evp, evp_regs[0][0], EVP_RESET_VECTOR_RESET), \
+    DEFINE_PROP_END_OF_LIST(),
+};
+
 static void tegra_evp_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    device_class_set_props(dc, tegra_evp_properties);
     dc->realize = tegra_evp_priv_realize;
     dc->vmsd = &vmstate_tegra_evp;
     dc->reset = tegra_evp_priv_reset;

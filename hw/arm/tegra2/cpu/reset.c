@@ -31,6 +31,8 @@
 #include "devices.h"
 #include "tegra_cpu.h"
 #include "tegra_trace.h"
+#include "../ppsb/evp/evp.h"
+#include "../ahb/sb/sb.h"
 
 #include "tegra_cpu_priv.h"
 
@@ -134,8 +136,17 @@ void tegra_cpu_reset_deassert(int cpu_id, int flow)
     if (tcpu_in_reset[cpu_id]) {
         tcpu_in_reset[cpu_id] = 0;
 
-        if (tegra_board >= TEGRAX1_BOARD)
+        if (tegra_board >= TEGRAX1_BOARD) {
+            if (cpu_id != TEGRA_BPMP) {
+                uint64_t value = tegra_sb_get_cpu_reset_vector();
+                if ((value & 0x1) == 0) value = tegra_evp_get_cpu_reset_vector();
+                else value &= ~0x1;
+                Object *obj = OBJECT(cs);
+                object_property_set_int(obj, "rvbar", value, &error_abort);
+            }
+
             arm_set_cpu_on_and_reset(cpu_id);
+        }
         else {
             if (cpu_id == TEGRA_BPMP)
                 arm_set_cpu_on(cpu_id, 0x0, 0, 1, 0);
@@ -148,17 +159,6 @@ void tegra_cpu_reset_deassert(int cpu_id, int flow)
 
         if (tegra_cpu_halted(cpu_id)) {
             cpu_interrupt(cs, CPU_INTERRUPT_HALT);
-        }
-    }
-}
-
-void tegra_cpu_set_rvbar(uint64_t value)
-{
-    CPUState *csX;
-    CPU_FOREACH(csX) {
-        if (csX->cpu_index != TEGRA_BPMP) {
-            Object *obj = OBJECT(csX);
-            object_property_set_int(obj, "rvbar", value, &error_abort);
         }
     }
 }

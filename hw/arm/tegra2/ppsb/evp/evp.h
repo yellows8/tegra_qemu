@@ -1102,6 +1102,6 @@ typedef union evp_cop_pri_fiq_vec_3_u {
     uint32_t reg32;
 } evp_cop_pri_fiq_vec_3_t;
 
-void tegra_evp_set_rvbar(uint64_t value);
+uint64_t tegra_evp_get_cpu_reset_vector(void);
 
 #endif // TEGRA_EVP_H
