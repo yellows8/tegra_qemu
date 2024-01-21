@@ -130,6 +130,7 @@ typedef struct tegra_se_state {
 
     u32 aes_keytable[0x10*0x10];
     u32 rsa_keytable[0x100];
+    u32 srk[0x20>>2];
 
 } tegra_se;
 
@@ -141,6 +142,7 @@ static const VMStateDescription vmstate_tegra_se = {
         VMSTATE_UINT32_ARRAY(regs_raw, tegra_se, 0xE18>>2),
         VMSTATE_UINT32_ARRAY(aes_keytable, tegra_se, 0x10*0x10),
         VMSTATE_UINT32_ARRAY(rsa_keytable, tegra_se, 0x100),
+        VMSTATE_UINT32_ARRAY(srk, tegra_se, 0x20>>2),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -340,12 +342,20 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                 void* databuf_out = NULL;
                 dma_addr_t databuf_outsize = 0;
 
-                if (cfg_dst==2) { // KEYTABLE
+                if (cfg_dst==1) { // HASH_REG
+                    databuf_out = &s->regs.SE_HASH_RESULT;
+                    databuf_outsize = sizeof(s->regs.SE_HASH_RESULT);
+                }
+                else if (cfg_dst==2) { // KEYTABLE
                     uint32_t dst_word = s->regs.SE_CRYPTO_KEYTABLE_DST & 0x3;
                     uint32_t dst_keyindex = (s->regs.SE_CRYPTO_KEYTABLE_DST>>8) & 0xF;
                     size_t keyoff = dst_keyindex*0x10 + dst_word*0x4;
                     databuf_out = &s->aes_keytable[keyoff];
                     databuf_outsize = sizeof(s->aes_keytable) - (keyoff<<2);
+                }
+                else if (cfg_dst==3) { // SRK
+                    databuf_out = &s->srk; // This is unused except for this dst-buf.
+                    databuf_outsize = sizeof(s->srk);
                 }
 
                 if (dec_alg == 0x1 || enc_alg == 0x1) { // AES
@@ -354,16 +364,16 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     uint32_t xor_pos = (cfg>>1) & 0x3;
                     uint32_t input_sel = (cfg>>3) & 0x3;
                     //uint32_t vctram_sel = (cfg>>5) & 0x3;
-                    //bool iv_select = (cfg>>7) & 0x1;
+                    bool iv_select = (cfg>>7) & 0x1;
                     bool encrypt = (cfg>>8) & 0x1; // CRYPTO_CONFIG_CORE_SEL
                     //uint32_t ctr_cntn = (cfg>>11) & 0xFF;
                     uint32_t keyindex = (cfg>>24) & 0xF;
 
-                    if (hash_enable) {
-                        error_setg(&err, "SE AES hash_enable=1 is not supported.");
+                    if (hash_enable && !encrypt) {
+                        error_setg(&err, "SE AES hash_enable=1 with encrypt=0 is not supported.");
                     }
-                    else if (cfg_dst!=0 && cfg_dst!=2) {
-                        error_setg(&err, "SE_CONFIG DST!=MEMORY/KEYTABLE is not supported: %u.", cfg_dst);
+                    else if (cfg_dst!=0 && cfg_dst>3) {
+                        error_setg(&err, "SE_CONFIG DST>3 is not supported: %u.", cfg_dst);
                     }
                     else {
                         uint32_t tmpmode = encrypt ? enc_mode : dec_mode;
@@ -408,8 +418,9 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                     databuf_out = dma_memory_map(&address_space_memory, out_entry.address, &databuf_outsize, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
                                 }
 
-                                size_t datasize = (s->regs.SE_CRYPTO_LAST_BLOCK+1)*qcrypto_cipher_get_block_len(cipher_alg);
-                                if (datasize > databuf_outsize) datasize = databuf_outsize;
+                                size_t blocklen = qcrypto_cipher_get_block_len(cipher_alg);
+                                size_t datasize = (s->regs.SE_CRYPTO_LAST_BLOCK+1)*blocklen;
+                                if (!hash_enable && datasize > databuf_outsize) datasize = databuf_outsize;
 
                                 if (databuf_in==NULL || (dma_out && databuf_out==NULL)) {
                                     error_setg(&err, "Failed to DMA map SE AES input/output buffer.");
@@ -424,7 +435,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                         }
                                     }
                                     else if (mode != QCRYPTO_CIPHER_MODE_ECB) {
-                                        memcpy(iv, &s->aes_keytable[keyindex*0x10 + 0x8], 0x10);
+                                        memcpy(iv, &s->aes_keytable[keyindex*0x10 + (iv_select==0 ? 0x8 : 0xC)], 0x10);
                                     }
 
                                     printf("SE: tmpmode = 0x%x, mode = %d, encrypt = %d\n", tmpmode, mode, encrypt);
@@ -438,7 +449,25 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                     }
                                     if (tmpret==0) {
                                         if (encrypt) {
-                                            if (qcrypto_cipher_encrypt(cipher, databuf_in, databuf_out, datasize, &err)!=0) datasize=0;
+                                            if (!hash_enable) {
+                                                if (qcrypto_cipher_encrypt(cipher, databuf_in, databuf_out, datasize, &err)!=0) datasize=0;
+                                            }
+                                            else {
+                                                uint8_t tmpblock[0x20]={};
+                                                uint8_t *databuf_in_u8 = (uint8_t*)databuf_in;
+                                                for (size_t i=0; i<datasize; i+=blocklen) {
+                                                    if (qcrypto_cipher_encrypt(cipher, &databuf_in_u8[i], tmpblock, blocklen, &err)!=0) {
+                                                        datasize=0;
+                                                        break;
+                                                    }
+                                                }
+                                                if (datasize>0) {
+                                                    datasize = blocklen;
+                                                    if (datasize > databuf_outsize) datasize = databuf_outsize;
+                                                    memcpy(databuf_out, tmpblock, datasize);
+                                                }
+                                                memcpy(&s->aes_keytable[keyindex*0x10 + 0xC], tmpblock, 0x10); // Copy the updated-IV into the keytable IV regs. Loading the updated-IV from qcrypto would require accessing qcrypto internals.
+                                            }
                                         }
                                         else {
                                             if (qcrypto_cipher_decrypt(cipher, databuf_in, databuf_out, datasize, &err)!=0) datasize=0;
