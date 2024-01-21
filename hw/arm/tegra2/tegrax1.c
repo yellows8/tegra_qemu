@@ -22,6 +22,7 @@
 
 #define CONFIG_ARCH_TEGRA_21x_SOC
 #define CONFIG_ARM_ARCH_TIMER
+#define CONFIG_ARCH_TEGRA_VIC
 
 #include "tegra_common.h"
 
@@ -51,6 +52,8 @@
 
 #include "hw/hw.h"
 #include "net/net.h"
+
+#include "ahb/tsec/tsec.h"
 
 #include "devices.h"
 #include "iomap.h"
@@ -761,8 +764,47 @@ static void __tegrax1_init(MachineState *machine)
                                          NULL);
 
     /* TSEC */
-    tegra_tsec_dev = sysbus_create_simple("tegra.tsec", TEGRA_TSEC_BASE,
-                                         NULL);
+    tegra_tsec_dev = qdev_new("tegra.tsec");
+    s = SYS_BUS_DEVICE(tegra_tsec_dev);
+    qdev_prop_set_uint32(DEVICE(tegra_tsec_dev), "engine", TEGRA_TSEC_ENGINE_TSEC);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_TSEC_BASE);
+    sysbus_connect_irq(s, 0, DIRQ(INT_TSEC));
+
+    tegra_tsecb_dev = qdev_new("tegra.tsec");
+    s = SYS_BUS_DEVICE(tegra_tsecb_dev);
+    qdev_prop_set_uint32(DEVICE(tegra_tsecb_dev), "engine", TEGRA_TSEC_ENGINE_TSECB);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_TSECB_BASE);
+    sysbus_connect_irq(s, 0, DIRQ(INT_TSECB));
+
+    tegra_vic_dev = qdev_new("tegra.tsec");
+    s = SYS_BUS_DEVICE(tegra_vic_dev);
+    qdev_prop_set_uint32(DEVICE(tegra_vic_dev), "engine", TEGRA_TSEC_ENGINE_VIC);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_VIC_BASE);
+    sysbus_connect_irq(s, 0, DIRQ(INT_VIC_GENERAL));
+
+    tegra_nvenc_dev = qdev_new("tegra.tsec");
+    s = SYS_BUS_DEVICE(tegra_nvenc_dev);
+    qdev_prop_set_uint32(DEVICE(tegra_nvenc_dev), "engine", TEGRA_TSEC_ENGINE_NVENC);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_NVENC_BASE);
+    sysbus_connect_irq(s, 0, DIRQ(INT_NVENC));
+
+    tegra_nvdec_dev = qdev_new("tegra.tsec");
+    s = SYS_BUS_DEVICE(tegra_nvdec_dev);
+    qdev_prop_set_uint32(DEVICE(tegra_nvdec_dev), "engine", TEGRA_TSEC_ENGINE_NVDEC);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_NVDEC_BASE);
+    sysbus_connect_irq(s, 0, DIRQ(INT_NVDEC));
+
+    tegra_nvjpg_dev = qdev_new("tegra.tsec");
+    s = SYS_BUS_DEVICE(tegra_nvjpg_dev);
+    qdev_prop_set_uint32(DEVICE(tegra_nvjpg_dev), "engine", TEGRA_TSEC_ENGINE_NVJPG);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_NVJPG_BASE);
+    sysbus_connect_irq(s, 0, DIRQ(INT_NVJPG));
 
     /* Process generator tag */
     //sysbus_create_simple("tegra.pg", 0x60000000, NULL);

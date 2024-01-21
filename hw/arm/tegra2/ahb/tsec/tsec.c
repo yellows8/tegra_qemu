@@ -36,7 +36,9 @@
 typedef struct tegra_tsec_state {
     SysBusDevice parent_obj;
 
+    qemu_irq irq;
     MemoryRegion iomem;
+    int32_t engine;
     uint32_t regs[TEGRA_TSEC_SIZE>>2];
 } tegra_tsec;
 
@@ -45,10 +47,20 @@ static const VMStateDescription vmstate_tegra_tsec = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
+        VMSTATE_INT32(engine, tegra_tsec),
         VMSTATE_UINT32_ARRAY(regs, tegra_tsec, TEGRA_TSEC_SIZE>>2),
         VMSTATE_END_OF_LIST()
     }
 };
+
+// TODO: Is this correct? How to handle TSEC_FALCON_ADDR_MSB?
+static hwaddr tegra_tsec_get_priv_offset(tegra_tsec *s, hwaddr offset, unsigned size) {
+    offset = (offset - 0x1000) << 6;
+    offset |= (s->regs[TSEC_FALCON_ADDR>>2] & 0x3F) << 2;
+    assert(offset+size <= sizeof(s->regs));
+
+    return offset;
+}
 
 static uint64_t tegra_tsec_priv_read(void *opaque, hwaddr offset,
                                      unsigned size)
@@ -56,7 +68,11 @@ static uint64_t tegra_tsec_priv_read(void *opaque, hwaddr offset,
     tegra_tsec *s = opaque;
     uint64_t ret = 0;
 
-    assert(offset < sizeof(s->regs));
+    assert(offset+size <= sizeof(s->regs));
+
+    if (s->engine == TEGRA_TSEC_ENGINE_VIC && offset >= 0x1400) {
+        offset = tegra_tsec_get_priv_offset(s, offset, size);
+    }
 
     ret = s->regs[offset/sizeof(uint32_t)] & ((1ULL<<size*8)-1);
 
@@ -74,14 +90,18 @@ static void tegra_tsec_priv_write(void *opaque, hwaddr offset,
 {
     tegra_tsec *s = opaque;
 
-    assert(offset < sizeof(s->regs));
+    assert(offset+size <= sizeof(s->regs));
+
+    if (s->engine == TEGRA_TSEC_ENGINE_VIC && offset >= 0x1400) {
+        offset = tegra_tsec_get_priv_offset(s, offset, size);
+    }
 
     TRACE_WRITE(s->iomem.addr, offset, 0, value);
 
     if (offset == TSEC_FALCON_CPUCTL_OFFSET) {
         if (value & 0x2) {
             value |= 1<<4; // When STARTCPU is set, enable HALTED.
-            s->regs[TSEC_FALCON_MAILBOX1_OFFSET>>2] = 0xB0B0B0B0; // TsecResult_Success
+            if (s->engine == TEGRA_TSEC_ENGINE_TSEC) s->regs[TSEC_FALCON_MAILBOX1_OFFSET>>2] = 0xB0B0B0B0; // TsecResult_Success
         }
     }
 
@@ -105,15 +125,23 @@ static void tegra_tsec_priv_realize(DeviceState *dev, Error **errp)
 {
     tegra_tsec *s = TEGRA_TSEC(dev);
 
+    sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq);
+
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_tsec_mem_ops, s,
                           "tegra.tsec", TEGRA_TSEC_SIZE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 }
 
+static Property tegra_tsec_properties[] = {
+    DEFINE_PROP_INT32("engine", tegra_tsec, engine, TEGRA_TSEC_ENGINE_TSEC), \
+    DEFINE_PROP_END_OF_LIST(),
+};
+
 static void tegra_tsec_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    device_class_set_props(dc, tegra_tsec_properties);
     dc->realize = tegra_tsec_priv_realize;
     dc->vmsd = &vmstate_tegra_tsec;
     dc->reset = tegra_tsec_priv_reset;
