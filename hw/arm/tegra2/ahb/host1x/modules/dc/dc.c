@@ -67,6 +67,8 @@ typedef struct tegra_dc_state {
     display_window win_a;
     display_window win_b;
     display_window win_c;
+    display_window win_d;
+    display_window win_t;
 
     struct host1x_module module;
 
@@ -85,13 +87,26 @@ static uint64_t tegra_dc_priv_read(void *opaque, hwaddr offset,
 
     switch (offset) {
     case 0x0 ... 0x4C1:
-        ret = dc_handler.read(&s->dc, offset);
+        if (offset < 0x80 || offset >= 0x300)
+            ret = dc_handler.read(&s->dc, offset);
+        else if (tegra_board >= TEGRAX1_BOARD) {
+            if (offset < 0xC0)
+                ret = read_window(&s->win_d, offset - 0x80 + 0x700, st);
+            else if (offset >= 0xC0 && offset < 0x100)
+                ret = read_window(&s->win_d, offset - 0xC0 + 0x800, st);
+            else if (offset >= 0x100 && offset < 0x140)
+                ret = read_window(&s->win_t, offset - 0x100 + 0x700, st);
+            else if (offset >= 0x140 && offset < 0x180)
+                ret = read_window(&s->win_t, offset - 0x140 + 0x800, st);
+            // WINDOW H is RESERVED, so ignore it.
+        }
         break;
 
     case 0x500 ... 0x80a:
         ret = s->dc.cmd_display_window_header.window_a_select;
         ret += s->dc.cmd_display_window_header.window_b_select;
         ret += s->dc.cmd_display_window_header.window_c_select;
+        if (tegra_board >= TEGRAX1_BOARD) ret += s->dc.cmd_display_window_header.window_d_select;
 
         /* SW error check.  */
         //g_assert(ret <= 1);
@@ -110,6 +125,12 @@ static uint64_t tegra_dc_priv_read(void *opaque, hwaddr offset,
         if (s->dc.cmd_display_window_header.window_c_select) {
             ret = read_window(&s->win_c, offset, st);
             offset += 0x2000;
+            break;
+        }
+
+        if (s->dc.cmd_display_window_header.window_d_select) {
+            ret = read_window(&s->win_d, offset, st);
+            offset += 0x3000;
             break;
         }
         break;
@@ -179,47 +200,62 @@ static void tegra_dc_priv_write(void *opaque, hwaddr offset,
     switch (offset) {
     case 0x0 ... 0x4C1:
         TRACE_WRITE(s->iomem.addr, offset, old, value);
-        dc_handler.write(&s->dc, offset, value);
+        if (offset < 0x80 || offset >= 0x300) {
+            dc_handler.write(&s->dc, offset, value);
 
-        if (offset == CMD_INT_STATUS_OFFSET) {
-            if (!s->dc.cmd_int_status.reg32) {
-                TRACE_IRQ_LOWER(s->iomem.addr, s->irq);
-            }
-        }
-
-        if (offset == CMD_DISPLAY_COMMAND_OFFSET) {
-            cmd_display_command_t old_cmd = { .reg32 = old };
-
-            if (old_cmd.display_ctrl_mode !=
-                    s->dc.cmd_display_command.display_ctrl_mode)
-            {
-                ptimer_transaction_begin(s->ptimer);
-                switch (s->dc.cmd_display_command.display_ctrl_mode) {
-                case 0:
-                    ptimer_stop(s->ptimer);
-                    break;
-                case 1:
-                    ptimer_set_limit(s->ptimer, 1, 1);
-                    ptimer_run(s->ptimer, 0);
-                    break;
-                case 2:
-                    ptimer_set_limit(s->ptimer, 1, 1);
-                    ptimer_run(s->ptimer, 1);
-                    break;
-                default:
-                    g_assert_not_reached();
+            if (offset == CMD_INT_STATUS_OFFSET) {
+                if (!s->dc.cmd_int_status.reg32) {
+                    TRACE_IRQ_LOWER(s->iomem.addr, s->irq);
                 }
-                ptimer_transaction_commit(s->ptimer);
+            }
+
+            if (offset == CMD_DISPLAY_COMMAND_OFFSET) {
+                cmd_display_command_t old_cmd = { .reg32 = old };
+
+                if (old_cmd.display_ctrl_mode !=
+                        s->dc.cmd_display_command.display_ctrl_mode)
+                {
+                    ptimer_transaction_begin(s->ptimer);
+                    switch (s->dc.cmd_display_command.display_ctrl_mode) {
+                    case 0:
+                        ptimer_stop(s->ptimer);
+                        break;
+                    case 1:
+                        ptimer_set_limit(s->ptimer, 1, 1);
+                        ptimer_run(s->ptimer, 0);
+                        break;
+                    case 2:
+                        ptimer_set_limit(s->ptimer, 1, 1);
+                        ptimer_run(s->ptimer, 1);
+                        break;
+                    default:
+                        g_assert_not_reached();
+                    }
+                    ptimer_transaction_commit(s->ptimer);
+                }
+            }
+
+            if (offset == CMD_STATE_CONTROL_OFFSET) {
+                if (s->dc.cmd_state_control.win_a_act_req)
+                    latch_window_assembly(&s->win_a);
+                if (s->dc.cmd_state_control.win_b_act_req)
+                    latch_window_assembly(&s->win_b);
+                if (s->dc.cmd_state_control.win_c_act_req)
+                    latch_window_assembly(&s->win_c);
+                if (tegra_board >= TEGRAX1_BOARD && s->dc.cmd_state_control.win_d_act_req)
+                    latch_window_assembly(&s->win_d);
             }
         }
-
-        if (offset == CMD_STATE_CONTROL_OFFSET) {
-            if (s->dc.cmd_state_control.win_a_act_req)
-                latch_window_assembly(&s->win_a);
-            if (s->dc.cmd_state_control.win_b_act_req)
-                latch_window_assembly(&s->win_b);
-            if (s->dc.cmd_state_control.win_c_act_req)
-                latch_window_assembly(&s->win_c);
+        else if (tegra_board >= TEGRAX1_BOARD) {
+            if (offset < 0xC0)
+                write_window(&s->win_d, offset - 0x80 + 0x700, value, st);
+            else if (offset >= 0xC0 && offset < 0x100)
+                write_window(&s->win_d, offset - 0xC0 + 0x800, value, st);
+            else if (offset >= 0x100 && offset < 0x140)
+                write_window(&s->win_t, offset - 0x100 + 0x700, value, st);
+            else if (offset >= 0x140 && offset < 0x180)
+                write_window(&s->win_t, offset - 0x140 + 0x800, value, st);
+            // WINDOW H is RESERVED, so ignore it.
         }
 
         break;
@@ -238,6 +274,12 @@ static void tegra_dc_priv_write(void *opaque, hwaddr offset,
         if (s->dc.cmd_display_window_header.window_c_select) {
             TRACE_WRITE(s->iomem.addr, offset + 0x2000, old, value);
             write_window(&s->win_c, offset, value, st);
+        }
+
+        if (s->dc.cmd_display_window_header.window_d_select) {
+            TRACE_WRITE(s->iomem.addr, offset + 0x3000, old, value);
+            write_window(&s->win_d, offset, value, st);
+            break;
         }
         break;
 
@@ -300,6 +342,8 @@ static void tegra_dc_priv_reset(DeviceState *dev)
     reset_window(&s->win_a);
     reset_window(&s->win_b);
     reset_window(&s->win_c);
+    reset_window(&s->win_d);
+    reset_window(&s->win_t);
 }
 
 static const MemoryRegionOps tegra_dc_mem_ops = {
@@ -418,6 +462,8 @@ static void tegra_dc_compose(void *opaque)
     tegra_dc_compose_window(s->console, &s->win_a);
     tegra_dc_compose_window(s->console, &s->win_b);
     tegra_dc_compose_window(s->console, &s->win_c);
+    tegra_dc_compose_window(s->console, &s->win_d);
+    tegra_dc_compose_window(s->console, &s->win_t);
 
     dpy_gfx_update(s->console, 0, 0, width, height);
 }
@@ -439,6 +485,8 @@ static void tegra_dc_priv_realize(DeviceState *dev, Error **errp)
     init_window(&s->win_a, WIN_A_CAPS);
     init_window(&s->win_b, WIN_B_CAPS);
     init_window(&s->win_c, WIN_C_CAPS);
+    init_window(&s->win_d, WIN_C_CAPS);
+    init_window(&s->win_t, WIN_C_CAPS);
 
     s->ptimer = ptimer_init(tegra_dc_vblank, s, PTIMER_POLICY_CONTINUOUS_TRIGGER);
     ptimer_transaction_begin(s->ptimer);

@@ -494,12 +494,17 @@ typedef union cmd_state_control_u {
         unsigned int win_a_act_req:1;       /* Window A activation request 0= no req pending/req completed 1= activation requested/pending 0 = DISABLE 1 = ENABLE */
         unsigned int win_b_act_req:1;       /* Window B activation request 0= no req pending/req completed 1= activation requested/pending 0 = DISABLE 1 = ENABLE */
         unsigned int win_c_act_req:1;       /* Window C activation request 0= no req pending/req completed 1= activation requested/pending 0 = DISABLE 1 = ENABLE */
-        unsigned int undefined_bits_4_7:4;
+        unsigned int win_d_act_req:1;       /* Window D activation request 0= no req pending/req completed 1= activation requested/pending 0 = DISABLE 1 = ENABLE */
+        unsigned int undefined_bits_5_6:2;
+        unsigned int cursor_act_req:1;       /* Cursor activation request 0= no req pending/req completed 1= activation requested/pending 0 = DISABLE 1 = ENABLE */
         unsigned int general_update:1;      /* Trigger for arming state (from assembly to armed state) for a subset of the triple buffered registers. This register is also known as "Update Register"  0 = DISABLE 1 = ENABLE */
         unsigned int win_a_update:1;        /* Trigger for arming state (from assembly to armed state) for the win A subset of the triple buffered registers. This register is also known as "Update Register"  0 = DISABLE 1 = ENABLE */
         unsigned int win_b_update:1;        /* Trigger for arming state (from assembly to armed state) for the win B subset of the triple buffered registers. This register is also known as "Update Register"  0 = DISABLE 1 = ENABLE */
         unsigned int win_c_update:1;        /* Trigger for arming state (from assembly to armed state) for the win C subset of the triple buffered registers. This register is also known as "Update Register"  0 = DISABLE 1 = ENABLE */
-        unsigned int undefined_bits_12_23:12;
+        unsigned int win_d_update:1;        /* Trigger for arming state (from assembly to armed state) for the win D subset of the triple buffered registers. This register is also known as "Update Register"  0 = DISABLE 1 = ENABLE */
+        unsigned int undefined_bits_13_14:2;
+        unsigned int cursor_update:1;        /* Trigger for arming state (from assembly to armed state) for the win D subset of the triple buffered registers. This register is also known as "Update Register"  0 = DISABLE 1 = ENABLE */
+        unsigned int undefined_bits_16_23:8;
         unsigned int nc_host_trig_enable:1; /* Host trigger enable. Effective only in Non-continuous mode. The exception is that when TVO is enabled, this trigger is ignored so as not to corrupt TV output. Note that when this field is enabled, GENERAL_ACT_REQ must be enabled at the same time. 0= disable: no frame is triggered  0 = DISABLE 1 = ENABLE */
         unsigned int undefined_bits_25_31:7;
     };
@@ -515,7 +520,8 @@ typedef union cmd_display_window_header_u {
         unsigned int window_a_select:1;     /* Window A Select 0= disable window A programming 1= enable window A programming 0 = DISABLE 1 = ENABLE */
         unsigned int window_b_select:1;     /* Window B Select 0= disable window B programming 1= enable window B programming 0 = DISABLE 1 = ENABLE */
         unsigned int window_c_select:1;     /* Window C Select 0= disable window C programming 1= enable window C programming 0 = DISABLE 1 = ENABLE */
-        unsigned int undefined_bits_7_31:25;
+        unsigned int window_d_select:1;     /* Window D Select 0= disable window D programming 1= enable window D programming 0 = DISABLE 1 = ENABLE */
+        unsigned int undefined_bits_7_31:24;
     };
 
     uint32_t reg32;
