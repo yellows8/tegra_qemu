@@ -128,7 +128,7 @@ static uint64_t tegra_dc_priv_read(void *opaque, hwaddr offset,
             break;
         }
 
-        if (s->dc.cmd_display_window_header.window_d_select) {
+        if (tegra_board >= TEGRAX1_BOARD && offset >= 0x700 && s->dc.cmd_display_window_header.window_d_select) {
             ret = read_window(&s->win_d, offset, st);
             offset += 0x3000;
             break;
@@ -276,7 +276,7 @@ static void tegra_dc_priv_write(void *opaque, hwaddr offset,
             write_window(&s->win_c, offset, value, st);
         }
 
-        if (s->dc.cmd_display_window_header.window_d_select) {
+        if (tegra_board >= TEGRAX1_BOARD && offset >= 0x700 && s->dc.cmd_display_window_header.window_d_select) {
             TRACE_WRITE(s->iomem.addr, offset + 0x3000, old, value);
             write_window(&s->win_d, offset, value, st);
             break;
