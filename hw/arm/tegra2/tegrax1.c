@@ -528,9 +528,9 @@ static void __tegrax1_init(MachineState *machine)
     tegra_fuse_dev = sysbus_create_simple("tegra.fuse", TEGRA_FUSE_BASE, NULL);
 
     /* SE */
-    tegra_se_dev = sysbus_create_simple("tegra.se", TEGRA_SE_BASE, NULL);
+    tegra_se_dev = sysbus_create_simple("tegra.se", TEGRA_SE_BASE, DIRQ(INT_SE));
     if (tegra_board == TEGRAX1PLUS_BOARD) {
-        tegra_se2_dev = sysbus_create_simple("tegra.se", TEGRA_SE2_BASE, NULL);
+        tegra_se2_dev = sysbus_create_simple("tegra.se", TEGRA_SE2_BASE, DIRQ(INT_SE)); // NOTE: This IRQ is likely wrong?
     }
 
     /* SYSCTR0 */

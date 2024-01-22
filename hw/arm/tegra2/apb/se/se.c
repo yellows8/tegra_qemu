@@ -63,6 +63,7 @@ typedef struct {
 typedef struct tegra_se_state {
     SysBusDevice parent_obj;
 
+    qemu_irq irq;
     MemoryRegion iomem;
 
     union {
@@ -300,8 +301,6 @@ static uint64_t tegra_se_priv_read(void *opaque, hwaddr offset,
     uint32_t *regs = s->regs_raw;
     ret = regs[offset/sizeof(uint32_t)] & ((1ULL<<size*8)-1);
 
-    if (offset == SE_INT_STATUS_OFFSET) s->regs.SE_INT_STATUS = 0;
-
     return ret;
 }
 
@@ -316,16 +315,30 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 
     Error *err = NULL;
     uint32_t *regs = s->regs_raw;
+    uint32_t tmp=0;
     LinkedListEntry in_entry={}, out_entry={};
     uint8_t indata[0x100]={};
     uint32_t n_buf[0x40]={};
     uint32_t e_buf[0x40]={};
 
     switch (offset) {
+        case SE_INT_ENABLE_OFFSET:
+            tmp = s->regs.SE_INT_ENABLE & s->regs.SE_INT_STATUS;
+            s->regs.SE_INT_ENABLE = value;
+            if (tmp!=0 && (tmp & value)==0) TRACE_IRQ_LOWER(s->iomem.addr, s->irq);
+        break;
+
+        case SE_INT_STATUS_OFFSET:
+            tmp = s->regs.SE_INT_ENABLE & s->regs.SE_INT_STATUS;
+            s->regs.SE_INT_STATUS &= ~value;
+            if (tmp != (s->regs.SE_INT_ENABLE & s->regs.SE_INT_STATUS)) TRACE_IRQ_LOWER(s->iomem.addr, s->irq);
+        break;
+
         case SE_OPERATION_OFFSET:
         case SE_OUT_LL_ADDR_OFFSET:
             regs[offset/sizeof(uint32_t)] = value;
             s->regs.SE_INT_STATUS |= 1<<4; // INT_STATUS_SE_OP_DONE
+            if (s->regs.SE_INT_ENABLE & s->regs.SE_INT_STATUS) TRACE_IRQ_RAISE(s->iomem.addr, s->irq);
 
             if (offset == SE_OPERATION_OFFSET) {
                 dma_memory_read(&address_space_memory, s->regs.SE_IN_LL_ADDR, &in_entry, sizeof(in_entry), MEMTXATTRS_UNSPECIFIED);
@@ -570,6 +583,9 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     if (tmpsize > sizeof(indata)) tmpsize = sizeof(indata);
                     dma_memory_read(&address_space_memory, in_entry.address, indata, tmpsize, MEMTXATTRS_UNSPECIFIED);
 
+                    s->regs.SE_INT_STATUS |= 1<<1; // INT_STATUS_IN_DONE
+                    TRACE_IRQ_RAISE(s->iomem.addr, s->irq);
+
                     byteswap_rsa((uint32_t*)indata, (uint32_t*)indata);
                     byteswap_rsa(&s->rsa_keytable[0x80*slot + 0x40], n_buf);
                     byteswap_rsa(&s->rsa_keytable[0x80*slot], e_buf);
@@ -665,6 +681,8 @@ static const MemoryRegionOps tegra_se_mem_ops = {
 static void tegra_se_priv_realize(DeviceState *dev, Error **errp)
 {
     tegra_se *s = TEGRA_SE(dev);
+
+    sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq);
 
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_se_mem_ops, s,
                           "tegra.se", TEGRA_SE_SIZE);
