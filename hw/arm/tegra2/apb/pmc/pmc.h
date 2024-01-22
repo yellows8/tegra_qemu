@@ -23,7 +23,8 @@
 #define TEGRA_PMC_H
 
 #define CNTRL_OFFSET 0x0
-#define CNTRL_RESET  0x00000000
+#define CNTRL_TEGRA2_RESET  0x00000000
+#define CNTRL_TEGRAX1_RESET 0x00410A00
 typedef union cntrl_u {
     struct {
         unsigned int kbc_clk_dis:1;         /* Disable 32KHz clock to KBC; 0 = DISABLE; 1 = ENABLE */
@@ -93,7 +94,8 @@ typedef union wake_mask_u {
 } wake_mask_t;
 
 #define WAKE_LVL_OFFSET 0x10
-#define WAKE_LVL_RESET  0x7F9FFFFF
+#define WAKE_LVL_TEGRA2_RESET  0x7F9FFFFF
+#define WAKE_LVL_TEGRAX1_RESET 0xFF9FFFFF
 typedef union wake_lvl_u {
     struct {
         unsigned int event:16;              /* pin 0-15 wake level; 0 = ACTIVE_LOW; 1 = ACTIVE_HIGH */
@@ -199,7 +201,8 @@ typedef union dpd_enable_u {
 } dpd_enable_t;
 
 #define PWRGATE_TIMER_OFF_OFFSET 0x28
-#define PWRGATE_TIMER_OFF_RESET  0xECA97531
+#define PWRGATE_TIMER_OFF_TEGRA2_RESET  0xECA97531
+#define PWRGATE_TIMER_OFF_TEGRAX1_RESET 0xEDCBA987
 typedef union pwrgate_timer_off_u {
     struct {
         unsigned int rail0:4;               /* timer value for rail 0 */
@@ -280,7 +283,8 @@ typedef union pwrgate_status_u {
 } pwrgate_status_t;
 
 #define PWRGOOD_TIMER_OFFSET 0x3C
-#define PWRGOOD_TIMER_RESET  0x0000007F
+#define PWRGOOD_TIMER_TEGRA2_RESET  0x0000007F
+#define PWRGOOD_TIMER_TEGRAX1_RESET 0x003F007F
 typedef union pwrgood_timer_u {
     struct {
         unsigned int power:8;
@@ -304,7 +308,8 @@ typedef union blink_timer_u {
 } blink_timer_t;
 
 #define NO_IOPOWER_OFFSET 0x44
-#define NO_IOPOWER_RESET  0x00000000
+#define NO_IOPOWER_TEGRA2_RESET  0x00000000
+#define NO_IOPOWER_TEGRAX1_RESET 0x00010080
 typedef union no_iopower_u {
     struct {
         unsigned int sys:1;                 /* rail ao IOs; 0 = DISABLE; 1 = ENABLE */
@@ -324,7 +329,8 @@ typedef union no_iopower_u {
 } no_iopower_t;
 
 #define PWR_DET_OFFSET 0x48
-#define PWR_DET_RESET  0x000001FF
+#define PWR_DET_TEGRA2_RESET  0x000001FF
+#define PWR_DET_TEGRAX1_RESET 0x00FEB425
 typedef union pwr_det_u {
     struct {
         unsigned int sys:1;                 /* rail ao IOs; 0 = ENABLE; 1 = DISABLE */
@@ -687,7 +693,8 @@ typedef union pg_mask_u {
 } pg_mask_t;
 
 #define PG_MASK_1_OFFSET 0xD4
-#define PG_MASK_1_RESET  0x0000FF01
+#define PG_MASK_1_TEGRA2_RESET  0x0000FF01
+#define PG_MASK_1_TEGRAX1_RESET 0xFFFFFFFF
 typedef union pg_mask_1_u {
     struct {
         unsigned int l2c:1;                 /* MASK L2C rail */
@@ -732,7 +739,8 @@ typedef union wake_delay_u {
 } wake_delay_t;
 
 #define PWR_DET_VAL_OFFSET 0xE4
-#define PWR_DET_VAL_RESET  0x000001FF
+#define PWR_DET_VAL_TEGRA2_RESET  0x000001FF
+#define PWR_DET_VAL_TEGRAX1_RESET 0x00FCBC2D
 typedef union pwr_det_val_u {
     struct {
         unsigned int sys:1;                 /* rail ao IOs  0 = ENABLE 1 = DISABLE */
@@ -751,7 +759,8 @@ typedef union pwr_det_val_u {
 } pwr_det_val_t;
 
 #define DDR_PWR_OFFSET 0xE8
-#define DDR_PWR_RESET  0x00000001
+#define DDR_PWR_TEGRA2_RESET  0x00000001
+#define DDR_PWR_TEGRAX1_RESET 0x0000000F
 typedef union ddr_pwr_u {
     struct {
         unsigned int val:1;                 /* 0 = E_12V 1 = E_18V */
@@ -773,7 +782,8 @@ typedef union usb_debounce_del_u {
 } usb_debounce_del_t;
 
 #define USB_AO_OFFSET 0xF0
-#define USB_AO_RESET  0x00000000
+#define USB_AO_TEGRA2_RESET  0x00000000
+#define USB_AO_TEGRAX1_RESET 0x01FFFFFF
 typedef union usb_ao_u {
     struct {
         unsigned int ub_id_pd:2;
@@ -796,7 +806,8 @@ typedef union crypto_op_u {
 } crypto_op_t;
 
 #define PLLP_WB0_OVERRIDE_OFFSET 0xF8
-#define PLLP_WB0_OVERRIDE_RESET  0x00000000
+#define PLLP_WB0_OVERRIDE_TEGRA2_RESET  0x00000000
+#define PLLP_WB0_OVERRIDE_TEGRAX1_RESET 0x00018000
 typedef union pllp_wb0_override_u {
     struct {
         unsigned int override_enable:1;     /* 1 = override CAR PLLP setting, 0 = no override */
@@ -1062,5 +1073,105 @@ typedef union gate_u {
 
     uint32_t reg32;
 } gate_t;
+
+#define WAKE2_LVL_OFFSET 0x164
+#define WAKE2_LVL_TEGRAX1_RESET 0xF9FFFFE7
+
+#define PG_MASK_2_OFFSET 0x174
+#define PG_MASK_2_TEGRAX1_RESET 0xFFFFFFFF
+
+#define PG_MASK_CE1_OFFSET 0x178
+#define PG_MASK_CE1_TEGRAX1_RESET 0x000000FF
+
+#define PG_MASK_CE2_OFFSET 0x17C
+#define PG_MASK_CE2_TEGRAX1_RESET 0x000000FF
+
+#define PG_MASK_CE3_OFFSET 0x180
+#define PG_MASK_CE3_TEGRAX1_RESET 0x000000FF
+
+#define PWRGATE_TIMER_CE_OFFSET 0x184
+#define PWRGATE_TIMER_CE_TEGRAX1_RESET 0xEDCBA987
+
+#define OSC_EDPD_OVER_OFFSET 0x1A4
+#define OSC_EDPD_OVER_TEGRAX1_RESET 0x0000007E
+
+#define SATA_PWRGT_OFFSET 0x1AC
+#define SATA_PWRGT_TEGRAX1_RESET 0x0000003F
+
+#define IO_DPD2_STATUS_OFFSET 0x1C4
+#define IO_DPD2_STATUS_TEGRAX1_RESET 0x02000000
+
+#define SEL_DPD_TIM_OFFSET 0x1C8
+#define SEL_DPD_TIM_TEGRAX1_RESET 0x0000007F
+
+#define VDDP_SEL_OFFSET 0x1CC
+#define VDDP_SEL_TEGRAX1_RESET 0x00000003
+
+#define PLLM_WB0_OVERRIDE_FREQ_OFFSET 0x1DC
+#define PLLM_WB0_OVERRIDE_FREQ_TEGRAX1_RESET 0x00002A02
+
+#define PWRGATE_TIMER_MULT_OFFSET 0x1E4
+#define PWRGATE_TIMER_MULT_TEGRAX1_RESET 0x0000001B
+
+#define UTMIP_UHSIC_TRIGGERS_OFFSET 0x1EC
+#define UTMIP_UHSIC_TRIGGERS_TEGRAX1_RESET 0x00000000
+
+#define UTMIP_UHSIC_SAVED_STATE_OFFSET 0x1F0
+#define UTMIP_UHSIC_SAVED_STATE_TEGRAX1_RESET 0x0F0F0F0F
+
+#define UTMIP_TERM_PAD_CFG_OFFSET 0x1F8
+#define UTMIP_TERM_PAD_CFG_TEGRAX1_RESET 0x00041041
+
+#define UTMIP_UHSIC_SLEEP_CFG_OFFSET 0x1FC
+#define UTMIP_UHSIC_SLEEP_CFG_TEGRAX1_RESET 0xC0C0C0C0
+
+#define UTMIP_SLEEPWALK_P0_OFFSET 0x204
+#define UTMIP_SLEEPWALK_P0_TEGRAX1_RESET 0x23232363
+
+#define UTMIP_SLEEPWALK_P1_OFFSET 0x208
+#define UTMIP_SLEEPWALK_P1_TEGRAX1_RESET 0x23232363
+
+#define UTMIP_SLEEPWALK_P2_OFFSET 0x20C
+#define UTMIP_SLEEPWALK_P2_TEGRAX1_RESET 0x23232363
+
+#define UHSIC_SLEEPWALK_P0_OFFSET 0x210
+#define UHSIC_SLEEPWALK_P0_TEGRAX1_RESET 0x16161616
+
+#define UTMIP_UHSIC_FAKE_OFFSET 0x218
+#define UTMIP_UHSIC_FAKE_TEGRAX1_RESET 0x01111111
+
+#define UTMIP_UHSIC_LINE_WAKEUP_OFFSET 0x26C
+#define UTMIP_UHSIC_LINE_WAKEUP_TEGRAX1_RESET 0x0000001F
+
+#define UTMIP_BIAS_MASTER_CNTRL_OFFSET 0x270
+#define UTMIP_BIAS_MASTER_CNTRL_TEGRAX1_RESET 0x0000000D
+
+#define TD_PWRGATE_INTER_PART_TIMER_OFFSET 0x278
+#define TD_PWRGATE_INTER_PART_TIMER_TEGRAX1_RESET 0x0000000F
+
+#define UTMIP_UHSIC2_TRIGGERS_OFFSET 0x27C
+#define UTMIP_UHSIC2_TRIGGERS_TEGRAX1_RESET 0x00000000
+
+#define UTMIP_UHSIC2_SAVED_STATE_OFFSET 0x280
+#define UTMIP_UHSIC2_SAVED_STATE_TEGRAX1_RESET 0x00000F07
+
+#define UTMIP_UHSIC2_SLEEP_CFG_OFFSET 0x284
+#define UTMIP_UHSIC2_SLEEP_CFG_TEGRAX1_RESET 0x000000C0
+
+#define UHSIC2_SLEEPWALK_P1_OFFSET 0x28C
+#define UHSIC2_SLEEPWALK_P1_TEGRAX1_RESET 0x06060606
+
+#define UTMIP_UHSIC2_FAKE_OFFSET 0x294
+#define UTMIP_UHSIC2_FAKE_TEGRAX1_RESET 0x00001101
+
+#define UTMIP_UHSIC2_LINE_WAKEUP_OFFSET 0x298
+#define UTMIP_UHSIC2_LINE_WAKEUP_TEGRAX1_RESET 0x00000001
+
+#define PG_MASK_CE0_OFFSET 0x2A4
+#define PG_MASK_CE0_TEGRAX1_RESET 0x000000FF
+
+#define AOTAG_INTR_EN_OFFSET 0x4B8
+
+#define AOTAG_INTR_DIS_OFFSET 0x4BC
 
 #endif // TEGRA_PMC_H

@@ -25,6 +25,8 @@
 #include "hw/qdev-properties.h"
 #include "migration/vmstate.h"
 
+#define TEGRA_REGDEF_TABLE_RESET(name, offset, reset_x1) offset, reset_x1,
+
 enum tegra_board_type {
     TEGRA2_BOARD_QEMU,
     TEGRA2_BOARD_PICASSO,

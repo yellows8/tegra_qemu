@@ -31,6 +31,37 @@
 #define TEGRA_PMC(obj) OBJECT_CHECK(tegra_pmc, (obj), TYPE_TEGRA_PMC)
 #define DEFINE_REG32(reg) reg##_t reg
 
+static uint32_t tegra_pmc_regdef_tegrax1_reset_table[] = {
+    TEGRA_REGDEF_TABLE_RESET(PG_MASK_3, 0x2A8, 0xFFFFFFFF)
+    TEGRA_REGDEF_TABLE_RESET(PG_MASK_4, 0x2AC, 0xFFFFFFFF)
+    TEGRA_REGDEF_TABLE_RESET(TSC_MULT, 0x2B4, 0x000016E0)
+    TEGRA_REGDEF_TABLE_RESET(CPU_VSENSE_OVERRIDE, 0x2B8, 0x0000001F)
+    TEGRA_REGDEF_TABLE_RESET(GLB_AMAP_CFG, 0x2BC, 0x00020000)
+    TEGRA_REGDEF_TABLE_RESET(GPU_RG_CNTRL, 0x2D4, 0x00000001)
+    TEGRA_REGDEF_TABLE_RESET(PG_MASK_5, 0x2DC, 0xFFFFFFFF)
+    TEGRA_REGDEF_TABLE_RESET(PG_MASK_6, 0x2E0, 0x000000FF)
+    TEGRA_REGDEF_TABLE_RESET(IO_DPD_OFF_MASK, 0x444, 0x01F00000)
+    TEGRA_REGDEF_TABLE_RESET(IO_DPD2_OFF_MASK, 0x448, 0x1DF30000)
+    TEGRA_REGDEF_TABLE_RESET(IO_DPD3_REQ, 0x45C, 0x0FFF0000)
+    TEGRA_REGDEF_TABLE_RESET(IO_DPD3_STATUS, 0x460, 0x0FFF0000)
+    TEGRA_REGDEF_TABLE_RESET(DIRECT_THERMTRIP_CFG, 0x474, 0x00000010)
+    TEGRA_REGDEF_TABLE_RESET(TSOSC_DELAY, 0x478, 0x0000007F)
+    TEGRA_REGDEF_TABLE_RESET(DEBUG_AUTHENTICATION, 0x480, 0x0000003F)
+    TEGRA_REGDEF_TABLE_RESET(AOTAG_CFG, 0x484, 0x00000003)
+    TEGRA_REGDEF_TABLE_RESET(AOTAG_THRESH1_CFG, 0x488, 0x007F80FA)
+    TEGRA_REGDEF_TABLE_RESET(AOTAG_THRESH2_CFG, 0x48C, 0x00000005)
+    TEGRA_REGDEF_TABLE_RESET(AOTAG_THRESH3_CFG, 0x490, 0x000000FA)
+    TEGRA_REGDEF_TABLE_RESET(TSENSOR_CONFIG0, 0x49C, 0x00000001)
+    TEGRA_REGDEF_TABLE_RESET(UTMIP_PAD_CFG0, 0x4C0, 0x28000000)
+    TEGRA_REGDEF_TABLE_RESET(UTMIP_PAD_CFG1, 0x4C4, 0x28000000)
+    TEGRA_REGDEF_TABLE_RESET(UTMIP_PAD_CFG2, 0x4C8, 0x28000000)
+    TEGRA_REGDEF_TABLE_RESET(UTMIP_PAD_CFG3, 0x4CC, 0x28000000)
+    TEGRA_REGDEF_TABLE_RESET(UTMIP_UHSIC_SLEEP_CFG1, 0x4D0, 0x000000C0)
+    TEGRA_REGDEF_TABLE_RESET(RAMDUMP_CTL_STATUS, 0x4DC, 0x000000FC)
+    TEGRA_REGDEF_TABLE_RESET(UTMIP_SLEEPWALK_P3, 0x4E0, 0x23232363)
+    TEGRA_REGDEF_TABLE_RESET(DDR_CNTRL, 0x4E4, 0x0007FF9F)
+};
+
 typedef struct tegra_pmc_state {
     SysBusDevice parent_obj;
 
@@ -498,7 +529,11 @@ static uint64_t tegra_pmc_priv_read(void *opaque, hwaddr offset,
         ret = s->gate.reg32;
         break;
     default:
-        if (offset>=0x160) ret = s->regs[offset>>2];
+        if (offset>=0x160) {
+            if (offset != UTMIP_UHSIC_TRIGGERS_OFFSET && offset != UTMIP_UHSIC2_TRIGGERS_OFFSET && offset != AOTAG_INTR_DIS_OFFSET) { // These regs always returns 0.
+                ret = s->regs[(offset-0x160)>>2];
+            }
+        }
         break;
     }
 
@@ -867,7 +902,12 @@ static void tegra_pmc_priv_write(void *opaque, hwaddr offset,
         break;
     default:
         TRACE_WRITE(s->iomem.addr, offset, 0, value);
-        if (offset>=0x160) s->regs[offset>>2] = value;
+        if (offset>=0x160) {
+            if (offset == AOTAG_INTR_DIS_OFFSET)
+                s->regs[(AOTAG_INTR_EN_OFFSET-0x160)>>2] &= ~(value & 0x3);
+            else
+                s->regs[(offset-0x160)>>2] = value;
+        }
         break;
     }
 }
@@ -876,39 +916,28 @@ static void tegra_pmc_priv_reset(DeviceState *dev)
 {
     tegra_pmc *s = TEGRA_PMC(dev);
 
-    s->cntrl.reg32 = CNTRL_RESET;
     s->sec_disable.reg32 = SEC_DISABLE_RESET;
     s->pmc_swrst.reg32 = PMC_SWRST_RESET;
     s->wake_mask.reg32 = WAKE_MASK_RESET;
-    s->wake_lvl.reg32 = WAKE_LVL_RESET;
     s->wake_status.reg32 = WAKE_STATUS_RESET;
     s->sw_wake_status.reg32 = SW_WAKE_STATUS_RESET;
     s->dpd_pads_oride.reg32 = DPD_PADS_ORIDE_RESET;
     s->dpd_sample.reg32 = DPD_SAMPLE_RESET;
     s->dpd_enable.reg32 = DPD_ENABLE_RESET;
-    s->pwrgate_timer_off.reg32 = PWRGATE_TIMER_OFF_RESET;
     s->clamp_status.reg32 = CLAMP_STATUS_RESET;
     s->pwrgate_toggle.reg32 = PWRGATE_TOGGLE_RESET;
     s->remove_clamping_cmd.reg32 = REMOVE_CLAMPING_CMD_RESET;
     s->pwrgate_status.reg32 = PWRGATE_STATUS_RESET;
-    s->pwrgood_timer.reg32 = PWRGOOD_TIMER_RESET;
     s->blink_timer.reg32 = BLINK_TIMER_RESET;
-    s->no_iopower.reg32 = NO_IOPOWER_RESET;
-    s->pwr_det.reg32 = PWR_DET_RESET;
     s->pwr_det_latch.reg32 = PWR_DET_LATCH_RESET;
     s->cpupwrgood_timer.reg32 = CPUPWRGOOD_TIMER_RESET;
     s->cpupwroff_timer.reg32 = CPUPWROFF_TIMER_RESET;
     s->pg_mask.reg32 = PG_MASK_RESET;
-    s->pg_mask_1.reg32 = PG_MASK_1_RESET;
     s->auto_wake_lvl.reg32 = AUTO_WAKE_LVL_RESET;
     s->auto_wake_lvl_mask.reg32 = AUTO_WAKE_LVL_MASK_RESET;
     s->wake_delay.reg32 = WAKE_DELAY_RESET;
-    s->pwr_det_val.reg32 = PWR_DET_VAL_RESET;
-    s->ddr_pwr.reg32 = DDR_PWR_RESET;
     s->usb_debounce_del.reg32 = USB_DEBOUNCE_DEL_RESET;
-    s->usb_ao.reg32 = USB_AO_RESET;
     s->crypto_op.reg32 = CRYPTO_OP_RESET;
-    s->pllp_wb0_override.reg32 = PLLP_WB0_OVERRIDE_RESET;
     s->bondout_mirror0.reg32 = BONDOUT_MIRROR0_RESET;
     s->bondout_mirror1.reg32 = BONDOUT_MIRROR1_RESET;
     s->bondout_mirror2.reg32 = BONDOUT_MIRROR2_RESET;
@@ -968,6 +997,72 @@ static void tegra_pmc_priv_reset(DeviceState *dev)
 
     /* Set ODMDATA for UARTD */
     s->scratch20.reg32 = (3 << 18) | (3 << 15);
+
+    memset(s->regs, 0, sizeof(s->regs));
+
+    if (tegra_board >= TEGRAX1_BOARD) {
+        s->cntrl.reg32 = CNTRL_TEGRAX1_RESET;
+        s->wake_lvl.reg32 = WAKE_LVL_TEGRAX1_RESET;
+        s->pwrgate_timer_off.reg32 = PWRGATE_TIMER_OFF_TEGRAX1_RESET;
+        s->pwrgood_timer.reg32 = PWRGOOD_TIMER_TEGRAX1_RESET;
+        s->no_iopower.reg32 = NO_IOPOWER_TEGRAX1_RESET;
+        s->pwr_det.reg32 = PWR_DET_TEGRA2_RESET;
+        s->pg_mask_1.reg32 = PG_MASK_1_TEGRAX1_RESET;
+        s->pwr_det_val.reg32 = PWR_DET_VAL_TEGRAX1_RESET;
+        s->ddr_pwr.reg32 = DDR_PWR_TEGRAX1_RESET;
+        s->usb_ao.reg32 = USB_AO_TEGRAX1_RESET;
+        s->pllp_wb0_override.reg32 = PLLP_WB0_OVERRIDE_TEGRAX1_RESET;
+
+        s->regs[(WAKE2_LVL_OFFSET-0x160)>>2] = WAKE2_LVL_TEGRAX1_RESET;
+        s->regs[(PG_MASK_2_OFFSET-0x160)>>2] = PG_MASK_2_TEGRAX1_RESET;
+        s->regs[(PG_MASK_CE1_OFFSET-0x160)>>2] = PG_MASK_CE1_TEGRAX1_RESET;
+        s->regs[(PG_MASK_CE2_OFFSET-0x160)>>2] = PG_MASK_CE2_TEGRAX1_RESET;
+        s->regs[(PG_MASK_CE3_OFFSET-0x160)>>2] = PG_MASK_CE3_TEGRAX1_RESET;
+        s->regs[(PWRGATE_TIMER_CE_OFFSET-0x160)>>2] = PWRGATE_TIMER_CE_TEGRAX1_RESET;
+        s->regs[(OSC_EDPD_OVER_OFFSET-0x160)>>2] = OSC_EDPD_OVER_TEGRAX1_RESET;
+        s->regs[(SATA_PWRGT_OFFSET-0x160)>>2] = SATA_PWRGT_TEGRAX1_RESET;
+        s->regs[(IO_DPD2_STATUS_OFFSET-0x160)>>2] = IO_DPD2_STATUS_TEGRAX1_RESET;
+        s->regs[(SEL_DPD_TIM_OFFSET-0x160)>>2] = SEL_DPD_TIM_TEGRAX1_RESET;
+        s->regs[(VDDP_SEL_OFFSET-0x160)>>2] = VDDP_SEL_TEGRAX1_RESET;
+        s->regs[(PLLM_WB0_OVERRIDE_FREQ_OFFSET-0x160)>>2] = PLLM_WB0_OVERRIDE_FREQ_TEGRAX1_RESET;
+        s->regs[(PWRGATE_TIMER_MULT_OFFSET-0x160)>>2] = PWRGATE_TIMER_MULT_TEGRAX1_RESET;
+        s->regs[(UTMIP_UHSIC_TRIGGERS_OFFSET-0x160)>>2] = UTMIP_UHSIC_TRIGGERS_TEGRAX1_RESET;
+        s->regs[(UTMIP_UHSIC_SAVED_STATE_OFFSET-0x160)>>2] = UTMIP_UHSIC_SAVED_STATE_TEGRAX1_RESET;
+        s->regs[(UTMIP_TERM_PAD_CFG_OFFSET-0x160)>>2] = UTMIP_TERM_PAD_CFG_TEGRAX1_RESET;
+        s->regs[(UTMIP_UHSIC_SLEEP_CFG_OFFSET-0x160)>>2] = UTMIP_UHSIC_SLEEP_CFG_TEGRAX1_RESET;
+        s->regs[(UTMIP_SLEEPWALK_P0_OFFSET-0x160)>>2] = UTMIP_SLEEPWALK_P0_TEGRAX1_RESET;
+        s->regs[(UTMIP_SLEEPWALK_P1_OFFSET-0x160)>>2] = UTMIP_SLEEPWALK_P1_TEGRAX1_RESET;
+        s->regs[(UTMIP_SLEEPWALK_P2_OFFSET-0x160)>>2] = UTMIP_SLEEPWALK_P2_TEGRAX1_RESET;
+        s->regs[(UHSIC_SLEEPWALK_P0_OFFSET-0x160)>>2] = UHSIC_SLEEPWALK_P0_TEGRAX1_RESET;
+        s->regs[(UTMIP_UHSIC_FAKE_OFFSET-0x160)>>2] = UTMIP_UHSIC_FAKE_TEGRAX1_RESET;
+        s->regs[(UTMIP_UHSIC_LINE_WAKEUP_OFFSET-0x160)>>2] = UTMIP_UHSIC_LINE_WAKEUP_TEGRAX1_RESET;
+        s->regs[(UTMIP_BIAS_MASTER_CNTRL_OFFSET-0x160)>>2] = UTMIP_BIAS_MASTER_CNTRL_TEGRAX1_RESET;
+        s->regs[(TD_PWRGATE_INTER_PART_TIMER_OFFSET-0x160)>>2] = TD_PWRGATE_INTER_PART_TIMER_TEGRAX1_RESET;
+        s->regs[(UTMIP_UHSIC2_TRIGGERS_OFFSET-0x160)>>2] = UTMIP_UHSIC2_TRIGGERS_TEGRAX1_RESET;
+        s->regs[(UTMIP_UHSIC2_SAVED_STATE_OFFSET-0x160)>>2] = UTMIP_UHSIC2_SAVED_STATE_TEGRAX1_RESET;
+        s->regs[(UTMIP_UHSIC2_SLEEP_CFG_OFFSET-0x160)>>2] = UTMIP_UHSIC2_SLEEP_CFG_TEGRAX1_RESET;
+        s->regs[(UHSIC2_SLEEPWALK_P1_OFFSET-0x160)>>2] = UHSIC2_SLEEPWALK_P1_TEGRAX1_RESET;
+        s->regs[(UTMIP_UHSIC2_FAKE_OFFSET-0x160)>>2] = UTMIP_UHSIC2_FAKE_TEGRAX1_RESET;
+        s->regs[(UTMIP_UHSIC2_LINE_WAKEUP_OFFSET-0x160)>>2] = UTMIP_UHSIC2_LINE_WAKEUP_TEGRAX1_RESET;
+        s->regs[(PG_MASK_CE0_OFFSET-0x160)>>2] = PG_MASK_CE0_TEGRAX1_RESET;
+
+        for (size_t i=0; i<sizeof(tegra_pmc_regdef_tegrax1_reset_table)/(sizeof(uint32_t)*2); i+=2) {
+            s->regs[(tegra_pmc_regdef_tegrax1_reset_table[i]-0x160)>>2] = tegra_pmc_regdef_tegrax1_reset_table[i+1];
+        }
+    }
+    else {
+        s->cntrl.reg32 = CNTRL_TEGRA2_RESET;
+        s->wake_lvl.reg32 = WAKE_LVL_TEGRA2_RESET;
+        s->pwrgate_timer_off.reg32 = PWRGATE_TIMER_OFF_TEGRA2_RESET;
+        s->pwrgood_timer.reg32 = PWRGOOD_TIMER_TEGRA2_RESET;
+        s->no_iopower.reg32 = NO_IOPOWER_TEGRA2_RESET;
+        s->pwr_det.reg32 = PWR_DET_TEGRA2_RESET;
+        s->pg_mask_1.reg32 = PG_MASK_1_TEGRA2_RESET;
+        s->pwr_det_val.reg32 = PWR_DET_VAL_TEGRA2_RESET;
+        s->ddr_pwr.reg32 = DDR_PWR_TEGRA2_RESET;
+        s->usb_ao.reg32 = USB_AO_TEGRA2_RESET;
+        s->pllp_wb0_override.reg32 = PLLP_WB0_OVERRIDE_TEGRA2_RESET;
+    }
 }
 
 static const MemoryRegionOps tegra_pmc_mem_ops = {
