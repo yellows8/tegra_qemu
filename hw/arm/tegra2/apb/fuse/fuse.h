@@ -194,6 +194,10 @@ typedef union fuse_private_key4_nonzero_u {
     uint32_t reg32;
 } fuse_private_key4_nonzero_t;
 
+#define FUSE_RESERVED_ODM8_OFFSET 0x98
+
+#define FUSE_JTAG_SECUREID_VALID_OFFSET 0x104
+
 #define FUSE_JTAG_SECUREID_0_OFFSET 0x108
 #define FUSE_JTAG_SECUREID_0_RESET  0x00000000
 typedef union fuse_jtag_secureid_0_u {
@@ -291,6 +295,10 @@ typedef union fuse_reserved_production_u {
     uint32_t reg32;
 } fuse_reserved_production_t;
 
+#define FUSE_HDMI_LANE0_CALIB_OFFSET 0x150
+
+#define FUSE_SECURITY_MODE_OFFSET 0x1A0
+
 #define FUSE_PRIVATE_KEY0_OFFSET 0x1A4
 typedef union fuse_private_key0_u {
     uint32_t reg32;
@@ -315,6 +323,10 @@ typedef union fuse_private_key3_u {
 typedef union fuse_private_key4_u {
     uint32_t reg32;
 } fuse_private_key4_t;
+
+#define FUSE_ARM_JTAG_DIS_OFFSET 0x1B8
+
+#define FUSE_OPT_VP9_DISABLE_OFFSET 0x1C4
 
 #define FUSE_RESERVED_ODM0_OFFSET 0x1C8
 #define FUSE_RESERVED_ODM0_RESET  0x00000000
@@ -363,6 +375,10 @@ typedef union fuse_reserved_odm6_u {
 typedef union fuse_reserved_odm7_u {
     uint32_t reg32;
 } fuse_reserved_odm7_t;
+
+#define FUSE_OBS_DIS_OFFSET 0x1E8
+
+#define FUSE_PACKAGE_INFO_OFFSET 0x1FC
 
 #define FUSE_SPARE_BIT_0_OFFSET 0x200
 #define FUSE_SPARE_BIT_0_RESET  0x00000000
@@ -1107,6 +1123,8 @@ typedef union fuse_spare_bit_61_u {
 
     uint32_t reg32;
 } fuse_spare_bit_61_t;
+
+#define FUSE_ECO_RESERVE_0_OFFSET 0x2F8
 
 #define KFUSE_STATE_OFFSET 0x80
 
