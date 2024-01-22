@@ -38,9 +38,22 @@ typedef struct tegra_fuse_state {
     SysBusDevice parent_obj;
 
     MemoryRegion iomem;
+    uint32_t fuse_array[0x100];
+    DEFINE_REG32(fuse_fusectrl);
+    DEFINE_REG32(fuse_fuseaddr);
+    DEFINE_REG32(fuse_fuserdata);
+    DEFINE_REG32(fuse_fusewdata);
+    DEFINE_REG32(fuse_fusetime_rd1);
+    DEFINE_REG32(fuse_fusetime_rd2);
+    DEFINE_REG32(fuse_fusetime_pgm1);
+    DEFINE_REG32(fuse_fusetime_pgm2);
+    DEFINE_REG32(fuse_priv2intfc_start);
     DEFINE_REG32(fuse_fusebypass);
     DEFINE_REG32(fuse_privatekeydisable);
+    DEFINE_REG32(fuse_disableregprogram);
     DEFINE_REG32(fuse_write_access_sw);
+    DEFINE_REG32(fuse_priv2reshift);
+    DEFINE_REG32(fuse_fusetime_rd3);
     DEFINE_REG32(fuse_jtag_secureid_0);
     DEFINE_REG32(fuse_jtag_secureid_1);
     DEFINE_REG32(fuse_sku_info);
@@ -132,9 +145,22 @@ static const VMStateDescription vmstate_tegra_fuse = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(fuse_array, tegra_fuse, 0x100),
+        VMSTATE_UINT32(fuse_fusectrl.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_fuseaddr.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_fuserdata.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_fusewdata.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_fusetime_rd1.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_fusetime_rd2.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_fusetime_pgm1.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_fusetime_pgm2.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_priv2intfc_start.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_fusebypass.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_privatekeydisable.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_disableregprogram.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_write_access_sw.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_priv2reshift.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_fusetime_rd3.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_jtag_secureid_0.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_jtag_secureid_1.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_sku_info.reg32, tegra_fuse),
@@ -230,14 +256,65 @@ static uint64_t tegra_fuse_priv_read(void *opaque, hwaddr offset,
     uint64_t ret = 0;
 
     switch (offset) {
+    case FUSE_FUSECTRL_OFFSET:
+        ret = s->fuse_fusectrl.reg32;
+        break;
+    case FUSE_FUSEADDR_OFFSET:
+        ret = s->fuse_fuseaddr.reg32;
+        break;
+    case FUSE_FUSERDATA_OFFSET:
+        ret = s->fuse_fuserdata.reg32;
+        break;
+    case FUSE_FUSEWDATA_OFFSET:
+        ret = s->fuse_fusewdata.reg32;
+        break;
+    case FUSE_FUSETIME_RD1_OFFSET:
+        ret = s->fuse_fusetime_rd1.reg32;
+        break;
+    case FUSE_FUSETIME_RD2_OFFSET:
+        ret = s->fuse_fusetime_rd2.reg32;
+        break;
+    case FUSE_FUSETIME_PGM1_OFFSET:
+        ret = s->fuse_fusetime_pgm1.reg32;
+        break;
+    case FUSE_FUSETIME_PGM2_OFFSET:
+        ret = s->fuse_fusetime_pgm2.reg32;
+        break;
+    case FUSE_PRIV2INTFC_START_OFFSET:
+        ret = s->fuse_priv2intfc_start.reg32;
+        break;
     case FUSE_FUSEBYPASS_OFFSET:
         ret = s->fuse_fusebypass.reg32;
         break;
     case FUSE_PRIVATEKEYDISABLE_OFFSET:
         ret = s->fuse_privatekeydisable.reg32;
         break;
+    case FUSE_DISABLEREGPROGRAM_OFFSET:
+        ret = s->fuse_disableregprogram.reg32;
+        break;
     case FUSE_WRITE_ACCESS_SW_OFFSET:
         ret = s->fuse_write_access_sw.reg32;
+        break;
+    case FUSE_PRIV2RESHIFT_OFFSET:
+        if (tegra_board >= TEGRAX1PLUS_BOARD) ret = s->fuse_priv2reshift.reg32;
+        break;
+    case FUSE_FUSETIME_RD3_OFFSET:
+        if (tegra_board >= TEGRAX1PLUS_BOARD) ret = s->fuse_fusetime_rd3.reg32;
+        break;
+    case FUSE_PRIVATE_KEY0_NONZERO_OFFSET:
+        if (tegra_board >= TEGRAX1PLUS_BOARD) ret = s->fuse_private_key0.reg32!=0;
+        break;
+    case FUSE_PRIVATE_KEY1_NONZERO_OFFSET:
+        if (tegra_board >= TEGRAX1PLUS_BOARD) ret = s->fuse_private_key1.reg32!=0;
+        break;
+    case FUSE_PRIVATE_KEY2_NONZERO_OFFSET:
+        if (tegra_board >= TEGRAX1PLUS_BOARD) ret = s->fuse_private_key2.reg32!=0;
+        break;
+    case FUSE_PRIVATE_KEY3_NONZERO_OFFSET:
+        if (tegra_board >= TEGRAX1PLUS_BOARD) ret = s->fuse_private_key3.reg32!=0;
+        break;
+    case FUSE_PRIVATE_KEY4_NONZERO_OFFSET:
+        if (tegra_board >= TEGRAX1PLUS_BOARD) ret = s->fuse_private_key4.reg32!=0;
         break;
     case FUSE_JTAG_SECUREID_0_OFFSET:
         ret = s->fuse_jtag_secureid_0.reg32;
@@ -508,6 +585,60 @@ static void tegra_fuse_priv_write(void *opaque, hwaddr offset,
     tegra_fuse *s = opaque;
 
     switch (offset) {
+    case FUSE_FUSECTRL_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_fusectrl.reg32, value);
+        s->fuse_fusectrl.reg32 = value;
+
+        if (s->fuse_fusectrl.cmd!=0x0) { // IDLE
+            if (s->fuse_fusectrl.cmd == 0x1) // READ
+                s->fuse_fuserdata.reg32 = s->fuse_array[s->fuse_fuseaddr.vldfld];
+            else if (s->fuse_fusectrl.cmd == 0x2) { // WRITE
+                if ((s->fuse_disableregprogram.reg32 & 0x1) == 0) {
+                    if ((s->fuse_fusebypass.reg32 & 0x1) == 0)
+                        s->fuse_array[s->fuse_fuseaddr.vldfld] |= s->fuse_fusewdata.reg32;
+                    else
+                        s->fuse_array[s->fuse_fuseaddr.vldfld] = s->fuse_fusewdata.reg32;
+                }
+            }
+            else if (s->fuse_fusectrl.cmd == 0x3) { // SENSE_CTRL
+                Error *err = NULL;
+                error_setg(&err, "tegra.fuse: SENSE_CTRL is not supported, FUSE_FUSEADDR_VLDFLD = 0x%x.", s->fuse_fuseaddr.vldfld);
+                if (err) error_report_err(err);
+            }
+
+            s->fuse_fusectrl.cmd = 0x0; // IDLE
+            s->fuse_fusectrl.state = 0x4; // IDLE
+        }
+
+        break;
+    case FUSE_FUSEADDR_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_fuseaddr.reg32, value);
+        s->fuse_fuseaddr.reg32 = value;
+        break;
+    case FUSE_FUSEWDATA_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_fusewdata.reg32, value);
+        s->fuse_fusewdata.reg32 = value;
+        break;
+    case FUSE_FUSETIME_RD1_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_fusetime_rd1.reg32, value);
+        s->fuse_fusetime_rd1.reg32 = value;
+        break;
+    case FUSE_FUSETIME_RD2_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_fusetime_rd2.reg32, value);
+        s->fuse_fusetime_rd2.reg32 = value;
+        break;
+    case FUSE_FUSETIME_PGM1_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_fusetime_pgm1.reg32, value);
+        s->fuse_fusetime_pgm1.reg32 = value;
+        break;
+    case FUSE_FUSETIME_PGM2_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_fusetime_pgm2.reg32, value);
+        s->fuse_fusetime_pgm2.reg32 = value;
+        break;
+    case FUSE_PRIV2INTFC_START_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_priv2intfc_start.reg32, value);
+        s->fuse_priv2intfc_start.reg32 = value;
+        break;
     case FUSE_FUSEBYPASS_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_fusebypass.reg32, value);
         s->fuse_fusebypass.reg32 = value;
@@ -516,9 +647,21 @@ static void tegra_fuse_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_privatekeydisable.reg32, value);
         s->fuse_privatekeydisable.reg32 |= value & 0x11;
         break;
+    case FUSE_DISABLEREGPROGRAM_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_write_access_sw.reg32, value);
+        s->fuse_disableregprogram.reg32 |= value & 0x1;
+        break;
     case FUSE_WRITE_ACCESS_SW_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_write_access_sw.reg32, value);
         s->fuse_write_access_sw.reg32 = value;
+        break;
+    case FUSE_PRIV2RESHIFT_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_priv2reshift.reg32, value);
+        if (tegra_board >= TEGRAX1PLUS_BOARD) s->fuse_priv2reshift.reg32 = value;
+        break;
+    case FUSE_FUSETIME_RD3_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_fusetime_rd3.reg32, value);
+        if (tegra_board >= TEGRAX1PLUS_BOARD) s->fuse_fusetime_rd3.reg32 = value;
         break;
     case FUSE_JTAG_SECUREID_0_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_jtag_secureid_0.reg32, value);
@@ -866,9 +1009,22 @@ static void tegra_fuse_priv_reset(DeviceState *dev)
 {
     tegra_fuse *s = TEGRA_FUSE(dev);
 
-    s->fuse_fusebypass.reg32 = 0x1;
+    s->fuse_fusectrl.reg32 = FUSE_FUSECTRL_RESET;
+    s->fuse_fusectrl.state = 4; // IDLE
+    s->fuse_fuseaddr.reg32 = FUSE_FUSEADDR_RESET;
+    s->fuse_fuserdata.reg32 = FUSE_FUSERDATA_RESET;
+    s->fuse_fusewdata.reg32 = FUSE_FUSEWDATA_RESET;
+    s->fuse_fusetime_rd1.reg32 = FUSE_FUSETIME_RD1_RESET;
+    s->fuse_fusetime_rd2.reg32 = FUSE_FUSETIME_RD2_RESET;
+    s->fuse_fusetime_pgm1.reg32 = FUSE_FUSETIME_PGM1_RESET;
+    s->fuse_fusetime_pgm2.reg32 = FUSE_FUSETIME_PGM2_RESET;
+    s->fuse_priv2intfc_start.reg32 = FUSE_PRIV2INTFC_START_RESET;
+    s->fuse_fusebypass.reg32 = FUSE_FUSEBYPASS_RESET;
     s->fuse_privatekeydisable.reg32 = FUSE_PRIVATEKEYDISABLE_RESET;
+    s->fuse_disableregprogram.reg32 = FUSE_DISABLEREGPROGRAM_RESET;
     s->fuse_write_access_sw.reg32 = 0x0;
+    s->fuse_priv2reshift.reg32 = FUSE_PRIV2RESHIFT_RESET;
+    s->fuse_fusetime_rd3.reg32 = FUSE_FUSETIME_RD3_RESET;
     s->fuse_jtag_secureid_0.reg32 = FUSE_JTAG_SECUREID_0_RESET;
     s->fuse_jtag_secureid_1.reg32 = FUSE_JTAG_SECUREID_1_RESET;
     s->fuse_sku_info.reg32 = 0x8;
@@ -954,13 +1110,13 @@ static void tegra_fuse_priv_reset(DeviceState *dev)
     s->fuse_spare_bit_60.reg32 = FUSE_SPARE_BIT_60_RESET;
     s->fuse_spare_bit_61.reg32 = FUSE_SPARE_BIT_61_RESET;
 
-    // Load the fuse_cache secret into the fuse-cache regs. End-of-file == end of fuse regs. Loading cache regs from iopage is also supported.
+    // Load the tegra.fuse.cache secret into the fuse-cache regs. End-of-file == end of fuse regs. Loading cache regs from iopage is also supported.
     Error *err = NULL;
     uint8_t *data=NULL;
     size_t datalen = 0;
-    if (qcrypto_secret_lookup("fuse_cache", &data, &datalen, &err)==0) {
+    if (qcrypto_secret_lookup("tegra.fuse.cache", &data, &datalen, &err)==0) {
         if (datalen > 0x368 && datalen!=0x1000) {
-            error_setg(&err, "Fuse: Invalid datalen for secret fuse_cache, datalen=0x%lx expected <=0x368/0x1000.", datalen);
+            error_setg(&err, "tegra.fuse: Invalid datalen for secret tegra.fuse.cache, datalen=0x%lx expected <=0x368/0x1000.", datalen);
         }
         else {
             uint32_t *dataptr = (uint32_t*)data;
@@ -977,6 +1133,23 @@ static void tegra_fuse_priv_reset(DeviceState *dev)
                 else hwoff-= 0x800;
                 tegra_fuse_priv_write(s, hwoff, dataptr[offset], 4);
             }
+        }
+        g_free(data);
+    }
+    if (err) error_report_err(err);
+
+    // Load the tegra.fuse.array secret into the fuse_array.
+    // TODO: Should a different method be used to allow writing back fuses to disk, which were updated with FUSE_FUSECTRL CMD=WRITE?
+    memset(s->fuse_array, 0, sizeof(s->fuse_array));
+
+    data = NULL;
+    datalen = 0;
+    if (qcrypto_secret_lookup("tegra.fuse.array", &data, &datalen, &err)==0) {
+        if (datalen > sizeof(s->fuse_array)) {
+            error_setg(&err, "tegra.fuse: Invalid datalen for secret tegra.fuse.array, datalen=0x%lx expected <=0x%lx.", datalen, sizeof(s->fuse_array));
+        }
+        else {
+            memcpy(s->fuse_array, data, datalen);
         }
         g_free(data);
     }

@@ -51,7 +51,7 @@ Run Tegra X1
 
 * Each input ``-serial`` argument corresponds to UART-A - UART-D. If UART-A output with stdio instead of the default is wanted, this can be used for example: ``-chardev stdio,id=char0 -serial chardev:char0``
 
-* The fuse-cache can be specified via an input secret. End-of-file == end of fuse regs. Loading cache regs from iopage is also supported. To set fuse-cache: ``-object secret,id=fuse_cache,file={path}``
+* The fuse-cache can be specified via an input secret. End-of-file == end of fuse regs. Loading cache regs from iopage is also supported. To set fuse-cache: ``-object secret,id=tegra.fuse.cache,file={path}`` To set the fuse-array (size must be <=0x400-bytes): ``-object secret,id=tegra.fuse.array,file={path}``
 
 * SE AES keys can optionally be specified via input secrets if needed. Repeat as needed for each keyslot: ``-object secret,id=se.aeskeyslot{decimal keyslot 0-15},file={path to raw keydata}``
 

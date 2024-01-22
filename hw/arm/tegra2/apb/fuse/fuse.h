@@ -23,6 +23,79 @@
 #ifndef TEGRA_FUSE_H
 #define TEGRA_FUSE_H
 
+#define FUSE_FUSECTRL_OFFSET 0x0
+#define FUSE_FUSECTRL_RESET  0x00000000
+typedef union fuse_fusectrl_u {
+    struct {
+        unsigned int cmd:2;
+        unsigned int undefined_bits_2_15:14;
+        unsigned int state:5;
+        unsigned int margin_read:1;
+        unsigned int rwl:1;
+        unsigned int trcs:1;
+        unsigned int at1:1;
+        unsigned int at0:1;
+        unsigned int pd_ctrl:1;
+        unsigned int undefined_bits_27_29:3;
+        unsigned int fuse_sense_done:1;
+        unsigned int record_shift_done:1;
+    };
+
+    uint32_t reg32;
+} fuse_fusectrl_t;
+
+#define FUSE_FUSEADDR_OFFSET 0x4
+#define FUSE_FUSEADDR_RESET  0x00000000
+typedef union fuse_fuseaddr_u {
+    struct {
+        unsigned int vldfld:8;
+    };
+
+    uint32_t reg32;
+} fuse_fuseaddr_t;
+
+#define FUSE_FUSERDATA_OFFSET 0x8
+#define FUSE_FUSERDATA_RESET  0x00000000
+typedef union fuse_fuserdata_u {
+    uint32_t reg32;
+} fuse_fuserdata_t;
+
+#define FUSE_FUSEWDATA_OFFSET 0xC
+#define FUSE_FUSEWDATA_RESET  0x00000000
+typedef union fuse_fusewdata_u {
+    uint32_t reg32;
+} fuse_fusewdata_t;
+
+#define FUSE_FUSETIME_RD1_OFFSET 0x10
+#define FUSE_FUSETIME_RD1_RESET  0x00000000
+typedef union fuse_fusetime_rd1_u {
+    uint32_t reg32;
+} fuse_fusetime_rd1_t;
+
+#define FUSE_FUSETIME_RD2_OFFSET 0x14
+#define FUSE_FUSETIME_RD2_RESET  0x00000000
+typedef union fuse_fusetime_rd2_u {
+    uint32_t reg32;
+} fuse_fusetime_rd2_t;
+
+#define FUSE_FUSETIME_PGM1_OFFSET 0x18
+#define FUSE_FUSETIME_PGM1_RESET  0x00000000
+typedef union fuse_fusetime_pgm1_u {
+    uint32_t reg32;
+} fuse_fusetime_pgm1_t;
+
+#define FUSE_FUSETIME_PGM2_OFFSET 0x1C
+#define FUSE_FUSETIME_PGM2_RESET  0x00000000
+typedef union fuse_fusetime_pgm2_u {
+    uint32_t reg32;
+} fuse_fusetime_pgm2_t;
+
+#define FUSE_PRIV2INTFC_START_OFFSET 0x20
+#define FUSE_PRIV2INTFC_START_RESET  0x00000000
+typedef union fuse_priv2intfc_start_u {
+    uint32_t reg32;
+} fuse_priv2intfc_start_t;
+
 #define FUSE_FUSEBYPASS_OFFSET 0x24
 #define FUSE_FUSEBYPASS_RESET  0x00000000
 typedef union fuse_fusebypass_u {
@@ -40,6 +113,12 @@ typedef union fuse_privatekeydisable_u {
     uint32_t reg32;
 } fuse_privatekeydisable_t;
 
+#define FUSE_DISABLEREGPROGRAM_OFFSET 0x2C
+#define FUSE_DISABLEREGPROGRAM_RESET  0x00000000
+typedef union fuse_disableregprogram_u {
+    uint32_t reg32;
+} fuse_disableregprogram_t;
+
 #define FUSE_WRITE_ACCESS_SW_OFFSET 0x30
 #define FUSE_WRITE_ACCESS_SW_RESET  0x00000001
 typedef union fuse_write_access_sw_u {
@@ -52,6 +131,68 @@ typedef union fuse_write_access_sw_u {
 
     uint32_t reg32;
 } fuse_write_access_sw_t;
+
+#define FUSE_PRIV2RESHIFT_OFFSET 0x3C
+#define FUSE_PRIV2RESHIFT_RESET  0x00000000
+typedef union fuse_priv2reshift_u {
+    uint32_t reg32;
+} fuse_priv2reshift_t;
+
+#define FUSE_FUSETIME_RD3_OFFSET 0x4C
+#define FUSE_FUSETIME_RD3_RESET  0x00000000
+typedef union fuse_fusetime_rd3_u {
+    uint32_t reg32;
+} fuse_fusetime_rd3_t;
+
+#define FUSE_PRIVATE_KEY0_NONZERO_OFFSET 0x80
+#define FUSE_PRIVATE_KEY0_NONZERO_RESET  0x00000001
+typedef union fuse_private_key0_nonzero_u {
+    struct {
+        unsigned int nonzero:1;
+    };
+
+    uint32_t reg32;
+} fuse_private_key0_nonzero_t;
+
+#define FUSE_PRIVATE_KEY1_NONZERO_OFFSET 0x84
+#define FUSE_PRIVATE_KEY1_NONZERO_RESET  0x00000001
+typedef union fuse_private_key1_nonzero_u {
+    struct {
+        unsigned int nonzero:1;
+    };
+
+    uint32_t reg32;
+} fuse_private_key1_nonzero_t;
+
+#define FUSE_PRIVATE_KEY2_NONZERO_OFFSET 0x88
+#define FUSE_PRIVATE_KEY2_NONZERO_RESET  0x00000001
+typedef union fuse_private_key2_nonzero_u {
+    struct {
+        unsigned int nonzero:1;
+    };
+
+    uint32_t reg32;
+} fuse_private_key2_nonzero_t;
+
+#define FUSE_PRIVATE_KEY3_NONZERO_OFFSET 0x8C
+#define FUSE_PRIVATE_KEY3_NONZERO_RESET  0x00000001
+typedef union fuse_private_key3_nonzero_u {
+    struct {
+        unsigned int nonzero:1;
+    };
+
+    uint32_t reg32;
+} fuse_private_key3_nonzero_t;
+
+#define FUSE_PRIVATE_KEY4_NONZERO_OFFSET 0x90
+#define FUSE_PRIVATE_KEY4_NONZERO_RESET  0x00000001
+typedef union fuse_private_key4_nonzero_u {
+    struct {
+        unsigned int nonzero:1;
+    };
+
+    uint32_t reg32;
+} fuse_private_key4_nonzero_t;
 
 #define FUSE_JTAG_SECUREID_0_OFFSET 0x108
 #define FUSE_JTAG_SECUREID_0_RESET  0x00000000
