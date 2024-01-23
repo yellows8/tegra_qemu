@@ -621,10 +621,7 @@ static void tegra_fuse_priv_write(void *opaque, hwaddr offset,
                 s->fuse_fuserdata.reg32 = s->fuse_array[s->fuse_fuseaddr.vldfld];
             else if (s->fuse_fusectrl.cmd == 0x2) { // WRITE
                 if ((s->fuse_disableregprogram.reg32 & 0x1) == 0) {
-                    if ((s->fuse_fusebypass.reg32 & 0x1) == 0)
-                        s->fuse_array[s->fuse_fuseaddr.vldfld] |= s->fuse_fusewdata.reg32;
-                    else
-                        s->fuse_array[s->fuse_fuseaddr.vldfld] = s->fuse_fusewdata.reg32;
+                    s->fuse_array[s->fuse_fuseaddr.vldfld] |= s->fuse_fusewdata.reg32; // NOTE: Only certain ODM fuses can be written normally, this doesn't handle that.
                 }
             }
             else if (s->fuse_fusectrl.cmd == 0x3) { // SENSE_CTRL
