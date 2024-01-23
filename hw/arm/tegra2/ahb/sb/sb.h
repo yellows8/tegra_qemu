@@ -20,6 +20,9 @@
 #ifndef TEGRA_SB_H
 #define TEGRA_SB_H
 
+#define CSR_OFFSET 0x0
+#define CSR_RESET 0x00000000
+
 #define PIROM_START_OFFSET 0x4
 #define PIROM_START_RESET 0x00001000
 

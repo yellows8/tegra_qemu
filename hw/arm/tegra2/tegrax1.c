@@ -69,7 +69,6 @@
 #define DIRQ_INT(X) qdev_get_gpio_in(tegra_irq_dispatcher_dev, X + INT_MAIN_NR)
 
 #define BOOTLOADER_BASE 0x40010000
-#define BOOTROM_BASE    0x00100000
 #define BOOTMON_BASE    0xF0010000
 #define BOOTROM_LOVEC_BASE 0x0
 
@@ -280,11 +279,11 @@ static void load_memory_images(MachineState *machine)
     /* Load IROM */
     if (machine->firmware == NULL) {
         rom_add_blob_fixed("bpmp.bootrom", tegra_bootrom, sizeof(tegra_bootrom),
-                           BOOTROM_BASE);
+                           TEGRA_IROM_BASE);
     }
     else {
-        assert(load_image_targphys(machine->firmware, BOOTROM_BASE,
-                                   0x18000) > 0);
+        assert(load_image_targphys(machine->firmware, TEGRA_IROM_BASE,
+                                   TEGRA_IROM_SIZE) > 0);
     }
 
     /*for (tmp = 0; tmp < ARRAY_SIZE(tegra_bootmon); tmp++)
@@ -364,7 +363,7 @@ static void __tegrax1_init(MachineState *machine)
                                    BOOTROM_LOVEC_BASE, 0x100000, RO);*/
 
     memory_region_add_and_init_ram(sysmem, "tegra.irom",
-                                   BOOTROM_BASE, 0x18000, RO);
+                                   TEGRA_IROM_BASE, TEGRA_IROM_SIZE, RO);
 
     memory_region_add_and_init_ram(sysmem, "tegra.ahb_a1",
                                    0x78000000, SZ_16M, RW);
@@ -493,8 +492,10 @@ static void __tegrax1_init(MachineState *machine)
     sysbus_mmio_map(SYS_BUS_DEVICE(tegra_evp_dev), 1, BOOTROM_LOVEC_BASE);
 
     /* Secure boot */
-    tegra_sb_dev = sysbus_create_simple("tegra.sb",
-                                        TEGRA_SB_BASE, NULL);
+    tegra_sb_dev = qdev_new("tegra.sb");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_sb_dev), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_sb_dev), 0, TEGRA_SB_BASE);
+    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_sb_dev), 1, TEGRA_IPATCH_BASE);
 
     /* Embedded memory controller */
     tegra_emc_dev = sysbus_create_simple("tegra.emc", TEGRA_EMC_BASE, NULL);
@@ -884,8 +885,8 @@ static void __tegrax1_init(MachineState *machine)
                                 BOOTROM_LOVEC_BASE, 0x1000);
 
     cop_memory_region_add_alias(cop_sysmem, "tegra.cop-IROM", sysmem,
-                                BOOTROM_BASE,
-                                BOOTROM_BASE, 0x18000);
+                                TEGRA_IROM_BASE,
+                                TEGRA_IROM_BASE, TEGRA_IROM_SIZE);
 
     /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-bootmon", sysmem,
                                 BOOTMON_BASE,
