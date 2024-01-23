@@ -371,19 +371,19 @@ static uint64_t tegra_fuse_priv_read(void *opaque, hwaddr offset,
         ret = s->fuse_reserved_production.reg32;
         break;
     case FUSE_PRIVATE_KEY0_OFFSET:
-        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key0.reg32;
+        ret = s->fuse_privatekeydisable.reg32 & 0x10 ? 0xFFFFFFFF : s->fuse_private_key0.reg32;
         break;
     case FUSE_PRIVATE_KEY1_OFFSET:
-        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key1.reg32;
+        ret = s->fuse_privatekeydisable.reg32 & 0x10 ? 0xFFFFFFFF : s->fuse_private_key1.reg32;
         break;
     case FUSE_PRIVATE_KEY2_OFFSET:
-        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key2.reg32;
+        ret = s->fuse_privatekeydisable.reg32 & 0x10 ? 0xFFFFFFFF : s->fuse_private_key2.reg32;
         break;
     case FUSE_PRIVATE_KEY3_OFFSET:
-        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key3.reg32;
+        ret = s->fuse_privatekeydisable.reg32 & 0x10 ? 0xFFFFFFFF : s->fuse_private_key3.reg32;
         break;
     case FUSE_PRIVATE_KEY4_OFFSET:
-        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key4.reg32;
+        ret = s->fuse_privatekeydisable.reg32 & 0x10 ? 0xFFFFFFFF : s->fuse_private_key4.reg32;
         break;
     case FUSE_RESERVED_ODM0_OFFSET:
         ret = s->fuse_reserved_odm0.reg32;
