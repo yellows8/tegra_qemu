@@ -195,6 +195,7 @@ qemu_create_displaysurface_guestmem(int width, int height,
         cpu_physical_memory_unmap(data, size, 0, 0);
         return NULL;
     }
+    if (data == NULL) return NULL;
 
     surface = qemu_create_displaysurface_from
         (width, height, format, linesize, data);
