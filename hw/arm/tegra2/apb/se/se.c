@@ -354,6 +354,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 
                 void* databuf_out = NULL;
                 dma_addr_t databuf_outsize = 0;
+                size_t datasize=0;
 
                 if (cfg_dst==1) { // HASH_REG
                     databuf_out = &s->regs.SE_HASH_RESULT;
@@ -432,7 +433,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                 }
 
                                 size_t blocklen = qcrypto_cipher_get_block_len(cipher_alg);
-                                size_t datasize = (s->regs.SE_CRYPTO_LAST_BLOCK+1)*blocklen;
+                                datasize = (s->regs.SE_CRYPTO_LAST_BLOCK+1)*blocklen;
                                 if (!hash_enable && datasize > databuf_outsize) datasize = databuf_outsize;
 
                                 if (databuf_in==NULL || (dma_out && databuf_out==NULL)) {
@@ -491,7 +492,6 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                 }
 
                                 if (databuf_in) dma_memory_unmap(&address_space_memory, databuf_in, tmplen_in, DMA_DIRECTION_TO_DEVICE, tmplen_in);
-                                if (dma_out && databuf_out) dma_memory_unmap(&address_space_memory, databuf_out, databuf_outsize, DMA_DIRECTION_FROM_DEVICE, datasize);
 
                                 qcrypto_cipher_free(cipher);
                             }
@@ -501,7 +501,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     if (err) error_report_err(err);
                 }
                 else if (enc_alg == 0x2) { // CONFIG_ENC_ALG RNG
-                    size_t datasize = (s->regs.SE_CRYPTO_LAST_BLOCK+1)*qcrypto_cipher_get_block_len(QCRYPTO_CIPHER_ALG_AES_128);
+                    datasize = (s->regs.SE_CRYPTO_LAST_BLOCK+1)*qcrypto_cipher_get_block_len(QCRYPTO_CIPHER_ALG_AES_128);
                     if (cfg_dst==0) { // MEMORY
                         databuf_outsize = out_entry.size;
                         databuf_out = dma_memory_map(&address_space_memory, out_entry.address, &databuf_outsize, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
@@ -515,12 +515,11 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                         if(datasize>databuf_outsize) datasize = databuf_outsize;
                         qemu_guest_getrandom(databuf_out, datasize, &err);
                         //qemu_hexdump(stdout, "RNG output", databuf_out, datasize);
-                        if (cfg_dst==0) dma_memory_unmap(&address_space_memory, databuf_out, databuf_outsize, DMA_DIRECTION_FROM_DEVICE, datasize);
                     }
                     if (err) error_report_err(err);
                 }
                 else if (enc_alg == 0x3) { // CONFIG_ENC_ALG SHA
-                    size_t datasize = s->regs.SE_SHA_MSG_LENGTH[0]/8;
+                    datasize = s->regs.SE_SHA_MSG_LENGTH[0]/8;
                     s->regs.SE_SHA_MSG_LEFT[0] = 0;
                     QCryptoHashAlgorithm hash_alg = QCRYPTO_HASH_ALG__MAX;
                     switch (enc_mode) {
@@ -557,17 +556,29 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                        size_t resultlen=0;
                        if (databuf) {
                            if (datasize>tmplen) datasize = tmplen;
-                           if (qcrypto_hash_bytes(hash_alg, databuf, datasize, &result, &resultlen, &err)==0) {
-                               uint32_t *hashptr = s->regs.SE_HASH_RESULT;
-                               memset(hashptr, 0, sizeof(s->regs.SE_HASH_RESULT));
-                               for (size_t i=0; i<resultlen && i<sizeof(s->regs.SE_HASH_RESULT); i+=sizeof(uint32_t)) {
-                                   *hashptr = *((uint32_t*)&result[i]);
-                                   bswap32s(hashptr);
-                                   hashptr++;
-                               }
-                               g_free(result);
+
+                           if (cfg_dst==0) { // MEMORY
+                               databuf_outsize = out_entry.size;
+                               databuf_out = dma_memory_map(&address_space_memory, out_entry.address, &databuf_outsize, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
                            }
-                           else datasize = 0;
+                           if (databuf_out==NULL) {
+                               if (cfg_dst==0) error_setg(&err, "Failed to DMA map SE SHA output buffer.");
+                               else error_setg(&err, "SE SHA: Ignoring cfg_dst=%d.", cfg_dst);
+                               datasize = 0;
+                           }
+                           else {
+                               if (qcrypto_hash_bytes(hash_alg, databuf, datasize, &result, &resultlen, &err)==0) {
+                                   uint32_t *hashptr = databuf_out;
+                                   memset(hashptr, 0, databuf_outsize);
+                                   for (size_t i=0; i<resultlen && i<databuf_outsize; i+=sizeof(uint32_t)) {
+                                       *hashptr = *((uint32_t*)&result[i]);
+                                       if (cfg_dst!=0) bswap32s(hashptr);
+                                       hashptr++;
+                                   }
+                                   g_free(result);
+                               }
+                               else datasize = 0;
+                           }
                            dma_memory_unmap(&address_space_memory, databuf, tmplen, DMA_DIRECTION_TO_DEVICE, datasize);
                        }
                        else {
@@ -613,6 +624,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                         qcrypto_akcipher_free(akcipher);
                     }
                 }
+                if (cfg_dst==0 && databuf_out) dma_memory_unmap(&address_space_memory, databuf_out, databuf_outsize, DMA_DIRECTION_FROM_DEVICE, datasize);
             }
         break;
 
