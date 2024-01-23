@@ -1029,6 +1029,8 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
     s->gp_hidrev.hidfam = 0x7;
     s->gp_hidrev.majorrev = 0x1;
     s->gp_hidrev.minorrev = 0x4;
+
+    s->pp_strapping_opt_a.reg32 |= 7<<10; // TODO: Load from user input?
 }
 
 static const MemoryRegionOps tegra_apb_misc_mem_ops = {
