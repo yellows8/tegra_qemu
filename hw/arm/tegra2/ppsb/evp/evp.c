@@ -41,6 +41,7 @@ typedef struct tegra_evp_state {
     SysBusDevice parent_obj;
 
     MemoryRegion iomem;
+    MemoryRegion lovec_mem;
     uint32_t evp_regs[2][36];
 } tegra_evp;
 
@@ -133,14 +134,39 @@ static void tegra_evp_priv_write(void *opaque, hwaddr offset,
     }
 }
 
+static uint64_t tegra_evp_lovec_priv_read(void *opaque, hwaddr offset,
+                                          unsigned size)
+{
+    tegra_evp *s = opaque;
+    uint64_t ret = 0;
+
+    if (offset < 0x40) ret = 0xe59ff3f8; // Load pc from ptrs starting at offset 0x400.
+    else if (offset < 0x400) ret = 0xeafffffe; // "b ."
+    else ret = tegra_evp_priv_read(s, offset-0x400, size);
+
+    TRACE_READ(s->lovec_mem.addr, offset, ret);
+
+    return ret;
+}
+
+static void tegra_evp_lovec_priv_write(void *opaque, hwaddr offset,
+                                       uint64_t value, unsigned size)
+{
+    tegra_evp *s = opaque;
+
+    // Not writable.
+
+    TRACE_WRITE(s->lovec_mem.addr, offset, 0, value);
+}
+
 static void tegra_evp_priv_reset(DeviceState *dev)
 {
     tegra_evp *s = TEGRA_EVP(dev);
     int i;
 
     for (i = 0; i < 2; i++) {
-        if (i!=0)
-            s->evp_regs[i][0]  = EVP_RESET_VECTOR_RESET;
+        /*if (i!=0)
+            s->evp_regs[i][0]  = EVP_RESET_VECTOR_RESET;*/
         s->evp_regs[i][1]  = EVP_UNDEF_VECTOR_RESET;
         s->evp_regs[i][2]  = EVP_SWI_VECTOR_RESET;
         s->evp_regs[i][3]  = EVP_PREFETCH_ABORT_VECTOR_RESET;
@@ -177,6 +203,10 @@ static void tegra_evp_priv_reset(DeviceState *dev)
         s->evp_regs[i][34] = EVP_PRI_FIQ_NUM_3_RESET;
         s->evp_regs[i][35] = EVP_PRI_FIQ_VEC_3_RESET;
     }
+
+    for (i = 1; i < 0x20>>2; i++) {
+        s->evp_regs[1][i] = 0x00100000 + (i<<2);
+    }
 }
 
 static const MemoryRegionOps tegra_evp_mem_ops = {
@@ -185,6 +215,13 @@ static const MemoryRegionOps tegra_evp_mem_ops = {
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
+static const MemoryRegionOps tegra_evp_lovec_ops = {
+    .read = tegra_evp_lovec_priv_read,
+    .write = tegra_evp_lovec_priv_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+};
+
+#if 0
 static void tegra_cpu_do_interrupt(ARMCPU *cpu, void *opaque)
 {
     CPUARMState *env = &cpu->env;
@@ -229,6 +266,7 @@ static void tegra_cpu_do_interrupt(ARMCPU *cpu, void *opaque)
     /* ARM7TDMI switches to arm mode.  */
     env->thumb = 0;
 }
+#endif
 
 #ifndef CONFIG_TCG
 #error "TCG must be enabled"
@@ -237,22 +275,26 @@ static void tegra_cpu_do_interrupt(ARMCPU *cpu, void *opaque)
 static void tegra_evp_priv_realize(DeviceState *dev, Error **errp)
 {
     tegra_evp *s = TEGRA_EVP(dev);
-    CPUState *cs = qemu_get_cpu(TEGRA_BPMP);
-    ARMCPU *cpu = ARM_CPU(cs);
+    //CPUState *cs = qemu_get_cpu(TEGRA_BPMP);
+    //ARMCPU *cpu = ARM_CPU(cs);
 
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_evp_mem_ops, s,
                           "tegra.evp", TEGRA_EXCEPTION_VECTORS_SIZE);
+    memory_region_init_io(&s->lovec_mem, OBJECT(dev), &tegra_evp_lovec_ops, s,
+                          "tegra.evp.lovec", TEGRA_EXCEPTION_VECTORS_SIZE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
+    sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->lovec_mem);
 
     /* FIXME: lame */
-    device_cold_reset( DEVICE(s) );
+    //device_cold_reset( DEVICE(s) );
 
     /* COP follows all EVP vectors.  */
-    arm_register_el_change_hook(cpu, tegra_cpu_do_interrupt, cs);
+    //arm_register_el_change_hook(cpu, tegra_cpu_do_interrupt, cs);
 }
 
 static Property tegra_evp_properties[] = {
     DEFINE_PROP_UINT32("cpu-reset-vector", tegra_evp, evp_regs[0][0], EVP_RESET_VECTOR_RESET), \
+    DEFINE_PROP_UINT32("bpmp-reset-vector", tegra_evp, evp_regs[1][0], 0x00100000), \
     DEFINE_PROP_END_OF_LIST(),
 };
 

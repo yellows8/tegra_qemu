@@ -279,12 +279,12 @@ static void load_memory_images(MachineState *machine)
 
     /* Load IROM */
     if (machine->firmware == NULL) {
-        rom_add_blob_fixed("bpmp.lovec", tegra_bootrom, sizeof(tegra_bootrom),
-                           BOOTROM_LOVEC_BASE);
+        rom_add_blob_fixed("bpmp.bootrom", tegra_bootrom, sizeof(tegra_bootrom),
+                           BOOTROM_BASE);
     }
     else {
-        assert(load_image_targphys(machine->firmware, BOOTROM_LOVEC_BASE,
-                                   0x100000) > 0);
+        assert(load_image_targphys(machine->firmware, BOOTROM_BASE,
+                                   0x18000) > 0);
     }
 
     /*for (tmp = 0; tmp < ARRAY_SIZE(tegra_bootmon); tmp++)
@@ -360,11 +360,11 @@ static void __tegrax1_init(MachineState *machine)
 //     sysbus_create_simple("tegra.remote_iram",
 //                          TEGRA_IRAM_BASE + TEGRA_RESET_HANDLER_SIZE, NULL);
 
-    memory_region_add_and_init_ram(sysmem, "tegra.irom_lovec",
-                                   BOOTROM_LOVEC_BASE, 0x100000, RO);
+    /*memory_region_add_and_init_ram(sysmem, "tegra.irom_lovec",
+                                   BOOTROM_LOVEC_BASE, 0x100000, RO);*/
 
-    /*memory_region_add_and_init_ram(sysmem, "tegra.irom",
-                                   BOOTROM_BASE, 0x18000, RO);*/
+    memory_region_add_and_init_ram(sysmem, "tegra.irom",
+                                   BOOTROM_BASE, 0x18000, RO);
 
     memory_region_add_and_init_ram(sysmem, "tegra.ahb_a1",
                                    0x78000000, SZ_16M, RW);
@@ -487,8 +487,10 @@ static void __tegrax1_init(MachineState *machine)
                                          TEGRA_MSELECT_BASE, NULL);
 
     /* Exception vectors */
-    tegra_evp_dev = sysbus_create_simple("tegra.evp",
-                                         TEGRA_EXCEPTION_VECTORS_BASE, NULL);
+    tegra_evp_dev = qdev_new("tegra.evp");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_evp_dev), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_evp_dev), 0, TEGRA_EXCEPTION_VECTORS_BASE);
+    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_evp_dev), 1, BOOTROM_LOVEC_BASE);
 
     /* Secure boot */
     tegra_sb_dev = sysbus_create_simple("tegra.sb",
@@ -879,11 +881,11 @@ static void __tegrax1_init(MachineState *machine)
 
     cop_memory_region_add_alias(cop_sysmem, "tegra.bpmp-IROM_LOVEC", sysmem,
                                 BOOTROM_LOVEC_BASE,
-                                BOOTROM_LOVEC_BASE, 0x100000);
+                                BOOTROM_LOVEC_BASE, 0x1000);
 
     cop_memory_region_add_alias(cop_sysmem, "tegra.cop-IROM", sysmem,
                                 BOOTROM_BASE,
-                                BOOTROM_LOVEC_BASE, 0x18000);
+                                BOOTROM_BASE, 0x18000);
 
     /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-bootmon", sysmem,
                                 BOOTMON_BASE,
