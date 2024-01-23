@@ -1156,7 +1156,7 @@ sdhci_write(void *opaque, hwaddr offset, uint64_t val, unsigned size)
             s->sdmasysad = (s->sdmasysad & mask) | value;
             MASKED_WRITE(s->sdmasysad, mask, value);
             /* Writing to last byte of sdmasysad might trigger transfer */
-            if (!(mask & 0xFF000000) && s->blkcnt &&
+            /*if (!(mask & 0xFF000000) && s->blkcnt &&
                 (s->blksize & BLOCK_SIZE_MASK) &&
                 SDHC_DMA_TYPE(s->hostctl1) == SDHC_CTRL_SDMA) {
                 if (s->trnmod & SDHC_TRNS_MULTI) {
@@ -1164,7 +1164,7 @@ sdhci_write(void *opaque, hwaddr offset, uint64_t val, unsigned size)
                 } else {
                     sdhci_sdma_transfer_single_block(s);
                 }
-            }
+            }*/ // NOTE: This should be handled properly?
         }
         break;
     case SDHC_BLKSIZE:
