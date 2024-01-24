@@ -23,6 +23,11 @@
 
 #include "hw/sysbus.h"
 
+#include "crypto/secret_common.h"
+#include "qapi/error.h"
+#include "exec/address-spaces.h"
+#include "sysemu/dma.h"
+
 #include "iomap.h"
 #include "tegra_trace.h"
 
@@ -40,6 +45,8 @@ typedef struct tegra_tsec_state {
     MemoryRegion iomem;
     int32_t engine;
     uint32_t regs[TEGRA_TSEC_SIZE>>2];
+    bool outdata_set;
+    uint32_t outdata[4];
 } tegra_tsec;
 
 static const VMStateDescription vmstate_tegra_tsec = {
@@ -49,6 +56,8 @@ static const VMStateDescription vmstate_tegra_tsec = {
     .fields = (VMStateField[]) {
         VMSTATE_INT32(engine, tegra_tsec),
         VMSTATE_UINT32_ARRAY(regs, tegra_tsec, TEGRA_TSEC_SIZE>>2),
+        VMSTATE_BOOL(outdata_set, tegra_tsec),
+        VMSTATE_UINT32_ARRAY(outdata, tegra_tsec, 4),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -101,7 +110,29 @@ static void tegra_tsec_priv_write(void *opaque, hwaddr offset,
     if (offset == TSEC_FALCON_CPUCTL_OFFSET) {
         if (value & 0x2) {
             value |= 1<<4; // When STARTCPU is set, enable HALTED.
-            if (s->engine == TEGRA_TSEC_ENGINE_TSEC) s->regs[TSEC_FALCON_MAILBOX1_OFFSET>>2] = 0xB0B0B0B0; // TsecResult_Success
+            if (s->engine == TEGRA_TSEC_ENGINE_TSEC) {
+                if (s->outdata_set) {
+                    size_t datasize = NV_SOR_TMDS_HDCP_BKSV_LSB_OFFSET+4-NV_SOR_DP_HDCP_BKSV_LSB_OFFSET;
+                    dma_addr_t databuf_outsize=datasize;
+                    uint32_t *databuf_out = dma_memory_map(&address_space_memory, TEGRA_SOR1_BASE + NV_SOR_DP_HDCP_BKSV_LSB_OFFSET,
+                                                       &databuf_outsize, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
+
+                    if (databuf_out && databuf_outsize==datasize) {
+                        databuf_out[0] = s->outdata[0];
+                        databuf_out[(NV_SOR_TMDS_HDCP_BKSV_LSB_OFFSET-NV_SOR_DP_HDCP_BKSV_LSB_OFFSET)>>2] = s->outdata[1];
+                        databuf_out[(NV_SOR_TMDS_HDCP_CN_MSB_OFFSET-NV_SOR_DP_HDCP_BKSV_LSB_OFFSET)>>2] = s->outdata[2];
+                        databuf_out[(NV_SOR_TMDS_HDCP_CN_LSB_OFFSET-NV_SOR_DP_HDCP_BKSV_LSB_OFFSET)>>2] = s->outdata[3];
+                    }
+                    else {
+                        Error *err = NULL;
+                        error_setg(&err, "tegra.tsec: Failed to DMA map the SOR output regs.");
+                        if (err) error_report_err(err);
+                    }
+
+                    if (databuf_out) dma_memory_unmap(&address_space_memory, databuf_out, databuf_outsize, DMA_DIRECTION_TO_DEVICE, datasize);
+                }
+                s->regs[TSEC_FALCON_MAILBOX1_OFFSET>>2] = 0xB0B0B0B0; // TsecResult_Success
+            }
         }
     }
 
@@ -113,6 +144,27 @@ static void tegra_tsec_priv_reset(DeviceState *dev)
     tegra_tsec *s = TEGRA_TSEC(dev);
 
     memset(s->regs, 0, sizeof(s->regs));
+
+    s->outdata_set = false;
+    memset(s->outdata, 0, sizeof(s->outdata));
+
+    // Load the tegra.tsec.outdata secret into outdata.
+    if (s->engine == TEGRA_TSEC_ENGINE_TSEC) {
+        Error *err = NULL;
+        uint8_t *data=NULL;
+        size_t datalen = 0;
+        if (qcrypto_secret_lookup("tegra.tsec.outdata", &data, &datalen, &err)==0) {
+            if (datalen > sizeof(s->outdata)) {
+                error_setg(&err, "tegra.tsec: Invalid datalen for secret tegra.tsec.outdata, datalen=0x%lx expected <=0x%lx.", datalen, sizeof(s->outdata));
+            }
+            else {
+                memcpy(s->outdata, data, datalen);
+                s->outdata_set = true;
+            }
+            g_free(data);
+        }
+        if (err) error_report_err(err);
+    }
 }
 
 static const MemoryRegionOps tegra_tsec_mem_ops = {

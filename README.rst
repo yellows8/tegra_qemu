@@ -55,6 +55,8 @@ Run Tegra X1
 
 * SE AES keys can optionally be specified via input secrets if needed. Repeat as needed for each keyslot: ``-object secret,id=se.aeskeyslot{decimal keyslot 0-15},file={path to raw keydata}``
 
+* The TSEC outdata can optionally be configured with (size <=0x10-bytes): ``-object secret,id=tegra.tsec.outdata,file={path}``
+
 * The ``-rotate {value}`` option is also supported for rotating the display.
 
 See also QEMU docs regarding secrets input / cmdline arguments.

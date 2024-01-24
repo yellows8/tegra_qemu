@@ -377,6 +377,12 @@ static void __tegrax1_init(MachineState *machine)
     memory_region_add_and_init_ram(sysmem, "tegra.ahb_a2",
                                    0x7c020000, 0x7d000000-0x7c020000, RW);
 
+    /* SOR (TODO: IO?) */
+    memory_region_add_and_init_ram(sysmem, "tegra.sor",
+                                   TEGRA_SOR_BASE, TEGRA_SOR_SIZE, RW);
+    memory_region_add_and_init_ram(sysmem, "tegra.sor1",
+                                   TEGRA_SOR1_BASE, TEGRA_SOR1_SIZE, RW);
+
     /* Create the actual CPUs */
     tegrax1_create_cpus();
 
