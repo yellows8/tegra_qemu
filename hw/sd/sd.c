@@ -975,6 +975,11 @@ static void mmc_set_ext_csd(SDState *sd, uint64_t size)
 	sd->ext_csd[2] = 0x00;
 	sd->ext_csd[1] = 0x00;
 	sd->ext_csd[0] = 0x00;
+
+        if (sd->bootpartsize) {
+            sd->ext_csd[179] = 0x03; // PARTITION_CONFIG = BOOT_PARTITION_ENABLE: both boot partitions enabled for boot.
+            sd->ext_csd[226] = sd->bootpartsize / (128*1024); // BOOT_SIZE_MULT
+        }
 }
 
 static void sd_set_csd(SDState *sd, uint64_t size)
