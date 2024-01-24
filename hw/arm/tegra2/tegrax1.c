@@ -653,6 +653,18 @@ static void __tegrax1_init(MachineState *machine)
     tegra_timer13_dev = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR13_BASE, DIRQ(INT_TMR13));
 
+    /* WDT */
+    tegra_wdt0_dev = sysbus_create_simple("tegra.wdt",
+                                           TEGRA_WDT0_BASE, DIRQ(INT_WDT_CPU));
+    tegra_wdt1_dev = sysbus_create_simple("tegra.wdt",
+                                           TEGRA_WDT1_BASE, DIRQ(INT_WDT_CPU));
+    tegra_wdt2_dev = sysbus_create_simple("tegra.wdt",
+                                           TEGRA_WDT2_BASE, DIRQ(INT_WDT_CPU));
+    tegra_wdt3_dev = sysbus_create_simple("tegra.wdt",
+                                           TEGRA_WDT3_BASE, DIRQ(INT_WDT_CPU));
+    tegra_wdt4_dev = sysbus_create_simple("tegra.wdt",
+                                           TEGRA_WDT4_BASE, DIRQ(INT_WDT_AVP));
+
     /* UART controllers */
     tegra_uarta_dev = serial_mm_init(sysmem, TEGRA_UARTA_BASE, 2,
                                      DIRQ(INT_UARTA), 115200,
