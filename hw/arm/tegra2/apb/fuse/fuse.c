@@ -308,25 +308,25 @@ static uint64_t tegra_fuse_priv_read(void *opaque, hwaddr offset,
         ret = s->fuse_write_access_sw.reg32;
         break;
     case FUSE_PRIV2RESHIFT_OFFSET:
-        if (tegra_board >= TEGRAX1PLUS_BOARD) ret = s->fuse_priv2reshift.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->fuse_priv2reshift.reg32;
         break;
     case FUSE_FUSETIME_RD3_OFFSET:
-        if (tegra_board >= TEGRAX1PLUS_BOARD) ret = s->fuse_fusetime_rd3.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->fuse_fusetime_rd3.reg32;
         break;
     case FUSE_PRIVATE_KEY0_NONZERO_OFFSET:
-        if (tegra_board >= TEGRAX1PLUS_BOARD) ret = s->fuse_private_key0.reg32!=0;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->fuse_private_key0.reg32!=0;
         break;
     case FUSE_PRIVATE_KEY1_NONZERO_OFFSET:
-        if (tegra_board >= TEGRAX1PLUS_BOARD) ret = s->fuse_private_key1.reg32!=0;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->fuse_private_key1.reg32!=0;
         break;
     case FUSE_PRIVATE_KEY2_NONZERO_OFFSET:
-        if (tegra_board >= TEGRAX1PLUS_BOARD) ret = s->fuse_private_key2.reg32!=0;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->fuse_private_key2.reg32!=0;
         break;
     case FUSE_PRIVATE_KEY3_NONZERO_OFFSET:
-        if (tegra_board >= TEGRAX1PLUS_BOARD) ret = s->fuse_private_key3.reg32!=0;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->fuse_private_key3.reg32!=0;
         break;
     case FUSE_PRIVATE_KEY4_NONZERO_OFFSET:
-        if (tegra_board >= TEGRAX1PLUS_BOARD) ret = s->fuse_private_key4.reg32!=0;
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->fuse_private_key4.reg32!=0;
         break;
     case FUSE_RESERVED_ODM8_OFFSET ... FUSE_JTAG_SECUREID_VALID_OFFSET:
         ret = s->fuse_cache_x98[(offset-0x98)>>2];
@@ -684,11 +684,11 @@ static void tegra_fuse_priv_write(void *opaque, hwaddr offset,
         break;
     case FUSE_PRIV2RESHIFT_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_priv2reshift.reg32, value);
-        if (tegra_board >= TEGRAX1PLUS_BOARD) s->fuse_priv2reshift.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->fuse_priv2reshift.reg32 = value;
         break;
     case FUSE_FUSETIME_RD3_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_fusetime_rd3.reg32, value);
-        if (tegra_board >= TEGRAX1PLUS_BOARD) s->fuse_fusetime_rd3.reg32 = value;
+        if (tegra_board >= TEGRAX1_BOARD) s->fuse_fusetime_rd3.reg32 = value;
         break;
     case FUSE_RESERVED_ODM8_OFFSET ... FUSE_JTAG_SECUREID_VALID_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_cache_x98[(offset-0x98)>>2], value);
