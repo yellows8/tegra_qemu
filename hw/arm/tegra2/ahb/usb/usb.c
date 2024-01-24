@@ -132,8 +132,16 @@ static void tegra_usb_class_init(ObjectClass *klass, void *data)
     dc->vmsd = &vmstate_tegra_usb;
     dc->reset = tegra_usb_priv_reset;
 
-    sec->capsbase  = 0x100;
-    sec->opregbase = 0x140;
+    if (tegra_board >= TEGRAX1_BOARD) {
+        sec->capsbase  = 0x100;
+        sec->opregbase = 0x130;
+        sec->portscbase = 0x174 - sec->opregbase;
+        sec->portnr = 1;
+    }
+    else {
+        sec->capsbase  = 0x100;
+        sec->opregbase = 0x140;
+    }
     set_bit(DEVICE_CATEGORY_USB, dc->categories);
 }
 
