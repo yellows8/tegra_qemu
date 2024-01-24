@@ -284,6 +284,10 @@ typedef union fuse_dac_sdtv_calib_u {
     uint32_t reg32;
 } fuse_dac_sdtv_calib_t;
 
+#define FUSE_OPT_FT_REV_OFFSET 0x128
+
+#define FUSE_FA_OFFSET 0x148
+
 #define FUSE_RESERVED_PRODUCTION_OFFSET 0x14C
 #define FUSE_RESERVED_PRODUCTION_RESET  0x00000000
 typedef union fuse_reserved_production_u {

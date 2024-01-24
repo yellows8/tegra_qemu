@@ -331,6 +331,9 @@ static uint64_t tegra_fuse_priv_read(void *opaque, hwaddr offset,
     case FUSE_RESERVED_ODM8_OFFSET ... FUSE_JTAG_SECUREID_VALID_OFFSET:
         ret = s->fuse_cache_x98[(offset-0x98)>>2];
         break;
+    case FUSE_OPT_FT_REV_OFFSET ... FUSE_FA_OFFSET:
+        ret = s->fuse_cache_x128[(offset-0x128)>>2];
+        break;
     case FUSE_HDMI_LANE0_CALIB_OFFSET ... FUSE_SECURITY_MODE_OFFSET:
         ret = s->fuse_cache_x150[(offset-0x150)>>2];
         break;
@@ -690,6 +693,10 @@ static void tegra_fuse_priv_write(void *opaque, hwaddr offset,
     case FUSE_RESERVED_ODM8_OFFSET ... FUSE_JTAG_SECUREID_VALID_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_cache_x98[(offset-0x98)>>2], value);
         s->fuse_cache_x98[(offset-0x98)>>2] = value;
+        break;
+    case FUSE_OPT_FT_REV_OFFSET ... FUSE_FA_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_cache_x128[(offset-0x128)>>2] , value);
+        s->fuse_cache_x128[(offset-0x128)>>2] = value;
         break;
     case FUSE_HDMI_LANE0_CALIB_OFFSET ... FUSE_SECURITY_MODE_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_cache_x150[(offset-0x150)>>2], value);
