@@ -21,10 +21,16 @@
 #define TEGRA_HOST1X_PRIV_H
 
 #define NV_HOST1X_SYNCPT_THESH_WIDTH    16
-#define NV_HOST1X_SYNCPT_NB_BASES       8
-#define NV_HOST1X_SYNCPT_NB_PTS         32
+#define NV_HOST1X_SYNCPT_NB_BASES       64
+#define NV_HOST1X_SYNCPT_NB_BASES_TEGRA2   8
+#define NV_HOST1X_SYNCPT_NB_BASES_TEGRAX1  64
+#define NV_HOST1X_SYNCPT_NB_PTS         192
+#define NV_HOST1X_SYNCPT_NB_PTS_TEGRA2  32
+#define NV_HOST1X_SYNCPT_NB_PTS_X1      192
 #define NV_HOST1X_NB_MLOCKS             16
-#define CHANNELS_NB                     8
+#define CHANNELS_NB                     14
+#define CHANNELS_NB_TEGRA2              8
+#define CHANNELS_NB_TEGRAX1             14
 
 #define FOREACH_BIT_SET(val, itr, size)     \
     if (val != 0)                           \

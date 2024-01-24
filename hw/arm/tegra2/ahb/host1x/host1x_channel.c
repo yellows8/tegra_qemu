@@ -41,6 +41,11 @@ static const VMStateDescription vmstate_tegra_host1x_channel = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
+        VMSTATE_UINT32(sync_base, tegra_host1x_channel),
+        VMSTATE_UINT32(sync_size, tegra_host1x_channel),
+        VMSTATE_UINT32(syncpt_offset, tegra_host1x_channel),
+        VMSTATE_UINT32(syncpt_count, tegra_host1x_channel),
+        VMSTATE_UINT32(bases_count, tegra_host1x_channel),
         VMSTATE_UINT32(fifostat.reg32, tegra_host1x_channel),
         VMSTATE_UINT32(indoff.reg32, tegra_host1x_channel),
         VMSTATE_UINT32(indcnt.reg32, tegra_host1x_channel),
@@ -61,10 +66,8 @@ static const VMStateDescription vmstate_tegra_host1x_channel = {
     }
 };
 
-static uint32_t host1x_sync_read_reg(uint32_t addr)
+static uint32_t host1x_sync_read_reg(tegra_host1x_channel *s, hwaddr base, hwaddr offset)
 {
-    uint32_t base = addr & 0xFFFFF000;
-    uint32_t offset = addr & 0xFFF;
     uint32_t ret = 0;
 
     switch (offset) {
@@ -181,14 +184,8 @@ static uint32_t host1x_sync_read_reg(uint32_t addr)
         break;
     case MLOCK_ERROR_OFFSET:
         break;
-    case SYNCPT_OFFSET ... SYNCPT_31_OFFSET:
-        ret = host1x_get_syncpt_count((offset & 0xff) >> 2);
-        break;
     case SYNCPT_INT_THRESH_OFFSET ... SYNCPT_INT_THRESH_31_OFFSET:
         ret = host1x_get_syncpt_threshold((offset & 0xff) >> 2);
-        break;
-    case SYNCPT_BASE_OFFSET ... SYNCPT_BASE_7_OFFSET:
-        ret = host1x_get_syncpt_base((offset & 0xf) >> 2);
         break;
     case SYNCPT_CPU_INCR_OFFSET:
         break;
@@ -239,6 +236,10 @@ static uint32_t host1x_sync_read_reg(uint32_t addr)
     case RDMA_DMATRIGGER0_OFFSET:
         break;
     default:
+        if (offset >= s->syncpt_offset && offset <= s->syncpt_offset + s->syncpt_count*4 - 4)
+            ret = host1x_get_syncpt_count((offset & 0xff) >> 2);
+        else if (offset >= SYNCPT_BASE_OFFSET && offset <= SYNCPT_BASE_OFFSET + s->bases_count*4 - 4)
+            ret = host1x_get_syncpt_base((offset - SYNCPT_BASE_OFFSET) >> 2);
         break;
     }
 
@@ -247,10 +248,8 @@ static uint32_t host1x_sync_read_reg(uint32_t addr)
     return ret;
 }
 
-static void host1x_sync_write_reg(uint32_t addr, uint32_t value)
+static void host1x_sync_write_reg(tegra_host1x_channel *s, hwaddr base, hwaddr offset, uint32_t value)
 {
-    uint32_t base = addr & 0xFFFFF000;
-    uint32_t offset = addr & 0xFFF;
     unsigned i;
 
     switch (offset) {
@@ -368,22 +367,11 @@ static void host1x_sync_write_reg(uint32_t addr, uint32_t value)
     case MLOCK_ERROR_OFFSET:
         TRACE_WRITE(base, offset, 0, value);
         break;
-    case SYNCPT_OFFSET ... SYNCPT_31_OFFSET:
-        TRACE_WRITE(base, offset, 0, value);
-        host1x_set_syncpt_count((offset & 0xff) >> 2, value);
-        break;
     case SYNCPT_INT_THRESH_OFFSET ... SYNCPT_INT_THRESH_31_OFFSET:
     {
         syncpt_int_thresh_t thresh = { .reg32 = value };
         TRACE_WRITE(base, offset, 0, value);
         host1x_set_syncpt_threshold((offset & 0xff) >> 2, thresh.int_thresh);
-        break;
-    }
-    case SYNCPT_BASE_OFFSET ... SYNCPT_BASE_7_OFFSET:
-    {
-        syncpt_base_t syncpt_base = { .reg32 = value };
-        TRACE_WRITE(base, offset, 0, value);
-        host1x_set_syncpt_base((offset & 0xf) >> 2, syncpt_base.base_0);
         break;
     }
     case SYNCPT_CPU_INCR_OFFSET:
@@ -439,6 +427,12 @@ static void host1x_sync_write_reg(uint32_t addr, uint32_t value)
         break;
     default:
         TRACE_WRITE(base, offset, 0, value);
+        if (offset >= s->syncpt_offset && offset <= s->syncpt_offset + s->syncpt_count*4 - 4)
+            host1x_set_syncpt_count((offset & 0xff) >> 2, value);
+        else if (offset >= SYNCPT_BASE_OFFSET && offset <= SYNCPT_BASE_OFFSET + s->bases_count*4 - 4) {
+            syncpt_base_t syncpt_base = { .reg32 = value };
+            host1x_set_syncpt_base((offset - SYNCPT_BASE_OFFSET) >> 2, syncpt_base.base_0);
+        }
         break;
     }
 }
@@ -521,9 +515,8 @@ static uint64_t tegra_host1x_channel_priv_read(void *opaque, hwaddr offset,
     case CMDSWAP_OFFSET:
         ret = s->cmdswap.reg32;
         break;
-    case 0x3000 ... 0x38E8:
-        return host1x_sync_read_reg(CHANNEL_BASE + offset);
     default:
+        if (offset >= s->sync_base && offset+size <= s->sync_base + s->sync_size) return host1x_sync_read_reg(s, CHANNEL_BASE + s->sync_base, offset - s->sync_base);
         break;
     }
 
@@ -638,11 +631,9 @@ static void tegra_host1x_channel_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(CHANNEL_BASE, offset, s->cmdswap.reg32, value);
         s->cmdswap.reg32 = value;
         break;
-    case 0x3000 ... 0x38E8:
-        host1x_sync_write_reg(CHANNEL_BASE + offset, value);
-        break;
     default:
         TRACE_WRITE(CHANNEL_BASE, offset, 0, value);
+        if (offset >= s->sync_base && offset+size <= s->sync_base + s->sync_size) host1x_sync_write_reg(s, CHANNEL_BASE + s->sync_base, offset - s->sync_base, value);
         break;
     }
 }
@@ -667,6 +658,21 @@ static void tegra_host1x_channel_priv_reset(DeviceState *dev)
     s->raise.reg32 = RAISE_RESET;
     s->fbbufbase.reg32 = FBBUFBASE_RESET;
     s->cmdswap.reg32 = CMDSWAP_RESET;
+
+    if (tegra_board >= TEGRAX1_BOARD) {
+        s->sync_base = 0x2100;
+        s->sync_size = 0x1800;
+        s->syncpt_offset = 0xF80;
+        s->syncpt_count = NV_HOST1X_SYNCPT_NB_PTS_X1;
+        s->bases_count = NV_HOST1X_SYNCPT_NB_BASES_TEGRAX1;
+    }
+    else {
+        s->sync_base = 0x3000;
+        s->sync_size = 0x8E8;
+        s->syncpt_offset = SYNCPT_OFFSET;
+        s->syncpt_count = NV_HOST1X_SYNCPT_NB_PTS_TEGRA2;
+        s->bases_count = NV_HOST1X_SYNCPT_NB_BASES_TEGRA2;
+    }
 
     host1x_cdma_set_base(&s->cdma, s->dmastart.dmastart);
     host1x_cdma_set_put(&s->cdma, s->dmaput.dmaput);

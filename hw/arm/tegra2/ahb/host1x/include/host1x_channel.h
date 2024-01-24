@@ -239,6 +239,12 @@ typedef struct tegra_host1x_channel_state {
     struct host1x_cdma cdma;
     void *fifo;
 
+    uint32_t sync_base;
+    uint32_t sync_size;
+    uint32_t syncpt_offset;
+    uint32_t syncpt_count;
+    uint32_t bases_count;
+
     MemoryRegion iomem;
     DEFINE_REG32(fifostat);
     DEFINE_REG32(indoff);

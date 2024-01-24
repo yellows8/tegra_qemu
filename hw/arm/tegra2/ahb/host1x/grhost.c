@@ -77,7 +77,9 @@ static void tegra_grhost_priv_realize(DeviceState *dev, Error **errp)
     host1x_init_mlocks();
     host1x_init_dma();
 
-    for (i = 0; i < CHANNELS_NB; i++)
+    int count = tegra_board >= TEGRAX1_BOARD ? CHANNELS_NB_TEGRA2 : CHANNELS_NB_TEGRAX1;
+
+    for (i = 0; i < count; i++)
         tegra_grhost_add_channel(&s->container, &s->channels[i], i);
 }
 
