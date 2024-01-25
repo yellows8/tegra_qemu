@@ -42,7 +42,8 @@
 static bool tegra_CCPLEX_powergated[TEGRA_CCPLEX_NCORES];
 static int tegra_AVP_powergated;
 
-static int tcpu_in_reset[TEGRA_NCPUS];
+static bool tcpu_in_reset[TEGRA_NCPUS];
+static bool tcpu_in_reset_pending[TEGRA_NCPUS];
 
 /*static void tegra_dump_cpus_pc(void)
 {
@@ -73,6 +74,7 @@ static void tegra_cpu_pwrgate_reset(void *opaque)
 {
     for (size_t i=0; i<TEGRA_CCPLEX_NCORES; i++) tegra_CCPLEX_powergated[i] = 1;
     tegra_AVP_powergated = 1;
+    memset(tcpu_in_reset_pending, 0, sizeof(tcpu_in_reset_pending));
 
     tegra_cpu_hlt_clr();
 }
@@ -130,11 +132,13 @@ void tegra_cpu_reset_deassert(int cpu_id, int flow)
            tegra_cpu_is_powergated(cpu_id), tegra_cpu_halted(cpu_id));
 
     if (!flow && tegra_cpu_is_powergated(cpu_id)) {
+        tcpu_in_reset_pending[cpu_id] = 1;
         return;
     }
 
     if (tcpu_in_reset[cpu_id]) {
         tcpu_in_reset[cpu_id] = 0;
+        tcpu_in_reset_pending[cpu_id] = 0;
 
         if (tegra_board >= TEGRAX1_BOARD) {
             if (cpu_id != TEGRA_BPMP) {
@@ -263,10 +267,9 @@ void tegra_cpu_unpowergate(int cpu_id)
     case TEGRA_CCPLEX_CORE1:
     case TEGRA_CCPLEX_CORE2:
     case TEGRA_CCPLEX_CORE3:
-        //tegra_cpu_unpowergateA9();
-        //tegra_cpu_reset_deassert(cpu_id, 1);
-        tegra_cpu_unhalt(cpu_id);
         tegra_CCPLEX_powergated[cpu_id] = 0;
+        if (tegra_cpu_halted(cpu_id)) tegra_cpu_unhalt(cpu_id);
+        else if (tcpu_in_reset_pending[cpu_id]) tegra_cpu_reset_deassert(cpu_id, 1);
         break;
     case TEGRA_BPMP:
         tegra_cpu_unpowergateAVP();
