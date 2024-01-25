@@ -871,12 +871,12 @@ static void __tegrax1_init(MachineState *machine)
                                 TEGRA_GRHOST_BASE, TEGRA_GRHOST_SIZE);*/
 
     cop_memory_region_add_alias(cop_sysmem, "tegra.cop-iomirror", sysmem,
-                                0x50040000,
-                                0x50040000, 0x60000000-0x50040000);
+                                TEGRA_GRHOST_BASE,
+                                TEGRA_GRHOST_BASE, 0x60000000-TEGRA_GRHOST_BASE);
 
-    cop_memory_region_add_alias(cop_sysmem, "tegra.cop-HOST1X", sysmem,
+    /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-HOST1X", sysmem,
                                 TEGRA_HOST1X_BASE,
-                                TEGRA_HOST1X_BASE, TEGRA_HOST1X_SIZE);
+                                TEGRA_HOST1X_BASE, TEGRA_HOST1X_SIZE);*/
 
     /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-GART", sysmem,
                                 TEGRA_GART_BASE,
@@ -951,10 +951,9 @@ static void tegrax1_reset(MachineState *state, ShutdownCause cause)
     //tegra_trace_init();
     qemu_devices_reset(cause);
 
-    if (state->firmware != NULL || state->bootloader != NULL)
-        tegra_cpu_reset_deassert(TEGRA_BPMP, 1);
-    else
-        tegra_cpu_reset_deassert(TEGRA_CCPLEX_CORE0, 1);
+    int cpu_id = state->firmware != NULL || state->bootloader != NULL ? TEGRA_BPMP : TEGRA_CCPLEX_CORE0;
+    tegra_cpu_unpowergate(cpu_id);
+    tegra_cpu_reset_deassert(cpu_id, 1);
 }
 
 static void __tegrax1_machine_init(MachineClass *mc, const char *desc)

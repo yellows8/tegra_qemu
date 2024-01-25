@@ -237,7 +237,7 @@ static uint32_t host1x_sync_read_reg(tegra_host1x_channel *s, hwaddr base, hwadd
         break;
     default:
         if (offset >= s->syncpt_offset && offset <= s->syncpt_offset + s->syncpt_count*4 - 4)
-            ret = host1x_get_syncpt_count((offset & 0xff) >> 2);
+            ret = host1x_get_syncpt_count((offset - s->syncpt_offset) >> 2);
         else if (offset >= SYNCPT_BASE_OFFSET && offset <= SYNCPT_BASE_OFFSET + s->bases_count*4 - 4)
             ret = host1x_get_syncpt_base((offset - SYNCPT_BASE_OFFSET) >> 2);
         break;
@@ -428,7 +428,7 @@ static void host1x_sync_write_reg(tegra_host1x_channel *s, hwaddr base, hwaddr o
     default:
         TRACE_WRITE(base, offset, 0, value);
         if (offset >= s->syncpt_offset && offset <= s->syncpt_offset + s->syncpt_count*4 - 4)
-            host1x_set_syncpt_count((offset & 0xff) >> 2, value);
+            host1x_set_syncpt_count((offset - s->syncpt_offset) >> 2, value);
         else if (offset >= SYNCPT_BASE_OFFSET && offset <= SYNCPT_BASE_OFFSET + s->bases_count*4 - 4) {
             syncpt_base_t syncpt_base = { .reg32 = value };
             host1x_set_syncpt_base((offset - SYNCPT_BASE_OFFSET) >> 2, syncpt_base.base_0);

@@ -39,12 +39,12 @@
 #undef TPRINT
 #define TPRINT(...) {}
 
-static int tegra_A9_powergated;
+static bool tegra_CCPLEX_powergated[TEGRA_CCPLEX_NCORES];
 static int tegra_AVP_powergated;
 
 static int tcpu_in_reset[TEGRA_NCPUS];
 
-static void tegra_dump_cpus_pc(void)
+/*static void tegra_dump_cpus_pc(void)
 {
 #if defined(TEGRA_TRACE) && 0
     CPUState *cs;
@@ -67,12 +67,12 @@ static void tegra_dump_cpus_pc(void)
 
     TPRINT("----------------------------------\n");
 #endif
-}
+}*/
 
 static void tegra_cpu_pwrgate_reset(void *opaque)
 {
-    tegra_A9_powergated = 0;
-    tegra_AVP_powergated = 0;
+    for (size_t i=0; i<TEGRA_CCPLEX_NCORES; i++) tegra_CCPLEX_powergated[i] = 1;
+    tegra_AVP_powergated = 1;
 
     tegra_cpu_hlt_clr();
 }
@@ -170,7 +170,7 @@ int tegra_cpu_is_powergated(int cpu_id)
     case TEGRA_CCPLEX_CORE1:
     case TEGRA_CCPLEX_CORE2:
     case TEGRA_CCPLEX_CORE3:
-        return tegra_A9_powergated;
+        return tegra_CCPLEX_powergated[cpu_id];
     case TEGRA_BPMP:
         return tegra_AVP_powergated;
     default:
@@ -180,7 +180,7 @@ int tegra_cpu_is_powergated(int cpu_id)
     return 0;
 }
 
-static void tegra_cpu_powergateA9(void)
+/*static void tegra_cpu_powergateA9(void)
 {
     TPRINT("%s\n", __func__);
 
@@ -194,9 +194,9 @@ static void tegra_cpu_powergateA9(void)
     tegra_cpu_reset_assert(TEGRA_CCPLEX_CORE3);
     tegra_a9mpcore_reset();
     tegra_A9_powergated = 1;
-}
+}*/
 
-static void tegra_cpu_unpowergateA9(void)
+/*static void tegra_cpu_unpowergateA9(void)
 {
     TPRINT("%s powergated=%d\n", __func__, tegra_A9_powergated);
 
@@ -204,7 +204,7 @@ static void tegra_cpu_unpowergateA9(void)
 
     tegra_cpu_reset_deassert(TEGRA_CCPLEX_CORE0, 1);
     tegra_A9_powergated = 0;
-}
+}*/
 
 static void tegra_cpu_powergateAVP(void)
 {
@@ -212,7 +212,7 @@ static void tegra_cpu_powergateAVP(void)
 
     assert(!tegra_AVP_powergated);
 
-    tegra_cpu_reset_assert(TEGRA_BPMP);
+    //tegra_cpu_reset_assert(TEGRA_BPMP);
     tegra_AVP_powergated = 1;
 }
 
@@ -222,16 +222,16 @@ static void tegra_cpu_unpowergateAVP(void)
 
     assert(tegra_AVP_powergated);
 
-    tegra_cpu_reset_deassert(TEGRA_BPMP, 1);
+    //tegra_cpu_reset_deassert(TEGRA_BPMP, 1);
     tegra_AVP_powergated = 0;
 }
 
-static void tegra_cpu_powergate_sanity_check(void)
+static void tegra_cpu_powergate_sanity_check(int cpu_id)
 {
-    CPUState *cs = qemu_get_cpu(TEGRA_CCPLEX_CORE1);
+    CPUState *cs = qemu_get_cpu(cpu_id);
     ARMCPU *cpu = ARM_CPU(cs);
 
-    /* Core 1 should be stopped before CPU powergate.  */
+    /* Core should be stopped before CPU powergate.  */
     g_assert(cpu->power_state == PSCI_OFF);
 }
 
@@ -242,8 +242,11 @@ void tegra_cpu_powergate(int cpu_id)
     case TEGRA_CCPLEX_CORE1:
     case TEGRA_CCPLEX_CORE2:
     case TEGRA_CCPLEX_CORE3:
-        tegra_cpu_powergate_sanity_check();
-        tegra_cpu_powergateA9();
+        tegra_cpu_powergate_sanity_check(cpu_id);
+        //tegra_cpu_powergateA9();
+        //tegra_cpu_reset_assert(cpu_id);
+        tegra_cpu_halt(cpu_id);
+        tegra_CCPLEX_powergated[cpu_id] = 1;
         break;
     case TEGRA_BPMP:
         tegra_cpu_powergateAVP();
@@ -260,7 +263,10 @@ void tegra_cpu_unpowergate(int cpu_id)
     case TEGRA_CCPLEX_CORE1:
     case TEGRA_CCPLEX_CORE2:
     case TEGRA_CCPLEX_CORE3:
-        tegra_cpu_unpowergateA9();
+        //tegra_cpu_unpowergateA9();
+        //tegra_cpu_reset_deassert(cpu_id, 1);
+        tegra_cpu_unhalt(cpu_id);
+        tegra_CCPLEX_powergated[cpu_id] = 0;
         break;
     case TEGRA_BPMP:
         tegra_cpu_unpowergateAVP();

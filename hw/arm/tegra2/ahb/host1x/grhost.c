@@ -63,8 +63,10 @@ static void tegra_grhost_priv_realize(DeviceState *dev, Error **errp)
     tegra_grhost *s = TEGRA_GRHOST(dev);
     int i;
 
+    int count = tegra_board >= TEGRAX1_BOARD ? CHANNELS_NB_TEGRAX1 : CHANNELS_NB_TEGRA2;
+
     memory_region_init(&s->container, OBJECT(s), "grhost-container",
-                       TEGRA_GRHOST_SIZE);
+                       count * SZ_16K);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->container);
 
     sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->cop_syncpts_irq);
@@ -76,8 +78,6 @@ static void tegra_grhost_priv_realize(DeviceState *dev, Error **errp)
     host1x_init_syncpts();
     host1x_init_mlocks();
     host1x_init_dma();
-
-    int count = tegra_board >= TEGRAX1_BOARD ? CHANNELS_NB_TEGRA2 : CHANNELS_NB_TEGRAX1;
 
     for (i = 0; i < count; i++)
         tegra_grhost_add_channel(&s->container, &s->channels[i], i);

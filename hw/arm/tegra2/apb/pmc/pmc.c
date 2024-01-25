@@ -26,6 +26,7 @@
 #include "pmc.h"
 #include "iomap.h"
 #include "tegra_trace.h"
+#include "tegra_cpu.h"
 
 #define TYPE_TEGRA_PMC "tegra.pmc"
 #define TEGRA_PMC(obj) OBJECT_CHECK(tegra_pmc, (obj), TYPE_TEGRA_PMC)
@@ -601,8 +602,34 @@ static void tegra_pmc_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->pwrgate_toggle.reg32, value);
         s->pwrgate_toggle.reg32 = value;
 
-        if (s->pwrgate_toggle.start) s->pwrgate_toggle.start = 0;
-        s->pwrgate_status.reg32 ^= (1 << s->pwrgate_toggle.partid);
+        if (s->pwrgate_toggle.start) {
+            s->pwrgate_toggle.start = 0;
+            s->pwrgate_status.reg32 ^= (1 << s->pwrgate_toggle.partid);
+
+            if (tegra_board >= TEGRAX1_BOARD) {
+                if (s->pwrgate_toggle.partid >= 9 && s->pwrgate_toggle.partid <= 14) {
+                    int cpu_id = s->pwrgate_toggle.partid < 14 ? s->pwrgate_toggle.partid - 8 : 0;
+                    if (cpu_id < TEGRAX1_CCPLEX_NCORES) {
+                        if (s->pwrgate_status.reg32 & (1 << s->pwrgate_toggle.partid))
+                            tegra_cpu_unpowergate(cpu_id);
+                        else
+                            tegra_cpu_powergate(cpu_id);
+                    }
+                }
+            }
+            else {
+                if (s->pwrgate_toggle.partid == 0) {
+                    if (s->pwrgate_status.cpu) {
+                        tegra_cpu_unpowergate(TEGRA_CCPLEX_CORE0);
+                        tegra_cpu_unpowergate(TEGRA_CCPLEX_CORE1);
+                    }
+                    else {
+                        tegra_cpu_powergate(TEGRA_CCPLEX_CORE0);
+                        tegra_cpu_powergate(TEGRA_CCPLEX_CORE1);
+                    }
+                }
+            }
+        }
         break;
     case REMOVE_CLAMPING_CMD_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->remove_clamping_cmd.reg32, value);
