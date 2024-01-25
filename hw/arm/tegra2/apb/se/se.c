@@ -470,7 +470,8 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                         memcpy(iv, &s->aes_keytable[keyindex*0x10 + (iv_select==0 ? 0x8 : 0xC)], 0x10);
                                     }
 
-                                    printf("SE: tmpmode = 0x%x, mode = %d, encrypt = %d\n", tmpmode, mode, encrypt);
+                                    printf("SE: keyindex = %u, cfg_dst = %u, tmpmode = 0x%x, mode = %d, encrypt = %d\n", keyindex, cfg_dst, tmpmode, mode, encrypt);
+                                    printf("SE: perkey[%u] = 0x%x\n", keyindex, (s->regs.SE_CRYPTO_SECURITY_PERKEY & (1<<keyindex))!=0);
                                     qemu_hexdump(stdout, "Key", &s->aes_keytable[keyindex*0x10], qcrypto_cipher_get_key_len(cipher_alg));
                                     qemu_hexdump(stdout, "Crypto input", databuf_in, 0x10);
 
@@ -659,9 +660,16 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
             s->rsa_keytable[rsa_tableoffset] = value;
         break;
 
+        case SE_RSA_KEYTABLE_ACCESS_OFFSET ... SE_RSA_KEYTABLE_ACCESS_OFFSET+sizeof(s->regs.SE_RSA_KEYTABLE_ACCESS)-1:
+            s->regs.SE_RSA_KEYTABLE_ACCESS[(offset - SE_RSA_KEYTABLE_ACCESS_OFFSET) / 4] &= value;
+        break;
+
         case SE_CRYPTO_KEYTABLE_ACCESS_OFFSET ... SE_CRYPTO_KEYTABLE_ACCESS_OFFSET+sizeof(s->regs.SE_CRYPTO_KEYTABLE_ACCESS)-1: // SE_CRYPTO_KEYTABLE_ACCESS
-            value &= ~((1<<0) | (1<<2) | (1<<4)); // filter *READ
-            // fallthrough
+            value &= 0xFF;
+            if (tegra_board < TEGRAX1PLUS_BOARD) value &= ~0x80; // Filter out DST_KEYTABLE_ONLY for non-TX1+.
+            s->regs.SE_CRYPTO_KEYTABLE_ACCESS[(offset - SE_CRYPTO_KEYTABLE_ACCESS_OFFSET)>>2] &= value;
+        break;
+
         default:
             regs[offset/sizeof(uint32_t)] = (regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
         break;
@@ -682,10 +690,13 @@ static void tegra_se_priv_reset(DeviceState *dev)
     if (tegra_board == TEGRAX1PLUS_BOARD) s->regs.SE_SE_SECURITY |= 1<<5; // SE_SECURITY Mariko sticky bit
     s->regs.SE_CRYPTO_SECURITY_PERKEY = 0xFFFF;
 
+    uint32_t mask = tegra_board < TEGRAX1PLUS_BOARD ? 0x7F : 0xFF;
+
     Error *err = NULL;
     char tmpstr[17]={};
     for (int keyslot=0; keyslot<16; keyslot++) { // Specifying an input secret for every keyslot is not required, it will use the memset data below if not specified. These secrets are only needed when starting emulation post-bootrom.
         memset(&s->aes_keytable[keyslot*0x10], 0x01*(keyslot+1), 0x10);
+        s->regs.SE_CRYPTO_KEYTABLE_ACCESS[keyslot] = mask;
 
         uint8_t *data=NULL;
         size_t datalen = 0;
@@ -703,6 +714,8 @@ static void tegra_se_priv_reset(DeviceState *dev)
             err = NULL;
         }
     }
+
+    for (int keyslot=0; keyslot<2; keyslot++) s->regs.SE_RSA_KEYTABLE_ACCESS[keyslot] = 0x7;
 }
 
 static const MemoryRegionOps tegra_se_mem_ops = {
