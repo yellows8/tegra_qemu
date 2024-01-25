@@ -56,7 +56,7 @@ static const VMStateDescription vmstate_tegra_wdt = {
     }
 };
 
-static void tegra_wdt_alarm(void *opaque)
+/*static void tegra_wdt_alarm(void *opaque)
 {
     tegra_wdt *s = opaque;
 
@@ -68,7 +68,7 @@ static void tegra_wdt_alarm(void *opaque)
     }
 
     s->irq_sts = 1;
-}
+}*/
 
 static uint64_t tegra_wdt_priv_read(void *opaque, hwaddr offset,
                                       unsigned size)
@@ -166,10 +166,10 @@ static void tegra_wdt_priv_realize(DeviceState *dev, Error **errp)
                           TYPE_TEGRA_WDT, TEGRA_WDT0_SIZE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 
-    s->ptimer = ptimer_init(tegra_wdt_alarm, s, PTIMER_POLICY);
+    /*s->ptimer = ptimer_init(tegra_wdt_alarm, s, PTIMER_POLICY);
     ptimer_transaction_begin(s->ptimer);
     ptimer_set_freq(s->ptimer, 1000000 * SCALE);
-    ptimer_transaction_commit(s->ptimer);
+    ptimer_transaction_commit(s->ptimer);*/
 }
 
 static void tegra_wdt_class_init(ObjectClass *klass, void *data)
