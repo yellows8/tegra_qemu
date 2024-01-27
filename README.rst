@@ -46,6 +46,8 @@ Run Tegra X1
 
 * ``-bios {path}`` can also be used for running the BPMP IROM. The IROM must be unpatched (all IPATCH slots disabled), since IPATCH patching is emulated. If neither are specified, CCPLEX core0 is started in EL3. It's assumed the user loaded the required data, such as with (repeating as needed for each file): ``-device loader,addr={value},{force-raw=true},file={path}``. To set the reset vector for this: ``-global driver=tegra.evp,property=cpu-reset-vector,value={addr}``.
 
+* To override the addr jumped to by the BPMP reset vector: ``-global driver=tegra.evp,property=bpmp-reset-vector,value={addr}`` This can used for booting the bootloader originally from emmc, for example for tegrax1plus: ``... -machine tegrax1plus ... -bootloader {bootloader path} ... -device loader,addr=0x40000464,force-raw=true,file={decrypted BCT} -device loader,addr=0x400002F8,data-len=4,data=0x1 -global driver=tegra.evp,property=bpmp-reset-vector,value=0x40010040`` (adjust reset vector as needed. value at 0x400002F8 is the BootType)
+
 * The sd -drive index 0-3 corresponds to the SDMMC1-SDMMC4 controllers. To (optionally) attach storage to each controller: ``-drive if=sd,index={0-3},format=raw,file={image path}``
 * Use index=3 for emmc, and (for example) 0 for sd. The emmc image must start with the 0x400000-byte BOOT0 and BOOT1 partitions, with the main MMC partition following that at byte-offset 0x800000.
 
