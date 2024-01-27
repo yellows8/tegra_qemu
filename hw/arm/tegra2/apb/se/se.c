@@ -1028,6 +1028,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
             value &= 0xFF;
             if (tegra_board < TEGRAX1PLUS_BOARD) value &= ~0x80; // Filter out DST_KEYTABLE_ONLY for non-TX1+.
             s->regs.SE_CRYPTO_KEYTABLE_ACCESS[(offset - SE_CRYPTO_KEYTABLE_ACCESS_OFFSET)>>2] &= value;
+            if (tegra_board >= TEGRAX1PLUS_BOARD) s->regs.SE_CRYPTO_KEYTABLE_ACCESS[(offset - SE_CRYPTO_KEYTABLE_ACCESS_OFFSET)>>2] |= value & 0x80;
         break;
 
         default:
@@ -1050,13 +1051,11 @@ static void tegra_se_priv_reset(DeviceState *dev)
     if (tegra_board == TEGRAX1PLUS_BOARD) s->regs.SE_SE_SECURITY |= 1<<5; // SE_SECURITY Mariko sticky bit
     s->regs.SE_CRYPTO_SECURITY_PERKEY = 0xFFFF;
 
-    uint32_t mask = tegra_board < TEGRAX1PLUS_BOARD ? 0x7F : 0xFF;
-
     Error *err = NULL;
     char tmpstr[17]={};
     for (int keyslot=0; keyslot<16; keyslot++) { // Specifying an input secret for every keyslot is not required, it will use the memset data below if not specified. These secrets are only needed when starting emulation post-bootrom.
         memset(&s->aes_keytable[keyslot*0x10], 0x01*(keyslot+1), 0x10);
-        s->regs.SE_CRYPTO_KEYTABLE_ACCESS[keyslot] = mask;
+        s->regs.SE_CRYPTO_KEYTABLE_ACCESS[keyslot] = 0x7F;
 
         uint8_t *data=NULL;
         size_t datalen = 0;
