@@ -261,7 +261,7 @@ static void load_memory_images(MachineState *machine)
     if (machine->bootloader != NULL) {
         /* Load bootloader */
         assert(load_image_targphys(machine->bootloader, BOOTLOADER_BASE,
-                                   128*1024) > 0);
+                                   TEGRA_IRAM_BASE+TEGRA_IRAM_SIZE-BOOTLOADER_BASE) > 0);
     }
 
     #if 0
