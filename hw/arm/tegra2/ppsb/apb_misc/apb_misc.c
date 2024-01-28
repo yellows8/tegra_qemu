@@ -916,7 +916,6 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
 {
     tegra_apb_misc *s = TEGRA_APB_MISC(dev);
 
-    s->pp_strapping_opt_a.reg32 = PP_STRAPPING_OPT_A_RESET;
     s->pp_tristate_reg_a.reg32 = PP_TRISTATE_REG_A_RESET;
     s->pp_tristate_reg_b.reg32 = PP_TRISTATE_REG_B_RESET;
     s->pp_tristate_reg_c.reg32 = PP_TRISTATE_REG_C_RESET;
@@ -1029,8 +1028,6 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
     s->gp_hidrev.hidfam = 0x7;
     s->gp_hidrev.majorrev = 0x1;
     s->gp_hidrev.minorrev = 0x4;
-
-    s->pp_strapping_opt_a.reg32 |= 7<<10; // TODO: Load from user input?
 }
 
 static const MemoryRegionOps tegra_apb_misc_mem_ops = {
@@ -1048,10 +1045,16 @@ static void tegra_apb_misc_priv_realize(DeviceState *dev, Error **errp)
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 }
 
+static Property tegra_apb_misc_properties[] = {
+    DEFINE_PROP_UINT32("pp-strapping-opt-a", tegra_apb_misc, pp_strapping_opt_a.reg32, PP_STRAPPING_OPT_A_RESET | 7<<10), \
+    DEFINE_PROP_END_OF_LIST(),
+};
+
 static void tegra_apb_misc_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    device_class_set_props(dc, tegra_apb_misc_properties);
     dc->realize = tegra_apb_misc_priv_realize;
     dc->vmsd = &vmstate_tegra_apb_misc;
     dc->reset = tegra_apb_misc_priv_reset;

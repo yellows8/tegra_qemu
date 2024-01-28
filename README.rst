@@ -61,6 +61,8 @@ Run Tegra X1
 
 * The ``-rotate {value}`` option is also supported for rotating the display.
 
+* To configure the value of register APB_MISC_PP_STRAPPING_OPT_A_0 (default is setup for booting from emmc): ``-global driver=tegra.apb_misc,property=pp-strapping-opt-a,value={value}``
+
 See also QEMU docs regarding secrets input / cmdline arguments.
 
 ===========
