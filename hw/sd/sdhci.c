@@ -1156,15 +1156,11 @@ sdhci_write(void *opaque, hwaddr offset, uint64_t val, unsigned size)
             s->sdmasysad = (s->sdmasysad & mask) | value;
             MASKED_WRITE(s->sdmasysad, mask, value);
             /* Writing to last byte of sdmasysad might trigger transfer */
-            /*if (!(mask & 0xFF000000) && s->blkcnt &&
+            if (!(mask & 0xFF000000) && s->blkcnt &&
                 (s->blksize & BLOCK_SIZE_MASK) &&
-                SDHC_DMA_TYPE(s->hostctl1) == SDHC_CTRL_SDMA) {
-                if (s->trnmod & SDHC_TRNS_MULTI) {
-                    sdhci_sdma_transfer_multi_blocks(s);
-                } else {
-                    sdhci_sdma_transfer_single_block(s);
-                }
-            }*/ // NOTE: This should be handled properly?
+                SDHC_DMA_TYPE(s->hostctl1) == SDHC_CTRL_SDMA && (s->trnmod & SDHC_TRNS_MULTI)) {
+                sdhci_data_transfer(s);
+            }
         }
         break;
     case SDHC_BLKSIZE:
@@ -1295,6 +1291,12 @@ sdhci_write(void *opaque, hwaddr offset, uint64_t val, unsigned size)
     case SDHC_ADMASYSADDR + 4:
         s->admasysaddr = (s->admasysaddr & (0x00000000FFFFFFFFULL |
                 ((uint64_t)mask << 32))) | ((uint64_t)value << 32);
+        /* Writing to last byte of admaysaddr might trigger transfer */
+        if (!(mask & 0xFF000000) && s->blkcnt &&
+            (s->blksize & BLOCK_SIZE_MASK) &&
+            SDHC_DMA_TYPE(s->hostctl1) == SDHC_CTRL_SDMA && (s->trnmod & SDHC_TRNS_MULTI)) {
+            sdhci_data_transfer(s);
+        }
         break;
     case SDHC_FEAER:
         s->acmd12errsts |= value;
