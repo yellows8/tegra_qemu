@@ -20,8 +20,6 @@
 // Based on tegra2 device code by digetx.
 // This uses various definitions from: https://github.com/Atmosphere-NX/Atmosphere/blob/master/libraries/libexosphere/source/se/se_registers.hpp
 
-// TODO: Proper logging instead of printf?
-
 #include <gcrypt.h>
 
 #include "tegra_common.h"
@@ -46,6 +44,7 @@
 #include "tegra_trace.h"
 
 #include "qemu/cutils.h"
+#include "qemu/log.h"
 
 #include "se.h"
 
@@ -149,6 +148,16 @@ static const VMStateDescription vmstate_tegra_se = {
         VMSTATE_END_OF_LIST()
     }
 };
+
+static void se_log_hexdump(const char *prefix,
+                           const void *bufptr, size_t size)
+{
+    FILE *f = qemu_log_trylock();
+    if (f) {
+        qemu_hexdump(f, prefix, bufptr, size);
+        qemu_log_unlock(f);
+    }
+}
 
 // RSA code is copied from / based on akcipher-gcrypt.c.inc. The crypto/ code requires using DER keys, which we want to avoid.
 
@@ -737,8 +746,8 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                 }
 
                 if (databuf_out==NULL) {
-                    if (cfg_dst==0) error_setg(&err, "SE: Failed to DMA map output buffer.");
-                    else error_setg(&err, "SE: Ignoring cfg_dst=%d.", cfg_dst);
+                    if (cfg_dst==0) qemu_log_mask(LOG_GUEST_ERROR, "tegra.se: Failed to DMA map output buffer.\n");
+                    else qemu_log_mask(LOG_UNIMP, "tegra.se: Ignoring cfg_dst=%d.\n", cfg_dst);
                     datasize = 0;
                 }
                 else if (dec_alg == 0x1 || enc_alg == 0x1) { // AES
@@ -753,10 +762,10 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     uint32_t keyindex = (cfg>>24) & 0xF;
 
                     if (hash_enable && !encrypt) {
-                        error_setg(&err, "SE AES hash_enable=1 with encrypt=0 is not supported.");
+                        qemu_log_mask(LOG_UNIMP, "tegra.se: AES hash_enable=1 with encrypt=0 is not supported.\n");
                     }
                     else if (cfg_dst!=0 && cfg_dst>4) {
-                        error_setg(&err, "SE_CONFIG DST>4 is not supported: %u.", cfg_dst);
+                        qemu_log_mask(LOG_UNIMP, "tegra.se: SE_CONFIG DST>4 is not supported: %u.\n", cfg_dst);
                     }
                     else {
                         uint32_t tmpmode = encrypt ? enc_mode : dec_mode;
@@ -776,7 +785,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                             break;
 
                             default:
-                                error_setg(&err, "Unsupported SE AES alg: %u", tmpmode);
+                                qemu_log_mask(LOG_UNIMP, "tegra.se: Unsupported SE AES alg: %u.\n", tmpmode);
                             break;
                         }
 
@@ -786,7 +795,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                         else if (input_sel==3) mode = QCRYPTO_CIPHER_MODE_CTR; // LINEAR_CTR
                         else if (xor_pos==2 || xor_pos==3) mode = QCRYPTO_CIPHER_MODE_CBC; // TOP/BOTTOM
                         else {
-                            error_setg(&err, "Unsupported SE AES mode, SE_CRYPTO_CONFIG: 0x%x", cfg);
+                            qemu_log_mask(LOG_UNIMP, "tegra.se: Unsupported SE AES mode, SE_CRYPTO_CONFIG: 0x%x.\n", cfg);
                         }
 
                         if (cipher_alg!=QCRYPTO_CIPHER_ALG__MAX && mode!=QCRYPTO_CIPHER_MODE__MAX) {
@@ -801,7 +810,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                 if (!hash_enable && datasize > databuf_outsize) datasize = databuf_outsize;
 
                                 if (databuf_in==NULL || databuf_out==NULL) {
-                                    error_setg(&err, "SE: Failed to DMA map AES input/output buffer.");
+                                    qemu_log_mask(LOG_GUEST_ERROR, "tegra.se: Failed to DMA map AES input/output buffer.\n");
                                     datasize = 0;
                                 }
                                 else {
@@ -816,14 +825,13 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                         memcpy(iv, &s->aes_keytable[keyindex*0x10 + (iv_select==0 ? 0x8 : 0xC)], 0x10);
                                     }
 
-                                    printf("SE: keyindex = %u, cfg_dst = %u, tmpmode = 0x%x, mode = %d, encrypt = %d\n", keyindex, cfg_dst, tmpmode, mode, encrypt);
-                                    printf("SE: perkey[%u] = 0x%x\n", keyindex, (s->regs.SE_CRYPTO_SECURITY_PERKEY & (1<<keyindex))!=0);
-                                    qemu_hexdump(stdout, "Key", &s->aes_keytable[keyindex*0x10], qcrypto_cipher_get_key_len(cipher_alg));
-                                    qemu_hexdump(stdout, "Crypto input", databuf_in, 0x10);
+                                    qemu_log("tegra_se_aes_info keyindex = %u, cfg_dst = %u, tmpmode = 0x%x, mode = %d, encrypt = %d, perkey[%u] = 0x%x\n", keyindex, cfg_dst, tmpmode, mode, encrypt,  keyindex, (s->regs.SE_CRYPTO_SECURITY_PERKEY & (1<<keyindex))!=0);
+                                    se_log_hexdump("tegra_se_aes_key", &s->aes_keytable[keyindex*0x10], qcrypto_cipher_get_key_len(cipher_alg));
+                                    se_log_hexdump("tegra_se_crypto_input", databuf_in, 0x10);
 
                                     int tmpret=0;
                                     if (mode != QCRYPTO_CIPHER_MODE_ECB) {
-                                        qemu_hexdump(stdout, "IV", iv, sizeof(iv));
+                                        se_log_hexdump("tegra_se_crypto_iv", iv, sizeof(iv));
                                         tmpret = qcrypto_cipher_setiv(cipher, (uint8_t*)iv, sizeof(iv), &err);
                                     }
                                     if (tmpret==0) {
@@ -867,7 +875,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                         }
                                     }
 
-                                    qemu_hexdump(stdout, "Crypto output", databuf_out, 0x10);
+                                    se_log_hexdump("tegra_se_crypto_output", databuf_out, 0x10);
                                 }
 
                                 if (databuf_in) dma_memory_unmap(&address_space_memory, databuf_in, tmplen_in, DMA_DIRECTION_TO_DEVICE, tmplen_in);
@@ -881,7 +889,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     datasize = (s->regs.SE_CRYPTO_LAST_BLOCK+1)*qcrypto_cipher_get_block_len(QCRYPTO_CIPHER_ALG_AES_128);
                     if(datasize>databuf_outsize) datasize = databuf_outsize;
                     qemu_guest_getrandom(databuf_out, datasize, &err);
-                    //qemu_hexdump(stdout, "RNG output", databuf_out, datasize);
+                    //se_log_hexdump("tegra_se_rng_output", databuf_out, datasize);
                 }
                 else if (enc_alg == 0x3) { // CONFIG_ENC_ALG SHA
                     datasize = s->regs.SE_SHA_MSG_LENGTH[0]/8;
@@ -909,7 +917,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                        break;
 
                        default:
-                           error_setg(&err, "Unsupported SE hash alg: %u", enc_mode);
+                           qemu_log_mask(LOG_UNIMP, "tegra.se: Unsupported SE hash alg: %u.\n", enc_mode);
                        break;
                    }
 
@@ -930,15 +938,15 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                    if (cfg_dst!=0) bswap32s(hashptr);
                                    hashptr++;
                                }
-                               //qemu_hexdump(stdout, "SHA indata", databuf, datasize);
-                               //qemu_hexdump(stdout, "SHA calc-hash", result, resultlen);
+                               //se_log_hexdump("tegra_se_sha_data", databuf, datasize);
+                               //se_log_hexdump("tegra_se_sha_calchash", result, resultlen);
                                g_free(result);
                            }
                            else datasize = 0;
                            dma_memory_unmap(&address_space_memory, databuf, datasize, DMA_DIRECTION_TO_DEVICE, datasize);
                        }
                        else {
-                           error_setg(&err, "Failed to DMA map SE hash data buffer: 0x%x 0x%x.", in_entry.address, in_entry.size);
+                           qemu_log_mask(LOG_GUEST_ERROR, "tegra.se: Failed to DMA map SE hash data buffer: 0x%x 0x%x.\n", in_entry.address, in_entry.size);
                        }
                    }
                 }
@@ -962,9 +970,9 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     byteswap_rsa(&s->rsa_keytable[0x80*slot + 0x40], n_buf, n_size);
                     byteswap_rsa(&s->rsa_keytable[0x80*slot], e_buf, e_size);
 
-                    /*qemu_hexdump(stdout, "RSA indata", indata, sizeof(indata));
-                    qemu_hexdump(stdout, "RSA n_buf", n_buf, n_size);
-                    qemu_hexdump(stdout, "RSA e_buf", e_buf, e_size);*/
+                    /*se_log_hexdump("tegra_se_rsa_indata", indata, sizeof(indata));
+                    se_log_hexdump("tegra_se_rsa_n_buf", n_buf, n_size);
+                    se_log_hexdump("tegra_se_rsa_e_buf", e_buf, e_size);*/
 
                     QCryptoAkCipherOptions opts = { .alg = QCRYPTO_AKCIPHER_ALG_RSA };
                     opts.u.rsa.hash_alg = QCRYPTO_HASH_ALG__MAX;
@@ -985,7 +993,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                             datasize = databuf_outsize;
                             if (datasize > sizeof(s->regs.SE_RSA_OUTPUT)) datasize = sizeof(s->regs.SE_RSA_OUTPUT);
                             byteswap_rsa(s->regs.SE_RSA_OUTPUT, databuf_out, datasize);
-                            //qemu_hexdump(stdout, "RSA outdata", databuf_out, datasize);
+                            //se_log_hexdump("tegra_se_rsa_outdata", databuf_out, datasize);
                         }
                         qcrypto_akcipher_free(akcipher);
                     }
