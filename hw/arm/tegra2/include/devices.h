@@ -30,6 +30,8 @@ extern void * tegra_car_dev;
 extern void * tegra_emc_dev;
 extern void * tegra_emc0_dev;
 extern void * tegra_emc1_dev;
+extern void * tegra_hda_dev;
+extern void * tegra_ape_dev;
 extern void * tegra_flow_dev;
 extern void * tegra_fuse_dev;
 extern void * tegra_se_dev;

@@ -328,6 +328,17 @@ static void* tegra_init_sdmmc(int index, hwaddr base, qemu_irq irq, bool emmc, u
     return tmpdev;
 }
 
+static void* tegra_init_dummyio(hwaddr base, uint32_t size, const char *name)
+{
+    void* tmpdev = qdev_new("tegra.dummyio");
+    qdev_prop_set_uint32(tmpdev, "size", size);
+    qdev_prop_set_string(tmpdev, "name", name);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(tmpdev), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(tmpdev), 0, base);
+
+    return tmpdev;
+}
+
 static void __tegrax1_init(MachineState *machine)
 {
     MemoryRegion *cop_sysmem = g_new(MemoryRegion, 1);
@@ -517,6 +528,10 @@ static void __tegrax1_init(MachineState *machine)
     qdev_prop_set_uint32(tegra_mc1_dev, "ram_size_kb", machine->ram_size / SZ_1K);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_mc1_dev), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(tegra_mc1_dev), 0, TEGRA_MC1_BASE);
+
+    /* Audio*/
+    tegra_hda_dev = tegra_init_dummyio(TEGRA_HDA_BASE, TEGRA_HDA_SIZE, "tegra.hda");
+    tegra_ape_dev = tegra_init_dummyio(TEGRA_APE_BASE, TEGRA_APE_SIZE, "tegra.ape");
 
     /* AHB DMA controller */
     tegra_ahb_dma_dev = sysbus_create_simple("tegra.ahb_dma",

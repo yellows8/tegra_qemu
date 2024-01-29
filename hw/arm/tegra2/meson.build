@@ -67,6 +67,8 @@ arm_ss.add(files(
   'tegrax1.c',
   'trace.c',
 
+  'dummyio/dummyio.c',
+
   'ahb/host1x/core/cdma/cdma.c',
   'ahb/host1x/core/cdma/cmd_processor.c',
 
