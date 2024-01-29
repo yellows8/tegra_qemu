@@ -78,6 +78,8 @@ extern void * tegra_dca_dev;
 extern void * tegra_dcb_dev;
 extern void * tegra_dsi_dev;
 extern void * tegra_dsib_dev;
+extern void * tegra_sor_dev;
+extern void * tegra_sor1_dev;
 extern void * tegra_tsec_dev;
 extern void * tegra_tsecb_dev;
 extern void * tegra_vic_dev;

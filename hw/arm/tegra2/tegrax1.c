@@ -377,12 +377,6 @@ static void __tegrax1_init(MachineState *machine)
     memory_region_add_and_init_ram(sysmem, "tegra.ahb_a2",
                                    0x7c020000, 0x7d000000-0x7c020000, RW);
 
-    /* SOR (TODO: IO?) */
-    memory_region_add_and_init_ram(sysmem, "tegra.sor",
-                                   TEGRA_SOR_BASE, TEGRA_SOR_SIZE, RW);
-    memory_region_add_and_init_ram(sysmem, "tegra.sor1",
-                                   TEGRA_SOR1_BASE, TEGRA_SOR1_SIZE, RW);
-
     /* Create the actual CPUs */
     tegrax1_create_cpus();
 
@@ -796,6 +790,19 @@ static void __tegrax1_init(MachineState *machine)
     qdev_prop_set_uint8(DEVICE(tegra_dsib_dev), "class_id", 0x7A);
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, TEGRA_DSIB_BASE);
+
+    /* SOR */
+    tegra_sor_dev = qdev_new("tegra.host1x_dummy_module");
+    s = SYS_BUS_DEVICE(tegra_sor_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_sor_dev), "class_id", 0x7B);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_SOR_BASE);
+
+    tegra_sor1_dev = qdev_new("tegra.host1x_dummy_module");
+    s = SYS_BUS_DEVICE(tegra_sor1_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_sor1_dev), "class_id", 0x7C); // Is this correct?
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_SOR1_BASE);
 
     /* TSEC */
     tegra_tsec_dev = qdev_new("tegra.tsec");

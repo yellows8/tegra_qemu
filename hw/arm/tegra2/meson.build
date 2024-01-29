@@ -102,6 +102,7 @@ arm_ss.add(files(
   'ahb/host1x/modules/gr3d/gr3d_module.c',
 
   'ahb/host1x/modules/dsi/dsi.c',
+  'ahb/host1x/modules/dummy/dummy_host1x.c',
 
   'ahb/host1x/modules/host1x/host1x.c',
   'ahb/host1x/modules/host1x/host1x_module.c',

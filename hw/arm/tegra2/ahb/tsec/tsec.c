@@ -25,6 +25,7 @@
 
 #include "crypto/secret_common.h"
 #include "qapi/error.h"
+#include "host1x_module.h"
 #include "exec/address-spaces.h"
 #include "sysemu/dma.h"
 
@@ -112,24 +113,19 @@ static void tegra_tsec_priv_write(void *opaque, hwaddr offset,
             value |= 1<<4; // When STARTCPU is set, enable HALTED.
             if (s->engine == TEGRA_TSEC_ENGINE_TSEC) {
                 if (s->outdata_set) {
-                    size_t datasize = NV_SOR_TMDS_HDCP_BKSV_LSB_OFFSET+4-NV_SOR_DP_HDCP_BKSV_LSB_OFFSET;
-                    dma_addr_t databuf_outsize=datasize;
-                    uint32_t *databuf_out = dma_memory_map(&address_space_memory, TEGRA_SOR1_BASE + NV_SOR_DP_HDCP_BKSV_LSB_OFFSET,
-                                                       &databuf_outsize, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
+                    struct host1x_module *module = get_host1x_module(0x7C);
 
-                    if (databuf_out && databuf_outsize==datasize) {
-                        databuf_out[0] = s->outdata[0];
-                        databuf_out[(NV_SOR_TMDS_HDCP_BKSV_LSB_OFFSET-NV_SOR_DP_HDCP_BKSV_LSB_OFFSET)>>2] = s->outdata[1];
-                        databuf_out[(NV_SOR_TMDS_HDCP_CN_MSB_OFFSET-NV_SOR_DP_HDCP_BKSV_LSB_OFFSET)>>2] = s->outdata[2];
-                        databuf_out[(NV_SOR_TMDS_HDCP_CN_LSB_OFFSET-NV_SOR_DP_HDCP_BKSV_LSB_OFFSET)>>2] = s->outdata[3];
+                    if (module) {
+                        host1x_module_write(module, NV_SOR_DP_HDCP_BKSV_LSB_OFFSET>>2, s->outdata[0]);
+                        host1x_module_write(module, NV_SOR_TMDS_HDCP_BKSV_LSB_OFFSET>>2, s->outdata[1]);
+                        host1x_module_write(module, NV_SOR_TMDS_HDCP_CN_MSB_OFFSET>>2, s->outdata[2]);
+                        host1x_module_write(module, NV_SOR_TMDS_HDCP_CN_LSB_OFFSET>>2, s->outdata[3]);
                     }
                     else {
                         Error *err = NULL;
-                        error_setg(&err, "tegra.tsec: Failed to DMA map the SOR output regs.");
+                        error_setg(&err, "tegra.tsec: Failed to get the SOR1 host1x module.");
                         if (err) error_report_err(err);
                     }
-
-                    if (databuf_out) dma_memory_unmap(&address_space_memory, databuf_out, databuf_outsize, DMA_DIRECTION_TO_DEVICE, datasize);
                 }
                 s->regs[TSEC_FALCON_MAILBOX1_OFFSET>>2] = 0xB0B0B0B0; // TsecResult_Success
             }
