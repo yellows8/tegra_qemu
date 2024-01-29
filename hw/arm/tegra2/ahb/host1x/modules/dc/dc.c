@@ -498,7 +498,6 @@ static void tegra_dc_priv_realize(DeviceState *dev, Error **errp)
     register_host1x_bus_module(&s->module, s);
 
     s->console = graphic_console_init(DEVICE(dev), 0, &tegra_dc_ops, s);
-    qemu_console_resize(s->console, s->disp_width, s->disp_height);
 }
 
 static Property tegra_dc_properties[] = {

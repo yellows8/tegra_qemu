@@ -534,7 +534,7 @@ static void tegra2_init(MachineState *machine)
     tegra_gr2d_dev = sysbus_create_simple("tegra.gr2d", TEGRA_GR2D_BASE, NULL);
 
     /* Display1 controller */
-    tegra_dc1_dev = sysbus_create_simple("tegra.dc", TEGRA_DISPLAY_BASE,
+    tegra_dca_dev = sysbus_create_simple("tegra.dc", TEGRA_DISPLAY_BASE,
                                          DIRQ(INT_DISPLAY_GENERAL));
 
     /* Process generator tag */

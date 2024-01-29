@@ -776,9 +776,16 @@ static void __tegrax1_init(MachineState *machine)
     /* GPU 2d */
     //tegra_gr2d_dev = sysbus_create_simple("tegra.gr2d", TEGRA_GR2D_BASE, NULL);
 
-    /* Display1 controller */
-    tegra_dc1_dev = sysbus_create_simple("tegra.dc", TEGRA_DISPLAY_BASE,
+    /* Display controllers */
+    tegra_dca_dev = sysbus_create_simple("tegra.dc", TEGRA_DISPLAY_BASE,
                                          DIRQ(INT_DISPLAY_GENERAL));
+
+    tegra_dcb_dev = qdev_new("tegra.dc");
+    s = SYS_BUS_DEVICE(tegra_dcb_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_dcb_dev), "class_id", 0x71);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_DISPLAY2_BASE);
+    sysbus_connect_irq(s, 0, DIRQ(INT_DISPLAY_B_GENERAL));
 
     /* DSI */
     tegra_dsi_dev = sysbus_create_simple("tegra.dsi", TEGRA_DSI_BASE,
