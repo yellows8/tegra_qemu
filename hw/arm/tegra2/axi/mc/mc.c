@@ -674,7 +674,7 @@ static uint64_t tegra_mc_priv_read(void *opaque, hwaddr offset,
         ret = s->client_activity_monitor_emem_1.reg32;
         break;
     case 0x274 ... 0xBFC:
-        ret = s->regs[offset>>2];
+        ret = s->regs[(offset-0x274)>>2];
         break;
     default:
         if (offset == s->emem_cfg_offset) ret = s->emem_cfg.reg32;
@@ -1085,8 +1085,8 @@ static void tegra_mc_priv_write(void *opaque, hwaddr offset,
         s->client_activity_monitor_emem_1.reg32 = value;
         break;
     case 0x274 ... 0xBFC:
-        TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
-        s->regs[offset>>2] = value;
+        TRACE_WRITE(s->iomem.addr, offset, s->regs[(offset-0x274)>>2], value);
+        s->regs[(offset-0x274)>>2] = value;
         break;
     default:
         if (offset == s->emem_cfg_offset) {

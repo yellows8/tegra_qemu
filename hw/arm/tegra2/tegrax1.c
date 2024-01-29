@@ -183,7 +183,7 @@ static uint32_t tegra_bootrom[] = {
 static void memory_region_add_and_init_ram(MemoryRegion *mr, const char *name,
                                            hwaddr offset, uint64_t size, int ro)
 {
-    MemoryRegion *ram = g_new(MemoryRegion, 1);
+    MemoryRegion *ram = g_new0(MemoryRegion, 1);
     memory_region_init_ram(ram, NULL, name, size, &error_abort);
     memory_region_set_readonly(ram, ro);
     memory_region_add_subregion(mr, offset, ram);
@@ -193,7 +193,7 @@ static void cop_memory_region_add_alias(MemoryRegion *mr, const char *name,
                                         MemoryRegion *sysmem, hwaddr cop_offset,
                                          hwaddr sys_offset, uint64_t size)
 {
-    MemoryRegion *ram = g_new(MemoryRegion, 1);
+    MemoryRegion *ram = g_new0(MemoryRegion, 1);
     memory_region_init_alias(ram, NULL, name, sysmem, sys_offset, size);
     memory_region_add_subregion(mr, cop_offset, ram);
 }
@@ -341,8 +341,8 @@ static void* tegra_init_dummyio(hwaddr base, uint32_t size, const char *name)
 
 static void __tegrax1_init(MachineState *machine)
 {
-    MemoryRegion *cop_sysmem = g_new(MemoryRegion, 1);
-    AddressSpace *cop_as = g_new(AddressSpace, 1);
+    MemoryRegion *cop_sysmem = g_new0(MemoryRegion, 1);
+    AddressSpace *cop_as = g_new0(AddressSpace, 1);
     MemoryRegion *sysmem = get_system_memory();
     SysBusDevice *irq_dispatcher, *lic;
     DeviceState *cpudev;
@@ -702,8 +702,8 @@ static void __tegrax1_init(MachineState *machine)
     /* USB2 controllers */
     tegra_ehci1_dev = sysbus_create_simple("tegra.usb",
                                            TEGRA_USB_BASE, DIRQ(INT_USB));
-//     tegra_ehci2_dev = sysbus_create_simple("tegra.usb",
-//                                            TEGRA_USB2_BASE, DIRQ(INT_USB2));
+    tegra_ehci2_dev = sysbus_create_simple("tegra.usb",
+                                           TEGRA_USB2_BASE, DIRQ(INT_USB2));
     /*tegra_ehci3_dev = sysbus_create_simple("tegra.usb",
                                            TEGRA_USB3_BASE, DIRQ(INT_USB3));*/
 

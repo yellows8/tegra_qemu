@@ -739,7 +739,7 @@ static void tegra_flow_priv_write(void *opaque, hwaddr offset,
 
     case FLOW_DBG_SEL_OFFSET ... BPMP_CLUSTER_CONTROL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->regs[(offset-FLOW_DBG_SEL_OFFSET)>>2], value);
-        if (s->num_cpu > 2) s->regs[offset>>2] = value;
+        if (s->num_cpu > 2) s->regs[(offset-FLOW_DBG_SEL_OFFSET)>>2] = value;
         break;
 
     default:
