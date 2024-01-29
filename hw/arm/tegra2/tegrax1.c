@@ -53,7 +53,7 @@
 #include "hw/hw.h"
 #include "net/net.h"
 
-#include "ahb/tsec/tsec.h"
+#include "ahb/host1x/modules/tsec/tsec.h"
 
 #include "devices.h"
 #include "iomap.h"
@@ -807,6 +807,7 @@ static void __tegrax1_init(MachineState *machine)
     /* TSEC */
     tegra_tsec_dev = qdev_new("tegra.tsec");
     s = SYS_BUS_DEVICE(tegra_tsec_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_tsec_dev), "class_id", 0xE0);
     qdev_prop_set_uint32(DEVICE(tegra_tsec_dev), "engine", TEGRA_TSEC_ENGINE_TSEC);
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, TEGRA_TSEC_BASE);
@@ -814,6 +815,7 @@ static void __tegrax1_init(MachineState *machine)
 
     tegra_tsecb_dev = qdev_new("tegra.tsec");
     s = SYS_BUS_DEVICE(tegra_tsecb_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_tsecb_dev), "class_id", 0xE1); // Is this correct?
     qdev_prop_set_uint32(DEVICE(tegra_tsecb_dev), "engine", TEGRA_TSEC_ENGINE_TSECB);
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, TEGRA_TSECB_BASE);
@@ -821,6 +823,7 @@ static void __tegrax1_init(MachineState *machine)
 
     tegra_vic_dev = qdev_new("tegra.tsec");
     s = SYS_BUS_DEVICE(tegra_vic_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_vic_dev), "class_id", 0x5D);
     qdev_prop_set_uint32(DEVICE(tegra_vic_dev), "engine", TEGRA_TSEC_ENGINE_VIC);
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, TEGRA_VIC_BASE);
@@ -828,6 +831,7 @@ static void __tegrax1_init(MachineState *machine)
 
     tegra_nvenc_dev = qdev_new("tegra.tsec");
     s = SYS_BUS_DEVICE(tegra_nvenc_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_nvenc_dev), "class_id", 0x21);
     qdev_prop_set_uint32(DEVICE(tegra_nvenc_dev), "engine", TEGRA_TSEC_ENGINE_NVENC);
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, TEGRA_NVENC_BASE);
@@ -835,6 +839,7 @@ static void __tegrax1_init(MachineState *machine)
 
     tegra_nvdec_dev = qdev_new("tegra.tsec");
     s = SYS_BUS_DEVICE(tegra_nvdec_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_nvdec_dev), "class_id", 0xF0);
     qdev_prop_set_uint32(DEVICE(tegra_nvdec_dev), "engine", TEGRA_TSEC_ENGINE_NVDEC);
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, TEGRA_NVDEC_BASE);
@@ -842,6 +847,7 @@ static void __tegrax1_init(MachineState *machine)
 
     tegra_nvjpg_dev = qdev_new("tegra.tsec");
     s = SYS_BUS_DEVICE(tegra_nvjpg_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_nvjpg_dev), "class_id", 0xC0);
     qdev_prop_set_uint32(DEVICE(tegra_nvjpg_dev), "engine", TEGRA_TSEC_ENGINE_NVJPG);
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, TEGRA_NVJPG_BASE);

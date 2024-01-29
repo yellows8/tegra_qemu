@@ -44,6 +44,8 @@ typedef struct tegra_tsec_state {
 
     qemu_irq irq;
     MemoryRegion iomem;
+    struct host1x_module module;
+
     int32_t engine;
     uint32_t regs[TEGRA_TSEC_SIZE>>2];
     bool outdata_set;
@@ -135,6 +137,18 @@ static void tegra_tsec_priv_write(void *opaque, hwaddr offset,
     s->regs[offset/sizeof(uint32_t)] = (s->regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
 }
 
+static void tegra_tsec_module_write(struct host1x_module *module,
+                                    uint32_t offset, uint32_t data)
+{
+    tegra_tsec_priv_write(module->opaque, offset<<2, data, 4);
+}
+
+static uint32_t tegra_tsec_module_read(struct host1x_module *module,
+                                       uint32_t offset)
+{
+    return tegra_tsec_priv_read(module->opaque, offset<<2, 4);
+}
+
 static void tegra_tsec_priv_reset(DeviceState *dev)
 {
     tegra_tsec *s = TEGRA_TSEC(dev);
@@ -178,9 +192,14 @@ static void tegra_tsec_priv_realize(DeviceState *dev, Error **errp)
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_tsec_mem_ops, s,
                           "tegra.tsec", TEGRA_TSEC_SIZE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
+
+    s->module.reg_write = tegra_tsec_module_write;
+    s->module.reg_read = tegra_tsec_module_read;
+    register_host1x_bus_module(&s->module, s);
 }
 
 static Property tegra_tsec_properties[] = {
+    DEFINE_PROP_UINT8("class_id", tegra_tsec, module.class_id, 0xE0),
     DEFINE_PROP_INT32("engine", tegra_tsec, engine, TEGRA_TSEC_ENGINE_TSEC), \
     DEFINE_PROP_END_OF_LIST(),
 };

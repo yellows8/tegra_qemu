@@ -38,7 +38,6 @@ arm_ss.add(files(
   'ahb/dma/ahb_dma.c',
   'ahb/gizmo/gizmo.c',
   'ahb/mselect/mselect.c',
-  'ahb/tsec/tsec.c',
   'ahb/sb/sb.c',
   'ahb/usb/usb.c',
 
@@ -103,6 +102,8 @@ arm_ss.add(files(
 
   'ahb/host1x/modules/dsi/dsi.c',
   'ahb/host1x/modules/dummy/dummy_host1x.c',
+
+  'ahb/host1x/modules/tsec/tsec.c',
 
   'ahb/host1x/modules/host1x/host1x.c',
   'ahb/host1x/modules/host1x/host1x_module.c',
