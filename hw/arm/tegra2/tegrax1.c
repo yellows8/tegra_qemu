@@ -791,6 +791,12 @@ static void __tegrax1_init(MachineState *machine)
     tegra_dsi_dev = sysbus_create_simple("tegra.dsi", TEGRA_DSI_BASE,
                                          NULL);
 
+    tegra_dsib_dev = qdev_new("tegra.dsi");
+    s = SYS_BUS_DEVICE(tegra_dsib_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_dsib_dev), "class_id", 0x7A);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_DSIB_BASE);
+
     /* TSEC */
     tegra_tsec_dev = qdev_new("tegra.tsec");
     s = SYS_BUS_DEVICE(tegra_tsec_dev);

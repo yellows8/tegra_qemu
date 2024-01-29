@@ -20,13 +20,13 @@
 #ifndef TEGRA_DSI_H
 #define TEGRA_DSI_H
 
-#define HOST_DSI_CONTROL_OFFSET 0x3C
+#define HOST_DSI_CONTROL_OFFSET 0xF
 #define HOST_DSI_CONTROL_RESET 0x00000043
 typedef union host_dsi_control_u {
     uint32_t reg32;
 } host_dsi_control_t;
 
-#define DSI_TRIGGER_OFFSET 0x4C
+#define DSI_TRIGGER_OFFSET 0x13
 #define DSI_TRIGGER_RESET 0x00000000
 typedef union dsi_trigger_u {
     uint32_t reg32;

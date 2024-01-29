@@ -25,6 +25,7 @@
 
 #include "iomap.h"
 #include "tegra_trace.h"
+#include "host1x_module.h"
 
 #include "dsi.h"
 
@@ -35,6 +36,8 @@
 
 typedef struct tegra_dsi_state {
     SysBusDevice parent_obj;
+
+    struct host1x_module module;
 
     MemoryRegion iomem;
     uint32_t regs[TEGRA_DSI_SIZE>>2];
@@ -58,9 +61,10 @@ static uint64_t tegra_dsi_priv_read(void *opaque, hwaddr offset,
 
     assert(offset < sizeof(s->regs));
 
-    ret = s->regs[offset/sizeof(uint32_t)] & ((1ULL<<size*8)-1);
+    offset>>=2;
+    ret = s->regs[offset] & ((1ULL<<size*8)-1);
 
-    TRACE_READ(s->iomem.addr, offset, ret);
+    TRACE_READ(s->iomem.addr, offset<<2, ret);
 
     return ret;
 }
@@ -74,6 +78,8 @@ static void tegra_dsi_priv_write(void *opaque, hwaddr offset,
 
     TRACE_WRITE(s->iomem.addr, offset, 0, value);
 
+    offset>>=2;
+
     if (offset == HOST_DSI_CONTROL_OFFSET) {
         value &= ~((1<<3) | (1<<7)); // IMM_BTA, PERIPH_RESET
     }
@@ -81,7 +87,19 @@ static void tegra_dsi_priv_write(void *opaque, hwaddr offset,
         value &= ~0x3; // Clear the operation-complete bits.
     }
 
-    s->regs[offset/sizeof(uint32_t)] = (s->regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
+    s->regs[offset] = (s->regs[offset] & ~((1ULL<<size*8)-1)) | value;
+}
+
+static void tegra_dsi_module_write(struct host1x_module *module,
+                                  uint32_t offset, uint32_t data)
+{
+    tegra_dsi_priv_write(module->opaque, offset<<2, data, 4);
+}
+
+static uint32_t tegra_dsi_module_read(struct host1x_module *module,
+                                     uint32_t offset)
+{
+    return tegra_dsi_priv_read(module->opaque, offset<<2, 4);
 }
 
 static void tegra_dsi_priv_reset(DeviceState *dev)
@@ -89,8 +107,8 @@ static void tegra_dsi_priv_reset(DeviceState *dev)
     tegra_dsi *s = TEGRA_DSI(dev);
 
     memset(s->regs, 0, sizeof(s->regs));
-    s->regs[HOST_DSI_CONTROL_OFFSET>>2] = DSI_TRIGGER_RESET;
-    s->regs[DSI_TRIGGER_OFFSET>>2] = HOST_DSI_CONTROL_RESET;
+    s->regs[HOST_DSI_CONTROL_OFFSET] = DSI_TRIGGER_RESET;
+    s->regs[DSI_TRIGGER_OFFSET] = HOST_DSI_CONTROL_RESET;
 }
 
 static const MemoryRegionOps tegra_dsi_mem_ops = {
@@ -106,12 +124,22 @@ static void tegra_dsi_priv_realize(DeviceState *dev, Error **errp)
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_dsi_mem_ops, s,
                           "tegra.dsi", TEGRA_DSI_SIZE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
+
+    s->module.reg_write = tegra_dsi_module_write;
+    s->module.reg_read = tegra_dsi_module_read;
+    register_host1x_bus_module(&s->module, s);
 }
+
+static Property tegra_dsi_properties[] = {
+    DEFINE_PROP_UINT8("class_id", tegra_dsi, module.class_id, 0x79),
+    DEFINE_PROP_END_OF_LIST(),
+};
 
 static void tegra_dsi_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    device_class_set_props(dc, tegra_dsi_properties);
     dc->realize = tegra_dsi_priv_realize;
     dc->vmsd = &vmstate_tegra_dsi;
     dc->reset = tegra_dsi_priv_reset;
