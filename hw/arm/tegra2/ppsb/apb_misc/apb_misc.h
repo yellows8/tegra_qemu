@@ -190,7 +190,8 @@ typedef union pp_tristate_reg_d_u {
 } pp_tristate_reg_d_t;
 
 #define PP_CONFIG_CTL_OFFSET 0x24
-#define PP_CONFIG_CTL_RESET  0x00000001
+#define PP_CONFIG_CTL_TEGRA2_RESET  0x00000001
+#define PP_CONFIG_CTL_TEGRAX1_RESET 0x00000000
 typedef union pp_config_ctl_u {
     struct {
         unsigned int undefined_bits_0_5:6;
@@ -740,7 +741,8 @@ typedef union gp_transactor_scratch_u {
 } gp_transactor_scratch_t;
 
 #define GP_AOCFG1PADCTRL_OFFSET 0x868
-#define GP_AOCFG1PADCTRL_RESET  0x3C58480C
+#define GP_AOCFG1PADCTRL_TEGRA2_RESET  0x3C58480C
+#define GP_AOCFG1PADCTRL_TEGRAX1_RESET 0x00000000
 typedef union gp_aocfg1padctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -860,7 +862,8 @@ typedef union gp_cdev2cfgpadctrl_u {
 } gp_cdev2cfgpadctrl_t;
 
 #define GP_CSUSCFGPADCTRL_OFFSET 0x880
-#define GP_CSUSCFGPADCTRL_RESET  0x3C58480C
+#define GP_CSUSCFGPADCTRL_TEGRA2_RESET  0x3C58480C
+#define GP_CSUSCFGPADCTRL_TEGRAX1_RESET 0x00000000
 typedef union gp_csuscfgpadctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -880,7 +883,8 @@ typedef union gp_csuscfgpadctrl_u {
 } gp_csuscfgpadctrl_t;
 
 #define GP_DAP1CFGPADCTRL_OFFSET 0x884
-#define GP_DAP1CFGPADCTRL_RESET  0x3C58480C
+#define GP_DAP1CFGPADCTRL_TEGRA2_RESET  0x3C58480C
+#define GP_DAP1CFGPADCTRL_TEGRAX1_RESET 0x00000000
 typedef union gp_dap1cfgpadctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -900,7 +904,8 @@ typedef union gp_dap1cfgpadctrl_u {
 } gp_dap1cfgpadctrl_t;
 
 #define GP_DAP2CFGPADCTRL_OFFSET 0x888
-#define GP_DAP2CFGPADCTRL_RESET  0x3C58480C
+#define GP_DAP2CFGPADCTRL_TEGRA2_RESET  0x3C58480C
+#define GP_DAP2CFGPADCTRL_TEGRAX1_RESET 0x00000000
 typedef union gp_dap2cfgpadctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -920,7 +925,8 @@ typedef union gp_dap2cfgpadctrl_u {
 } gp_dap2cfgpadctrl_t;
 
 #define GP_DAP3CFGPADCTRL_OFFSET 0x88C
-#define GP_DAP3CFGPADCTRL_RESET  0x3C58480C
+#define GP_DAP3CFGPADCTRL_TEGRA2_RESET  0x3C58480C
+#define GP_DAP3CFGPADCTRL_TEGRAX1_RESET 0x00000000
 typedef union gp_dap3cfgpadctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -940,7 +946,8 @@ typedef union gp_dap3cfgpadctrl_u {
 } gp_dap3cfgpadctrl_t;
 
 #define GP_DAP4CFGPADCTRL_OFFSET 0x890
-#define GP_DAP4CFGPADCTRL_RESET  0x3C58480C
+#define GP_DAP4CFGPADCTRL_TEGRA2_RESET  0x3C58480C
+#define GP_DAP4CFGPADCTRL_TEGRAX1_RESET 0x00000000
 typedef union gp_dap4cfgpadctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -1252,7 +1259,8 @@ typedef union gp_xm2cfgdpadctrl_u {
 } gp_xm2cfgdpadctrl_t;
 
 #define GP_XM2CLKCFGPADCTRL_OFFSET 0x8D0
-#define GP_XM2CLKCFGPADCTRL_RESET  0x7FFFE001
+#define GP_XM2CLKCFGPADCTRL_TEGRA2_RESET  0x7FFFE001
+#define GP_XM2CLKCFGPADCTRL_TEGRAX1_RESET 0xFFFF0000
 typedef union gp_xm2clkcfgpadctrl_u {
     struct {
         unsigned int undefined_bit_0:1;
@@ -1270,7 +1278,8 @@ typedef union gp_xm2clkcfgpadctrl_u {
 } gp_xm2clkcfgpadctrl_t;
 
 #define GP_XM2COMPPADCTRL_OFFSET 0x8D4
-#define GP_XM2COMPPADCTRL_RESET  0x01F1F008
+#define GP_XM2COMPPADCTRL_TEGRA2_RESET  0x01F1F008
+#define GP_XM2COMPPADCTRL_TEGRAX1_RESET 0x00000001
 typedef union gp_xm2comppadctrl_u {
     struct {
         unsigned int cfg2tmc_xm2comp_vref_sel:4;
@@ -1287,7 +1296,8 @@ typedef union gp_xm2comppadctrl_u {
 } gp_xm2comppadctrl_t;
 
 #define GP_XM2VTTGENPADCTRL_OFFSET 0x8D8
-#define GP_XM2VTTGENPADCTRL_RESET  0x00005500
+#define GP_XM2VTTGENPADCTRL_TEGRA2_RESET  0x00005500
+#define GP_XM2VTTGENPADCTRL_TEGRAX1_RESET 0x00000001
 typedef union gp_xm2vttgenpadctrl_u {
     struct {
         unsigned int cfg2tmc_xm2vttgen_short:1;
@@ -1307,7 +1317,8 @@ typedef union gp_xm2vttgenpadctrl_u {
 } gp_xm2vttgenpadctrl_t;
 
 #define GP_PADCTL_DFT_OFFSET 0x8DC
-#define GP_PADCTL_DFT_RESET  0x00000000
+#define GP_PADCTL_DFT_TEGRA2_RESET  0x00000000
+#define GP_PADCTL_DFT_TEGRAX1_RESET 0x0000FF37
 typedef union gp_padctl_dft_u {
     struct {
         unsigned int pinshort_en:1;         /* Enable pin-shorting for tester mode pin-shorting 0 = DISABLE 1 = ENABLE */
@@ -1319,7 +1330,8 @@ typedef union gp_padctl_dft_u {
 } gp_padctl_dft_t;
 
 #define GP_SDIO1CFGPADCTRL_OFFSET 0x8E0
-#define GP_SDIO1CFGPADCTRL_RESET  0x3C58480C
+#define GP_SDIO1CFGPADCTRL_TEGRA2_RESET  0x3C58480C
+#define GP_SDIO1CFGPADCTRL_TEGRAX1_RESET 0x0000FF37
 typedef union gp_sdio1cfgpadctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -1339,7 +1351,8 @@ typedef union gp_sdio1cfgpadctrl_u {
 } gp_sdio1cfgpadctrl_t;
 
 #define GP_XM2CFGCPADCTRL2_OFFSET 0x8E4
-#define GP_XM2CFGCPADCTRL2_RESET  0x08080042
+#define GP_XM2CFGCPADCTRL2_TEGRA2_RESET  0x08080042
+#define GP_XM2CFGCPADCTRL2_TEGRAX1_RESET 0x00000000
 typedef union gp_xm2cfgcpadctrl2_u {
     struct {
         unsigned int cfg2tmc_xm2cfgc_rx_ft_rec_en:1;/* 0 = DISABLE 1 = ENABLE */
@@ -1361,7 +1374,8 @@ typedef union gp_xm2cfgcpadctrl2_u {
 } gp_xm2cfgcpadctrl2_t;
 
 #define GP_XM2CFGDPADCTRL2_OFFSET 0x8E8
-#define GP_XM2CFGDPADCTRL2_RESET  0x00000002
+#define GP_XM2CFGDPADCTRL2_TEGRA2_RESET  0x00000002
+#define GP_XM2CFGDPADCTRL2_TEGRAX1_RESET 0x00000000
 typedef union gp_xm2cfgdpadctrl2_u {
     struct {
         unsigned int cfg2tmc_xm2cfgd_rx_ft_rec_en:1;/* 0 = DISABLE 1 = ENABLE */
@@ -1383,7 +1397,8 @@ typedef union gp_xm2cfgdpadctrl2_u {
 } gp_xm2cfgdpadctrl2_t;
 
 #define GP_CRTCFGPADCTRL_OFFSET 0x8EC
-#define GP_CRTCFGPADCTRL_RESET  0x00000002
+#define GP_CRTCFGPADCTRL_TEGRA2_RESET  0x00000002
+#define GP_CRTCFGPADCTRL_TEGRAX1_RESET 0x00000000
 typedef union gp_crtcfgpadctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -1403,7 +1418,8 @@ typedef union gp_crtcfgpadctrl_u {
 } gp_crtcfgpadctrl_t;
 
 #define GP_DDCCFGPADCTRL_OFFSET 0x8F0
-#define GP_DDCCFGPADCTRL_RESET  0x3C58480C
+#define GP_DDCCFGPADCTRL_TEGRA2_RESET  0x3C58480C
+#define GP_DDCCFGPADCTRL_TEGRAX1_RESET 0x00000000
 typedef union gp_ddccfgpadctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -1423,7 +1439,8 @@ typedef union gp_ddccfgpadctrl_u {
 } gp_ddccfgpadctrl_t;
 
 #define GP_GMACFGPADCTRL_OFFSET 0x8F4
-#define GP_GMACFGPADCTRL_RESET  0x3C58480C
+#define GP_GMACFGPADCTRL_TEGRA2_RESET  0x3C58480C
+#define GP_GMACFGPADCTRL_TEGRAX1_RESET 0x00000000
 typedef union gp_gmacfgpadctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -1443,7 +1460,8 @@ typedef union gp_gmacfgpadctrl_u {
 } gp_gmacfgpadctrl_t;
 
 #define GP_GMBCFGPADCTRL_OFFSET 0x8F8
-#define GP_GMBCFGPADCTRL_RESET  0x1E2C2406
+#define GP_GMBCFGPADCTRL_TEGRA2_RESET  0x1E2C2406
+#define GP_GMBCFGPADCTRL_TEGRAX1_RESET 0x00000000
 typedef union gp_gmbcfgpadctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -1463,7 +1481,8 @@ typedef union gp_gmbcfgpadctrl_u {
 } gp_gmbcfgpadctrl_t;
 
 #define GP_GMCCFGPADCTRL_OFFSET 0x8FC
-#define GP_GMCCFGPADCTRL_RESET  0x3C58480C
+#define GP_GMCCFGPADCTRL_TEGRA2_RESET  0x3C58480C
+#define GP_GMCCFGPADCTRL_TEGRAX1_RESET 0x00000000
 typedef union gp_gmccfgpadctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -1483,7 +1502,8 @@ typedef union gp_gmccfgpadctrl_u {
 } gp_gmccfgpadctrl_t;
 
 #define GP_GMDCFGPADCTRL_OFFSET 0x900
-#define GP_GMDCFGPADCTRL_RESET  0x3C58480C
+#define GP_GMDCFGPADCTRL_TEGRA2_RESET  0x3C58480C
+#define GP_GMDCFGPADCTRL_TEGRAX1_RESET 0x00000000
 typedef union gp_gmdcfgpadctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -1503,7 +1523,8 @@ typedef union gp_gmdcfgpadctrl_u {
 } gp_gmdcfgpadctrl_t;
 
 #define GP_GMECFGPADCTRL_OFFSET 0x904
-#define GP_GMECFGPADCTRL_RESET  0x3C58480C
+#define GP_GMECFGPADCTRL_TEGRA2_RESET  0x3C58480C
+#define GP_GMECFGPADCTRL_TEGRAX1_RESET 0x00000000
 typedef union gp_gmecfgpadctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -1523,7 +1544,8 @@ typedef union gp_gmecfgpadctrl_u {
 } gp_gmecfgpadctrl_t;
 
 #define GP_OWRCFGPADCTRL_OFFSET 0x908
-#define GP_OWRCFGPADCTRL_RESET  0x3C58480C
+#define GP_OWRCFGPADCTRL_TEGRA2_RESET  0x3C58480C
+#define GP_OWRCFGPADCTRL_TEGRAX1_RESET 0x00000000
 typedef union gp_owrcfgpadctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -1543,7 +1565,8 @@ typedef union gp_owrcfgpadctrl_u {
 } gp_owrcfgpadctrl_t;
 
 #define GP_UADCFGPADCTRL_OFFSET 0x90C
-#define GP_UADCFGPADCTRL_RESET  0x3C58480C
+#define GP_UADCFGPADCTRL_TEGRA2_RESET  0x3C58480C
+#define GP_UADCFGPADCTRL_TEGRAX1_RESET 0x00000000
 typedef union gp_uadcfgpadctrl_u {
     struct {
         unsigned int undefined_bits_0_1:2;
@@ -1594,6 +1617,9 @@ typedef union gp_uadcfgpadctrl_u {
 
 #define GP_EMMC4_PAD_PUPD_CFGPADCTRL_OFFSET 0xABC
 #define GP_EMMC4_PAD_PUPD_CFGPADCTRL_RESET 0x026aaaa6
+
+#define GP_QSPI_COMP_CONTROL_OFFSET 0xB70
+#define GP_QSPI_COMP_CONTROL_RESET 0x00000002
 
 #define GP_VGPIO_GPIO_MUX_SEL_OFFSET 0xB74
 #define GP_VGPIO_GPIO_MUX_SEL_RESET 0x0000000F

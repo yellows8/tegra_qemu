@@ -920,7 +920,6 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
     s->pp_tristate_reg_b.reg32 = PP_TRISTATE_REG_B_RESET;
     s->pp_tristate_reg_c.reg32 = PP_TRISTATE_REG_C_RESET;
     s->pp_tristate_reg_d.reg32 = PP_TRISTATE_REG_D_RESET;
-    s->pp_config_ctl.reg32 = PP_CONFIG_CTL_RESET;
     s->pp_misc_usb_otg.reg32 = PP_MISC_USB_OTG_RESET;
     s->pp_pinmux_global.reg32 = PP_PINMUX_GLOBAL_RESET;
     s->pp_usb_phy_param.reg32 = PP_USB_PHY_PARAM_RESET;
@@ -946,17 +945,11 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
     s->gp_asdbgreg.reg32 = GP_ASDBGREG_RESET;
     s->gp_emu_revid.reg32 = GP_EMU_REVID_RESET;
     s->gp_transactor_scratch.reg32 = GP_TRANSACTOR_SCRATCH_RESET;
-    s->gp_aocfg1padctrl.reg32 = GP_AOCFG1PADCTRL_RESET;
     s->gp_aocfg2padctrl.reg32 = GP_AOCFG2PADCTRL_RESET;
     s->gp_atcfg1padctrl.reg32 = GP_ATCFG1PADCTRL_RESET;
     s->gp_atcfg2padctrl.reg32 = GP_ATCFG2PADCTRL_RESET;
     s->gp_cdev1cfgpadctrl.reg32 = GP_CDEV1CFGPADCTRL_RESET;
     s->gp_cdev2cfgpadctrl.reg32 = GP_CDEV2CFGPADCTRL_RESET;
-    s->gp_csuscfgpadctrl.reg32 = GP_CSUSCFGPADCTRL_RESET;
-    s->gp_dap1cfgpadctrl.reg32 = GP_DAP1CFGPADCTRL_RESET;
-    s->gp_dap2cfgpadctrl.reg32 = GP_DAP2CFGPADCTRL_RESET;
-    s->gp_dap3cfgpadctrl.reg32 = GP_DAP3CFGPADCTRL_RESET;
-    s->gp_dap4cfgpadctrl.reg32 = GP_DAP4CFGPADCTRL_RESET;
     s->gp_dbgcfgpadctrl.reg32 = GP_DBGCFGPADCTRL_RESET;
     s->gp_lcdcfg1padctrl.reg32 = GP_LCDCFG1PADCTRL_RESET;
     s->gp_lcdcfg2padctrl.reg32 = GP_LCDCFG2PADCTRL_RESET;
@@ -972,22 +965,6 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
     s->gp_xm2cfgapadctrl.reg32 = GP_XM2CFGAPADCTRL_RESET;
     s->gp_xm2cfgcpadctrl.reg32 = GP_XM2CFGCPADCTRL_RESET;
     s->gp_xm2cfgdpadctrl.reg32 = GP_XM2CFGDPADCTRL_RESET;
-    s->gp_xm2clkcfgpadctrl.reg32 = GP_XM2CLKCFGPADCTRL_RESET;
-    s->gp_xm2comppadctrl.reg32 = GP_XM2COMPPADCTRL_RESET;
-    s->gp_xm2vttgenpadctrl.reg32 = GP_XM2VTTGENPADCTRL_RESET;
-    s->gp_padctl_dft.reg32 = GP_PADCTL_DFT_RESET;
-    s->gp_sdio1cfgpadctrl.reg32 = GP_SDIO1CFGPADCTRL_RESET;
-    s->gp_xm2cfgcpadctrl2.reg32 = GP_XM2CFGCPADCTRL2_RESET;
-    s->gp_xm2cfgdpadctrl2.reg32 = GP_XM2CFGDPADCTRL2_RESET;
-    s->gp_crtcfgpadctrl.reg32 = GP_CRTCFGPADCTRL_RESET;
-    s->gp_ddccfgpadctrl.reg32 = GP_DDCCFGPADCTRL_RESET;
-    s->gp_gmacfgpadctrl.reg32 = GP_GMACFGPADCTRL_RESET;
-    s->gp_gmbcfgpadctrl.reg32 = GP_GMBCFGPADCTRL_RESET;
-    s->gp_gmccfgpadctrl.reg32 = GP_GMCCFGPADCTRL_RESET;
-    s->gp_gmdcfgpadctrl.reg32 = GP_GMDCFGPADCTRL_RESET;
-    s->gp_gmecfgpadctrl.reg32 = GP_GMECFGPADCTRL_RESET;
-    s->gp_owrcfgpadctrl.reg32 = GP_OWRCFGPADCTRL_RESET;
-    s->gp_uadcfgpadctrl.reg32 = GP_UADCFGPADCTRL_RESET;
     s->das_dap_ctrl_sel.reg32 = DAS_DAP_CTRL_SEL_RESET;
     s->das_dac_input_data_clk_sel.reg32 = DAS_DAC_INPUT_DATA_CLK_SEL_RESET;
     s->pp_misc_save_the_day.reg32 = PP_MISC_SAVE_THE_DAY_RESET;
@@ -1010,6 +987,57 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
     s->das_dac_input_data_clk_sel_1.reg32 = DAS_DAC_INPUT_DATA_CLK_SEL_1_RESET;
     s->das_dac_input_data_clk_sel_2.reg32 = DAS_DAC_INPUT_DATA_CLK_SEL_2_RESET;
 
+    if (tegra_board >= TEGRAX1_BOARD) {
+        s->pp_config_ctl.reg32 = PP_CONFIG_CTL_TEGRAX1_RESET;
+        s->gp_aocfg1padctrl.reg32 = GP_AOCFG1PADCTRL_TEGRAX1_RESET;
+        s->gp_csuscfgpadctrl.reg32 = GP_CSUSCFGPADCTRL_TEGRAX1_RESET;
+        s->gp_dap1cfgpadctrl.reg32 = GP_DAP1CFGPADCTRL_TEGRAX1_RESET;
+        s->gp_dap2cfgpadctrl.reg32 = GP_DAP2CFGPADCTRL_TEGRAX1_RESET;
+        s->gp_dap3cfgpadctrl.reg32 = GP_DAP3CFGPADCTRL_TEGRAX1_RESET;
+        s->gp_dap4cfgpadctrl.reg32 = GP_DAP4CFGPADCTRL_TEGRAX1_RESET;
+        s->gp_xm2clkcfgpadctrl.reg32 = GP_XM2CLKCFGPADCTRL_TEGRAX1_RESET;
+        s->gp_xm2comppadctrl.reg32 = GP_XM2COMPPADCTRL_TEGRAX1_RESET;
+        s->gp_xm2vttgenpadctrl.reg32 = GP_XM2VTTGENPADCTRL_TEGRAX1_RESET;
+        s->gp_padctl_dft.reg32 = GP_PADCTL_DFT_TEGRAX1_RESET;
+        s->gp_sdio1cfgpadctrl.reg32 = GP_SDIO1CFGPADCTRL_TEGRAX1_RESET;
+        s->gp_xm2cfgcpadctrl2.reg32 = GP_XM2CFGCPADCTRL2_TEGRAX1_RESET;
+        s->gp_xm2cfgdpadctrl2.reg32 = GP_XM2CFGDPADCTRL2_TEGRAX1_RESET;
+        s->gp_crtcfgpadctrl.reg32 = GP_CRTCFGPADCTRL_TEGRAX1_RESET;
+        s->gp_ddccfgpadctrl.reg32 = GP_DDCCFGPADCTRL_TEGRAX1_RESET;
+        s->gp_gmacfgpadctrl.reg32 = GP_GMACFGPADCTRL_TEGRAX1_RESET;
+        s->gp_gmbcfgpadctrl.reg32 = GP_GMBCFGPADCTRL_TEGRAX1_RESET;
+        s->gp_gmccfgpadctrl.reg32 = GP_GMCCFGPADCTRL_TEGRAX1_RESET;
+        s->gp_gmdcfgpadctrl.reg32 = GP_GMDCFGPADCTRL_TEGRAX1_RESET;
+        s->gp_gmecfgpadctrl.reg32 = GP_GMECFGPADCTRL_TEGRAX1_RESET;
+        s->gp_owrcfgpadctrl.reg32 = GP_OWRCFGPADCTRL_TEGRAX1_RESET;
+        s->gp_uadcfgpadctrl.reg32 = GP_UADCFGPADCTRL_TEGRAX1_RESET;
+    }
+    else {
+        s->pp_config_ctl.reg32 = PP_CONFIG_CTL_TEGRA2_RESET;
+        s->gp_aocfg1padctrl.reg32 = GP_AOCFG1PADCTRL_TEGRA2_RESET;
+        s->gp_csuscfgpadctrl.reg32 = GP_CSUSCFGPADCTRL_TEGRA2_RESET;
+        s->gp_dap1cfgpadctrl.reg32 = GP_DAP1CFGPADCTRL_TEGRA2_RESET;
+        s->gp_dap2cfgpadctrl.reg32 = GP_DAP2CFGPADCTRL_TEGRA2_RESET;
+        s->gp_dap3cfgpadctrl.reg32 = GP_DAP3CFGPADCTRL_TEGRA2_RESET;
+        s->gp_dap4cfgpadctrl.reg32 = GP_DAP4CFGPADCTRL_TEGRA2_RESET;
+        s->gp_xm2clkcfgpadctrl.reg32 = GP_XM2CLKCFGPADCTRL_TEGRA2_RESET;
+        s->gp_xm2comppadctrl.reg32 = GP_XM2COMPPADCTRL_TEGRA2_RESET;
+        s->gp_xm2vttgenpadctrl.reg32 = GP_XM2VTTGENPADCTRL_TEGRA2_RESET;
+        s->gp_padctl_dft.reg32 = GP_PADCTL_DFT_TEGRA2_RESET;
+        s->gp_sdio1cfgpadctrl.reg32 = GP_SDIO1CFGPADCTRL_TEGRA2_RESET;
+        s->gp_xm2cfgcpadctrl2.reg32 = GP_XM2CFGCPADCTRL2_TEGRA2_RESET;
+        s->gp_xm2cfgdpadctrl2.reg32 = GP_XM2CFGDPADCTRL2_TEGRA2_RESET;
+        s->gp_crtcfgpadctrl.reg32 = GP_CRTCFGPADCTRL_TEGRA2_RESET;
+        s->gp_ddccfgpadctrl.reg32 = GP_DDCCFGPADCTRL_TEGRA2_RESET;
+        s->gp_gmacfgpadctrl.reg32 = GP_GMACFGPADCTRL_TEGRA2_RESET;
+        s->gp_gmbcfgpadctrl.reg32 = GP_GMBCFGPADCTRL_TEGRA2_RESET;
+        s->gp_gmccfgpadctrl.reg32 = GP_GMCCFGPADCTRL_TEGRA2_RESET;
+        s->gp_gmdcfgpadctrl.reg32 = GP_GMDCFGPADCTRL_TEGRA2_RESET;
+        s->gp_gmecfgpadctrl.reg32 = GP_GMECFGPADCTRL_TEGRA2_RESET;
+        s->gp_owrcfgpadctrl.reg32 = GP_OWRCFGPADCTRL_TEGRA2_RESET;
+        s->gp_uadcfgpadctrl.reg32 = GP_UADCFGPADCTRL_TEGRA2_RESET;
+    }
+
     memset(s->regs, 0, sizeof(s->regs));
     s->regs[(GP_QSPI_COMP_CFGPADCTRL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_QSPI_COMP_CFGPADCTRL_RESET;
     s->regs[(GP_QSPI_SCK_CFGPADCTRL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_QSPI_SCK_CFGPADCTRL_RESET;
@@ -1021,6 +1049,7 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
     s->regs[(GP_EMMC4_PAD_CFGPADCTRL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_EMMC4_PAD_CFGPADCTRL_RESET;
     s->regs[(GP_EMMC4_PAD_DRV_TYPE_CFGPADCTRL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_EMMC4_PAD_DRV_TYPE_CFGPADCTRL_RESET;
     s->regs[(GP_EMMC4_PAD_PUPD_CFGPADCTRL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_EMMC4_PAD_PUPD_CFGPADCTRL_RESET;
+    s->regs[(GP_QSPI_COMP_CONTROL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_QSPI_COMP_CONTROL_RESET;
     s->regs[(GP_VGPIO_GPIO_MUX_SEL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_VGPIO_GPIO_MUX_SEL_RESET;
     s->regs[(GP_QSPI_SCK_LPBK_CONTROL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_QSPI_SCK_LPBK_CONTROL_RESET;
 
