@@ -646,6 +646,53 @@ static QCryptoCipher *qcrypto_cipher_ctx_new(QCryptoCipherAlgorithm alg,
     return NULL;
 }
 
+int tegra_se_crypto_operation(void* key, void* iv, QCryptoCipherAlgorithm cipher_alg, QCryptoCipherMode mode, bool encrypt, hwaddr inbuf_addr, void* outbuf, dma_addr_t databuf_size)
+{
+    Error *err = NULL;
+    int tmpret=0;
+    size_t datasize=0;
+    void* databuf_in = NULL;
+    void* databuf_out = NULL;
+    dma_addr_t tmplen_in=databuf_size, tmplen_out=databuf_size;
+    QCryptoCipher *cipher = qcrypto_cipher_ctx_new(cipher_alg, mode, key, qcrypto_cipher_get_key_len(cipher_alg), &err);
+
+    databuf_in = dma_memory_map(&address_space_memory, inbuf_addr, &tmplen_in, DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
+    if (outbuf==NULL) databuf_out = dma_memory_map(&address_space_memory, inbuf_addr, &tmplen_out, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
+
+    if (cipher) {
+        if (databuf_in==NULL || (outbuf==NULL && databuf_out==NULL))
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra.se: Failed to DMA map input/output buffer.\n");
+        else {
+            datasize = databuf_size;
+            if (outbuf==NULL) outbuf = databuf_out;
+
+            if (mode != QCRYPTO_CIPHER_MODE_ECB) {
+                tmpret = qcrypto_cipher_setiv(cipher, iv, 0x10, &err);
+                if (tmpret!=0) datasize=0;
+            }
+
+            if (tmpret==0) {
+                if (encrypt) {
+                    if (qcrypto_cipher_encrypt(cipher, databuf_in, outbuf, datasize, &err)!=0) datasize=0;
+                }
+                else {
+                    if (qcrypto_cipher_decrypt(cipher, databuf_in, outbuf, datasize, &err)!=0) datasize=0;
+                }
+                if (datasize==0) tmpret = -1;
+            }
+        }
+
+        qcrypto_cipher_free(cipher);
+    }
+    else tmpret = -1;
+
+    if (databuf_in) dma_memory_unmap(&address_space_memory, databuf_in, databuf_size, DMA_DIRECTION_TO_DEVICE, databuf_size);
+    if (databuf_out) dma_memory_unmap(&address_space_memory, databuf_out, databuf_size, DMA_DIRECTION_FROM_DEVICE, datasize);
+    if (err) error_report_err(err);
+
+    return tmpret;
+}
+
 static uint64_t tegra_se_priv_read(void *opaque, hwaddr offset,
                                      unsigned size)
 {

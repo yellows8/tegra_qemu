@@ -44,4 +44,6 @@ enum SE_CONFIG_ENC_MODE {
     SE_CONFIG_ENC_MODE_SHA512 = 7,
 };
 
+int tegra_se_crypto_operation(void* key, void* iv, QCryptoCipherAlgorithm cipher_alg, QCryptoCipherMode mode, bool encrypt, hwaddr inbuf_addr, void* outbuf, dma_addr_t databuf_size);
+
 #endif // TEGRA_SE_H

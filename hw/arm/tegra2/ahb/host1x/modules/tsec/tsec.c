@@ -28,11 +28,13 @@
 #include "host1x_module.h"
 #include "exec/address-spaces.h"
 #include "sysemu/dma.h"
+#include "cpu.h"
 
 #include "iomap.h"
 #include "tegra_trace.h"
 
 #include "tsec.h"
+#include "../apb/se/se.h"
 
 #define TYPE_TEGRA_TSEC "tegra.tsec"
 #define TEGRA_TSEC(obj) OBJECT_CHECK(tegra_tsec, (obj), TYPE_TEGRA_TSEC)
@@ -49,7 +51,9 @@ typedef struct tegra_tsec_state {
     int32_t engine;
     uint32_t regs[TEGRA_TSEC_SIZE>>2];
     bool outdata_set;
+    bool package1_key_set;
     uint32_t outdata[4];
+    uint32_t package1_key[4];
 } tegra_tsec;
 
 static const VMStateDescription vmstate_tegra_tsec = {
@@ -60,7 +64,9 @@ static const VMStateDescription vmstate_tegra_tsec = {
         VMSTATE_INT32(engine, tegra_tsec),
         VMSTATE_UINT32_ARRAY(regs, tegra_tsec, TEGRA_TSEC_SIZE>>2),
         VMSTATE_BOOL(outdata_set, tegra_tsec),
+        VMSTATE_BOOL(package1_key_set, tegra_tsec),
         VMSTATE_UINT32_ARRAY(outdata, tegra_tsec, 4),
+        VMSTATE_UINT32_ARRAY(package1_key, tegra_tsec, 4),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -129,6 +135,33 @@ static void tegra_tsec_priv_write(void *opaque, hwaddr offset,
                         if (err) error_report_err(err);
                     }
                 }
+
+                if (s->package1_key_set) { // Decrypt PK11 if the key is set.
+                    struct {
+                        uint32_t pk11_size;
+                        uint32_t _0x4[0xC>>2];
+                        uint8_t iv[0x10];
+                    } pk11_info = {};
+
+                    hwaddr inbuf = 0x40010000 + 0x6FE0;
+                    dma_memory_read(&address_space_memory, inbuf, &pk11_info, sizeof(pk11_info), MEMTXATTRS_UNSPECIFIED);
+                    inbuf+= sizeof(pk11_info);
+
+                    uint32_t tmpblock[4]={};
+                    if(tegra_se_crypto_operation(s->package1_key, pk11_info.iv, QCRYPTO_CIPHER_ALG_AES_128, QCRYPTO_CIPHER_MODE_CBC, false, inbuf, tmpblock, sizeof(tmpblock))==0) {
+                        if (tswap32(tmpblock[0]) != 0x31314B50) {
+                            Error *err = NULL;
+                            error_setg(&err, "tegra.tsec: Decryption failed, invalid PK11 magicnum.");
+                            if (err) error_report_err(err);
+                        }
+                        else {
+                            tegra_se_crypto_operation(s->package1_key, pk11_info.iv, QCRYPTO_CIPHER_ALG_AES_128, QCRYPTO_CIPHER_MODE_CBC, false, inbuf, NULL, tswap32(pk11_info.pk11_size));
+                        }
+                    }
+
+                    // TODO: Have the BPMP jump to PK11.
+                }
+
                 s->regs[TSEC_FALCON_MAILBOX1_OFFSET>>2] = 0xB0B0B0B0; // TsecResult_Success
             }
         }
@@ -156,9 +189,11 @@ static void tegra_tsec_priv_reset(DeviceState *dev)
     memset(s->regs, 0, sizeof(s->regs));
 
     s->outdata_set = false;
+    s->package1_key_set = false;
     memset(s->outdata, 0, sizeof(s->outdata));
+    memset(s->package1_key, 0, sizeof(s->package1_key));
 
-    // Load the tegra.tsec.outdata secret into outdata.
+    // Load the tegra.tsec.outdata and tegra.tsec.package1_key secret into outdata/package1_key.
     if (s->engine == TEGRA_TSEC_ENGINE_TSEC) {
         Error *err = NULL;
         uint8_t *data=NULL;
@@ -172,8 +207,23 @@ static void tegra_tsec_priv_reset(DeviceState *dev)
                 s->outdata_set = true;
             }
             g_free(data);
+            data = NULL;
+            datalen = 0;
         }
         if (err) error_report_err(err);
+
+        if (qcrypto_secret_lookup("tegra.tsec.package1_key", &data, &datalen, &err)==0) {
+            if (datalen > sizeof(s->package1_key)) {
+                error_setg(&err, "tegra.tsec: Invalid datalen for secret tegra.tsec.package1_key, datalen=0x%lx expected <=0x%lx.", datalen, sizeof(s->package1_key));
+            }
+            else {
+                memcpy(s->package1_key, data, datalen);
+                s->package1_key_set = true;
+            }
+            g_free(data);
+            data = NULL;
+            datalen = 0;
+        }
     }
 }
 
