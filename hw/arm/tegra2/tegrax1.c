@@ -702,8 +702,10 @@ static void __tegrax1_init(MachineState *machine)
     /* USB2 controllers */
     tegra_ehci1_dev = sysbus_create_simple("tegra.usb",
                                            TEGRA_USB_BASE, DIRQ(INT_USB));
+    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_ehci1_dev), 1, TEGRA_USB_BASE+0x1000);
     tegra_ehci2_dev = sysbus_create_simple("tegra.usb",
                                            TEGRA_USB2_BASE, DIRQ(INT_USB2));
+    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_ehci2_dev), 1, TEGRA_USB2_BASE+0x1000);
     /*tegra_ehci3_dev = sysbus_create_simple("tegra.usb",
                                            TEGRA_USB3_BASE, DIRQ(INT_USB3));*/
 

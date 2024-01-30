@@ -36,7 +36,7 @@ typedef struct tegra_usb_state {
     uint32_t regs_controller[(0x260-0x1B4)>>2];
     DEFINE_REG32(usb1_if_usb_susp_ctrl);
     uint32_t regs_susp[(0x85C-0x404)>>2];
-    uint32_t regs_queue[0x80>>2];
+    uint32_t regs_queue[0x1000>>2];
 
     MemoryRegion iomem_config;
     MemoryRegion iomem_controller;
@@ -54,7 +54,7 @@ static const VMStateDescription vmstate_tegra_usb = {
         VMSTATE_UINT32_ARRAY(regs_config, tegra_usb, 0x100>>2),
         VMSTATE_UINT32_ARRAY(regs_controller, tegra_usb, (0x260-0x1B4)>>2),
         VMSTATE_UINT32_ARRAY(regs_susp, tegra_usb, (0x85C-0x404)>>2),
-        VMSTATE_UINT32_ARRAY(regs_queue, tegra_usb, 0x80>>2),
+        VMSTATE_UINT32_ARRAY(regs_queue, tegra_usb, 0x1000>>2),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -263,11 +263,11 @@ static void tegra_usb_priv_init(Object *obj)
     memory_region_init_io(&s->iomem, OBJECT(s), &tegra_usb_mem_ops, s,
                           "tegra.usb_susp_ctrl", 0x85C-0x400);
     memory_region_init_io(&s->iomem_queue, OBJECT(s), &tegra_usb_queue_mem_ops, s,
-                          "tegra.usb_queue", 0x80);
+                          "tegra.usb_queue", 0x1000);
     memory_region_add_subregion(&ehci->mem, 0x0, &s->iomem_config);
     memory_region_add_subregion(&ehci->mem, 0x1B4, &s->iomem_controller);
     memory_region_add_subregion(&ehci->mem, 0x400, &s->iomem);
-    //memory_region_add_subregion(&ehci->mem, 0x1000, &s->iomem_queue); // TODO: Fix this. ehci uses memory_region_init with size 0x1000, so memory_region_add_subregion can't be used with that here.
+    sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem_queue);
 }
 
 static void tegra_usb_class_init(ObjectClass *klass, void *data)
