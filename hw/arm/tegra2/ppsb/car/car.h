@@ -2071,6 +2071,9 @@ typedef union rst_cpu_cmplx_set_u {
     uint32_t reg32;
 } rst_cpu_cmplx_set_t;
 
+#define RST_CPUG_CMPLX_SET_OFFSET 0x450
+#define RST_CPUG_CMPLX_SET_RESET 0x2000feef
+
 #define RST_CPU_CMPLX_CLR_TEGRA2_OFFSET 0x344
 #define RST_CPU_CMPLX_CLR_TEGRA2_RESET  0x00002222
 #define RST_CPU_CMPLX_CLR_TEGRAX1_OFFSET 0x454
@@ -2128,5 +2131,7 @@ typedef union clk_source_la_u {
 
     uint32_t reg32;
 } clk_source_la_t;
+
+void tegra_car_orr_reg(void *opaque, hwaddr offset, int64_t value, unsigned size);
 
 #endif // TEGRA_CAR_H

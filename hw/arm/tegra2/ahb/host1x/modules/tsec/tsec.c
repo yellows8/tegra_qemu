@@ -28,13 +28,19 @@
 #include "host1x_module.h"
 #include "exec/address-spaces.h"
 #include "sysemu/dma.h"
+#include "qemu/log.h"
 #include "cpu.h"
 
 #include "iomap.h"
 #include "tegra_trace.h"
+#include "tegra_cpu.h"
+#include "devices.h"
 
 #include "tsec.h"
 #include "../apb/se/se.h"
+#include "../ppsb/evp/evp.h"
+#include "../ppsb/flow/flow.h"
+#include "../ppsb/car/car.h"
 
 #define TYPE_TEGRA_TSEC "tegra.tsec"
 #define TEGRA_TSEC(obj) OBJECT_CHECK(tegra_tsec, (obj), TYPE_TEGRA_TSEC)
@@ -55,6 +61,19 @@ typedef struct tegra_tsec_state {
     uint32_t outdata[4];
     uint32_t package1_key[4];
 } tegra_tsec;
+
+// From hactool.
+typedef struct {
+    uint32_t magic;
+    uint32_t wb_size;
+    uint32_t wb_ep;
+    uint32_t _0xC;
+    uint32_t bl_size;
+    uint32_t bl_ep;
+    uint32_t sm_size;
+    uint32_t sm_ep;
+    unsigned char data[];
+} pk11_t;
 
 static const VMStateDescription vmstate_tegra_tsec = {
     .name = "tegra.tsec",
@@ -147,19 +166,43 @@ static void tegra_tsec_priv_write(void *opaque, hwaddr offset,
                     dma_memory_read(&address_space_memory, inbuf, &pk11_info, sizeof(pk11_info), MEMTXATTRS_UNSPECIFIED);
                     inbuf+= sizeof(pk11_info);
 
-                    uint32_t tmpblock[4]={};
-                    if(tegra_se_crypto_operation(s->package1_key, pk11_info.iv, QCRYPTO_CIPHER_ALG_AES_128, QCRYPTO_CIPHER_MODE_CBC, false, inbuf, tmpblock, sizeof(tmpblock))==0) {
-                        if (tswap32(tmpblock[0]) != 0x31314B50) {
+                    pk11_t header={};
+
+                    if(tegra_se_crypto_operation(s->package1_key, pk11_info.iv, QCRYPTO_CIPHER_ALG_AES_128, QCRYPTO_CIPHER_MODE_CBC, false, inbuf, &header, sizeof(header))==0) {
+                        if (tswap32(header.magic) != 0x31314B50) { // PK11
                             Error *err = NULL;
                             error_setg(&err, "tegra.tsec: Decryption failed, invalid PK11 magicnum.");
                             if (err) error_report_err(err);
                         }
                         else {
-                            tegra_se_crypto_operation(s->package1_key, pk11_info.iv, QCRYPTO_CIPHER_ALG_AES_128, QCRYPTO_CIPHER_MODE_CBC, false, inbuf, NULL, tswap32(pk11_info.pk11_size));
+                            uint32_t pk11_size = tswap32(pk11_info.pk11_size);
+                            uint32_t bl_ep = tswap32(header.bl_ep);
+
+                            tegra_se_crypto_operation(s->package1_key, pk11_info.iv, QCRYPTO_CIPHER_ALG_AES_128, QCRYPTO_CIPHER_MODE_CBC, false, inbuf, NULL, pk11_size);
+
+                            if (bl_ep >= pk11_size) {
+                                qemu_log_mask(LOG_GUEST_ERROR, "tegra.tsec: Invalid PK11 bl_ep, bl_ep = 0x%x pk11_size = 0x%x.\n", bl_ep, pk11_size);
+                            }
+                            else {
+                                inbuf+= sizeof(header) + bl_ep;
+
+                                // Halt the BPMP, then set the reset vector used when the BPMP is reset below.
+                                tegra_flow_event_write(tegra_flow_dev, HALT_COP_EVENTS_OFFSET, 2<<29, TEGRA_BPMP); // FLOW_MODE_WAITEVENT
+                                tegra_evp_set_bpmp_reset_vector(inbuf);
+
+                                // Run the same CAR pokes as tsec-fw. Note that tsec-fw would do this before the halt write above.
+                                tegra_car_orr_reg(tegra_car_dev, RST_DEVICES_L_OFFSET, 0x9050C202, 4);
+                                tegra_car_orr_reg(tegra_car_dev, RST_DEVICES_H_OFFSET, 0x4000006, 4);
+                                tegra_car_orr_reg(tegra_car_dev, RST_DEVICES_U_OFFSET, 0x82000460, 4);
+
+                                tegra_car_orr_reg(tegra_car_dev, RST_DEVICES_H_OFFSET, 0x8, 4);
+                                tegra_car_orr_reg(tegra_car_dev, RST_CPUG_CMPLX_SET_OFFSET, 0x20000000, 4);
+                                tegra_car_orr_reg(tegra_car_dev, RST_CPUG_CMPLX_SET_OFFSET, 0x61FF000F, 4);
+
+                                tegra_flow_event_write(tegra_flow_dev, HALT_COP_EVENTS_OFFSET, 0, TEGRA_BPMP);
+                            }
                         }
                     }
-
-                    // TODO: Have the BPMP jump to PK11.
                 }
 
                 s->regs[TSEC_FALCON_MAILBOX1_OFFSET>>2] = 0xB0B0B0B0; // TsecResult_Success

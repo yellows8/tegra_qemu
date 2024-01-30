@@ -80,6 +80,12 @@ uint64_t tegra_evp_get_cpu_reset_vector(void) {
     return s->evp_regs[0][0];
 }
 
+void tegra_evp_set_bpmp_reset_vector(uint64_t value) {
+    tegra_evp *s = TEGRA_EVP(tegra_evp_dev);
+
+    s->evp_regs[1][0] = value;
+}
+
 static uint64_t tegra_evp_priv_read(void *opaque, hwaddr offset,
                                     unsigned size)
 {

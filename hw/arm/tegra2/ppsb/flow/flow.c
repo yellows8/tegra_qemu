@@ -611,9 +611,13 @@ void tegra_flow_wfe_handle(int cpu_id)
     tegra_flow_update_mode(s, cpu_id, 1);
 }
 
-static void tegra_flow_event_write(tegra_flow *s, hwaddr offset,
-                                   uint32_t value, int cpu_id)
+void tegra_flow_event_write(void *opaque, hwaddr offset,
+                            uint32_t value, int cpu_id)
 {
+    tegra_flow *s = opaque;
+
+    assert(cpu_id < TEGRA_NCPUS);
+
     TRACE_WRITE(s->iomem.addr, offset, s->halt_events[cpu_id].reg32, value);
 
     s->halt_events[cpu_id].reg32 = value;

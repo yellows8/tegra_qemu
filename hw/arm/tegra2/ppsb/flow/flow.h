@@ -147,4 +147,6 @@ typedef union ram_repair_u {
 #define BPMP_CLUSTER_CONTROL_OFFSET 0x98
 #define BPMP_CLUSTER_CONTROL_RESET  0x00000000
 
+void tegra_flow_event_write(void *opaque, hwaddr offset, uint32_t value, int cpu_id);
+
 #endif // TEGRA_FLOW_CTRL_H

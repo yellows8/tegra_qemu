@@ -805,22 +805,22 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
     case RST_DEVICES_L_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->rst_devices_l.reg32, value);
 
-        set_rst_devices_l(((s->rst_devices_l.reg32 & value) ^ value) & (s->clk_out_enb_l.reg32 | 6));
-        clr_rst_devices_l(s->rst_devices_l.reg32 & ~value & (s->clk_out_enb_l.reg32 | 6));
+        set_rst_devices_l(((s->rst_devices_l.reg32 ^ value) & value) & (s->clk_out_enb_l.reg32 | 6));
+        clr_rst_devices_l(((s->rst_devices_l.reg32 ^ value) & value) & (s->clk_out_enb_l.reg32 | 6));
         s->rst_devices_l.reg32 = value;
         break;
     case RST_DEVICES_H_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->rst_devices_h.reg32, value);
 
-        set_rst_devices_h(((s->rst_devices_h.reg32 & value) ^ value), s->clk_out_enb_h.reg32);
-        clr_rst_devices_h(s->rst_devices_h.reg32 & ~value, s->clk_out_enb_h.reg32);
+        set_rst_devices_h(((s->rst_devices_h.reg32 ^ value) & value), s->clk_out_enb_h.reg32);
+        clr_rst_devices_h(((s->rst_devices_h.reg32 ^ value) & value), s->clk_out_enb_h.reg32);
         s->rst_devices_h.reg32 = value;
         break;
     case RST_DEVICES_U_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->rst_devices_u.reg32, value);
 
-        set_rst_devices_u(((s->rst_devices_u.reg32 & value) ^ value) & s->clk_out_enb_u.reg32);
-        clr_rst_devices_u(s->rst_devices_u.reg32 & ~value & s->clk_out_enb_u.reg32);
+        set_rst_devices_u(((s->rst_devices_u.reg32 ^ value) & value) & s->clk_out_enb_u.reg32);
+        clr_rst_devices_u(((s->rst_devices_u.reg32 ^ value) & value) & s->clk_out_enb_u.reg32);
         s->rst_devices_u.reg32 = value;
         break;
     case CLK_OUT_ENB_L_OFFSET:
@@ -1384,6 +1384,12 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
     }
 }
 
+void tegra_car_orr_reg(void *opaque, hwaddr offset,
+                       int64_t value, unsigned size)
+{
+    tegra_car_priv_write(opaque, offset, tegra_car_priv_read(opaque, offset, 4) | value, 4);
+}
+
 static void tegra_car_priv_reset(DeviceState *dev)
 {
     tegra_car *s = TEGRA_CAR(dev);
@@ -1526,6 +1532,7 @@ static void tegra_car_priv_reset(DeviceState *dev)
     }
 
     memset(s->regs, 0, sizeof(s->regs));
+    s->regs[RST_CPUG_CMPLX_SET_OFFSET>>2] = RST_CPUG_CMPLX_SET_RESET;
 }
 
 static const MemoryRegionOps tegra_car_mem_ops = {
