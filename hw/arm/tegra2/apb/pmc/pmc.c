@@ -1073,7 +1073,7 @@ static void tegra_pmc_priv_reset(DeviceState *dev)
         s->regs[(UTMIP_UHSIC2_LINE_WAKEUP_OFFSET-0x160)>>2] = UTMIP_UHSIC2_LINE_WAKEUP_TEGRAX1_RESET;
         s->regs[(PG_MASK_CE0_OFFSET-0x160)>>2] = PG_MASK_CE0_TEGRAX1_RESET;
 
-        for (size_t i=0; i<sizeof(tegra_pmc_regdef_tegrax1_reset_table)/(sizeof(uint32_t)*2); i+=2) {
+        for (size_t i=0; i<sizeof(tegra_pmc_regdef_tegrax1_reset_table)/sizeof(uint32_t); i+=2) {
             s->regs[(tegra_pmc_regdef_tegrax1_reset_table[i]-0x160)>>2] = tegra_pmc_regdef_tegrax1_reset_table[i+1];
         }
     }
