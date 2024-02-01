@@ -255,6 +255,7 @@ static void tegra_tsec_priv_reset(DeviceState *dev)
             datalen = 0;
         }
         if (err) error_report_err(err);
+        err = NULL;
 
         if (qcrypto_secret_lookup("tegra.tsec.package1_key", &data, &datalen, &err)==0) {
             if (datalen > sizeof(s->package1_key)) {
