@@ -675,7 +675,7 @@ static void tegra_fuse_priv_write(void *opaque, hwaddr offset,
         s->fuse_privatekeydisable.reg32 |= value & 0x11;
         break;
     case FUSE_DISABLEREGPROGRAM_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->fuse_write_access_sw.reg32, value);
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_disableregprogram.reg32, value);
         s->fuse_disableregprogram.reg32 |= value & 0x1;
         break;
     case FUSE_WRITE_ACCESS_SW_OFFSET:
@@ -1073,7 +1073,7 @@ static void tegra_fuse_priv_reset(DeviceState *dev)
     s->fuse_fusebypass.reg32 = FUSE_FUSEBYPASS_RESET;
     s->fuse_privatekeydisable.reg32 = FUSE_PRIVATEKEYDISABLE_RESET;
     s->fuse_disableregprogram.reg32 = FUSE_DISABLEREGPROGRAM_RESET;
-    s->fuse_write_access_sw.reg32 = 0x0;
+    s->fuse_write_access_sw.reg32 = FUSE_WRITE_ACCESS_SW_RESET;
     s->fuse_priv2reshift.reg32 = FUSE_PRIV2RESHIFT_RESET;
     s->fuse_fusetime_rd3.reg32 = FUSE_FUSETIME_RD3_RESET;
     s->fuse_jtag_secureid_0.reg32 = FUSE_JTAG_SECUREID_0_RESET;

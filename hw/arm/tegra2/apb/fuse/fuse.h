@@ -67,25 +67,25 @@ typedef union fuse_fusewdata_u {
 } fuse_fusewdata_t;
 
 #define FUSE_FUSETIME_RD1_OFFSET 0x10
-#define FUSE_FUSETIME_RD1_RESET  0x00000000
+#define FUSE_FUSETIME_RD1_RESET  0x00030202
 typedef union fuse_fusetime_rd1_u {
     uint32_t reg32;
 } fuse_fusetime_rd1_t;
 
 #define FUSE_FUSETIME_RD2_OFFSET 0x14
-#define FUSE_FUSETIME_RD2_RESET  0x00000000
+#define FUSE_FUSETIME_RD2_RESET  0x00000021
 typedef union fuse_fusetime_rd2_u {
     uint32_t reg32;
 } fuse_fusetime_rd2_t;
 
 #define FUSE_FUSETIME_PGM1_OFFSET 0x18
-#define FUSE_FUSETIME_PGM1_RESET  0x00000000
+#define FUSE_FUSETIME_PGM1_RESET  0x04030202
 typedef union fuse_fusetime_pgm1_u {
     uint32_t reg32;
 } fuse_fusetime_pgm1_t;
 
 #define FUSE_FUSETIME_PGM2_OFFSET 0x1C
-#define FUSE_FUSETIME_PGM2_RESET  0x00000000
+#define FUSE_FUSETIME_PGM2_RESET  0x030400F0
 typedef union fuse_fusetime_pgm2_u {
     uint32_t reg32;
 } fuse_fusetime_pgm2_t;
@@ -133,13 +133,13 @@ typedef union fuse_write_access_sw_u {
 } fuse_write_access_sw_t;
 
 #define FUSE_PRIV2RESHIFT_OFFSET 0x3C
-#define FUSE_PRIV2RESHIFT_RESET  0x00000000
+#define FUSE_PRIV2RESHIFT_RESET  0x0001FE00
 typedef union fuse_priv2reshift_u {
     uint32_t reg32;
 } fuse_priv2reshift_t;
 
 #define FUSE_FUSETIME_RD3_OFFSET 0x4C
-#define FUSE_FUSETIME_RD3_RESET  0x00000000
+#define FUSE_FUSETIME_RD3_RESET  0x00000024
 typedef union fuse_fusetime_rd3_u {
     uint32_t reg32;
 } fuse_fusetime_rd3_t;
