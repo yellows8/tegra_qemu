@@ -195,10 +195,11 @@ static void tegra_tsec_priv_write(void *opaque, hwaddr offset,
                                 tegra_car_orr_reg(tegra_car_dev, RST_DEVICES_H_OFFSET, 0x4000006, 4);
                                 tegra_car_orr_reg(tegra_car_dev, RST_DEVICES_U_OFFSET, 0x82000460, 4);
 
-                                tegra_car_orr_reg(tegra_car_dev, RST_DEVICES_H_OFFSET, 0x8, 4);
+                                tegra_car_orr_reg(tegra_car_dev, RST_DEVICES_V_OFFSET, 0x8, 4);
                                 tegra_car_orr_reg(tegra_car_dev, RST_CPUG_CMPLX_SET_OFFSET, 0x20000000, 4);
                                 tegra_car_orr_reg(tegra_car_dev, RST_CPUG_CMPLX_SET_OFFSET, 0x61FF000F, 4);
 
+                                tegra_car_clear_reg(tegra_car_dev, RST_DEVICES_L_OFFSET, 0x2, 4);
                                 tegra_flow_event_write(tegra_flow_dev, HALT_COP_EVENTS_OFFSET, 0, TEGRA_BPMP);
                             }
                         }

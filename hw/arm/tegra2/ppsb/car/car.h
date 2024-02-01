@@ -1602,6 +1602,8 @@ typedef union clk_source_osc_u {
     uint32_t reg32;
 } clk_source_osc_t;
 
+#define CLK_OUT_ENB_X_OFFSET 0x280
+
 #define RST_DEV_L_SET_OFFSET 0x300
 #define RST_DEV_L_SET_RESET  0x3FFFFEC9
 typedef union rst_dev_l_set_u {
@@ -2102,6 +2104,17 @@ typedef union rst_cpu_cmplx_clr_u {
     uint32_t reg32;
 } rst_cpu_cmplx_clr_t;
 
+#define CPU_CMPLX_STATUS_OFFSET 0x470
+typedef union cpu_cmplx_status_u {
+    uint32_t reg32;
+} cpu_cmplx_status_t;
+
+#define RST_DEVICES_V_OFFSET 0x358
+
+#define RST_DEV_V_SET_OFFSET 0x430
+
+#define CLK_ENB_W_CLR_OFFSET 0x44C
+
 #define UTMIP_PLL_CFG0_OFFSET 0x480
 #define UTMIP_PLL_CFG0_RESET  0x00190100
 typedef union utmip_pll_cfg0_u {
@@ -2132,6 +2145,7 @@ typedef union clk_source_la_u {
     uint32_t reg32;
 } clk_source_la_t;
 
-void tegra_car_orr_reg(void *opaque, hwaddr offset, int64_t value, unsigned size);
+void tegra_car_orr_reg(void *opaque, hwaddr offset, uint64_t value, unsigned size);
+void tegra_car_clear_reg(void *opaque, hwaddr offset, uint64_t value, unsigned size);
 
 #endif // TEGRA_CAR_H
