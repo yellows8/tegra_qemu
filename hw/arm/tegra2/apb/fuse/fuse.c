@@ -1195,6 +1195,7 @@ static void tegra_fuse_priv_reset(DeviceState *dev)
         g_free(data);
     }
     if (err) error_report_err(err);
+    err = NULL;
 
     // Load the tegra.fuse.array secret into the fuse_array.
     // TODO: Should a different method be used to allow writing back fuses to disk, which were updated with FUSE_FUSECTRL CMD=WRITE?

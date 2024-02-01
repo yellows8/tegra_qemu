@@ -269,6 +269,8 @@ static void tegra_tsec_priv_reset(DeviceState *dev)
             data = NULL;
             datalen = 0;
         }
+        if (err) error_report_err(err);
+        err = NULL;
     }
 }
 
