@@ -46,4 +46,6 @@ enum SE_CONFIG_ENC_MODE {
 
 int tegra_se_crypto_operation(void* key, void* iv, QCryptoCipherAlgorithm cipher_alg, QCryptoCipherMode mode, bool encrypt, hwaddr inbuf_addr, void* outbuf, dma_addr_t databuf_size);
 
+void tegra_se_lock_aes_keyslot(uint32_t slot, uint32_t flags);
+
 #endif // TEGRA_SE_H

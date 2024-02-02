@@ -180,6 +180,8 @@ static void tegra_tsec_priv_write(void *opaque, hwaddr offset,
 
                             tegra_se_crypto_operation(s->package1_key, pk11_info.iv, QCRYPTO_CIPHER_ALG_AES_128, QCRYPTO_CIPHER_MODE_CBC, false, inbuf, NULL, pk11_size);
 
+                            tegra_se_lock_aes_keyslot(13, 0x100);
+
                             if (bl_ep >= pk11_size) {
                                 qemu_log_mask(LOG_GUEST_ERROR, "tegra.tsec: Invalid PK11 bl_ep, bl_ep = 0x%x pk11_size = 0x%x.\n", bl_ep, pk11_size);
                             }

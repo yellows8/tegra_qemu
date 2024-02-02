@@ -42,6 +42,7 @@
 
 #include "iomap.h"
 #include "tegra_trace.h"
+#include "devices.h"
 
 #include "qemu/cutils.h"
 #include "qemu/log.h"
@@ -693,6 +694,15 @@ int tegra_se_crypto_operation(void* key, void* iv, QCryptoCipherAlgorithm cipher
     return tmpret;
 }
 
+void tegra_se_lock_aes_keyslot(uint32_t slot, uint32_t flags) {
+    tegra_se *s = tegra_se_dev;
+
+    // We don't call this with any low-8-bits flags, so don't impl locking those.
+
+    if (flags & 0x100)
+        s->regs.SE_CRYPTO_SECURITY_PERKEY &= ~(1<<slot);
+}
+
 static uint64_t tegra_se_priv_read(void *opaque, hwaddr offset,
                                      unsigned size)
 {
@@ -1100,10 +1110,9 @@ static void tegra_se_priv_reset(DeviceState *dev)
     memset(s->aes_keytable, 0, sizeof(s->aes_keytable));
     memset(s->rsa_keytable, 0, sizeof(s->rsa_keytable));
 
-    // Setup SE as secmon requires. Proper way to do this would be to start emulation from BPMP bootrom/bootloader.
-
-    s->regs.SE_SE_SECURITY = (1 << 0); // SE_SECURITY SE_HARD_SETTING
-    if (tegra_board == TEGRAX1PLUS_BOARD) s->regs.SE_SE_SECURITY |= 1<<5; // SE_SECURITY Mariko sticky bit
+    s->regs.SE_SE_SECURITY = 0x00010005; // SECURITY_HARD_SETTING = NONSECURE, SECURITY_PERKEY_SETTING = NONSECURE, SECURITY_SOFT_SETTING = NONSECURE
+    if (tegra_board == TEGRAX1PLUS_BOARD) s->regs.SE_SE_SECURITY |= 1<<5; // SE_SECURITY TX1+ sticky bit
+    s->regs.SE_TZRAM_SECURITY = 0x1; // NONSECURE
     s->regs.SE_CRYPTO_SECURITY_PERKEY = 0xFFFF;
 
     Error *err = NULL;
@@ -1129,7 +1138,10 @@ static void tegra_se_priv_reset(DeviceState *dev)
         }
     }
 
+    s->regs.SE_RSA_SECURITY_PERKEY = 0x3;
     for (int keyslot=0; keyslot<2; keyslot++) s->regs.SE_RSA_KEYTABLE_ACCESS[keyslot] = 0x7;
+
+    s->regs._0x814 = 0x89040800;
 }
 
 static const MemoryRegionOps tegra_se_mem_ops = {
