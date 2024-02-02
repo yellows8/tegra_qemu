@@ -159,6 +159,11 @@ static void tegra_tsec_priv_write(void *opaque, hwaddr offset,
                     }
                 }
 
+                if (s->tsec_root_key_set)
+                    tegra_se_set_aes_keyslot(13, s->tsec_root_key, sizeof(s->tsec_root_key));
+                if (s->outdata_set) // tsec_key
+                    tegra_se_set_aes_keyslot(12, s->outdata, sizeof(s->outdata));
+
                 if (s->package1_key_set) { // Decrypt PK11 if the key is set.
                     struct {
                         uint32_t pk11_size;
@@ -183,11 +188,6 @@ static void tegra_tsec_priv_write(void *opaque, hwaddr offset,
                             uint32_t bl_ep = tswap32(header.bl_ep);
 
                             tegra_se_crypto_operation(s->package1_key, pk11_info.iv, QCRYPTO_CIPHER_ALG_AES_128, QCRYPTO_CIPHER_MODE_CBC, false, inbuf, NULL, pk11_size);
-
-                            if (s->tsec_root_key_set)
-                                tegra_se_set_aes_keyslot(13, s->tsec_root_key, sizeof(s->tsec_root_key));
-                            if (s->outdata_set) // tsec_key
-                                tegra_se_set_aes_keyslot(12, s->outdata, sizeof(s->outdata));
 
                             tegra_se_lock_aes_keyslot(13, 0x100);
 
