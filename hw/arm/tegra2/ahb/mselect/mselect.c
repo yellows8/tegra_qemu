@@ -58,13 +58,9 @@ static uint64_t tegra_mselect_priv_read(void *opaque, hwaddr offset,
     tegra_mselect *s = opaque;
     uint64_t ret = 0;
 
-    switch (offset) {
-    case CONFIG_OFFSET:
-        ret = s->config.reg32;
-        break;
-    default:
-        break;
-    }
+    // Mirror all regs to CONFIG_OFFSET.
+
+    ret = s->config.reg32;
 
     TRACE_READ(s->iomem.addr, offset, ret);
 
@@ -92,6 +88,8 @@ static void tegra_mselect_priv_reset(DeviceState *dev)
     tegra_mselect *s = TEGRA_MSELECT(dev);
 
     s->config.reg32 = CONFIG_RESET;
+
+    s->config.reg32 = 0xEAFFFFFE; // Validated by Erista NX_Bootloader with certain versions.
 }
 
 static const MemoryRegionOps tegra_mselect_mem_ops = {
