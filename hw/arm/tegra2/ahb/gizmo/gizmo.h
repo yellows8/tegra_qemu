@@ -637,7 +637,7 @@ typedef union xbar_spare_reg_u {
 } xbar_spare_reg_t;
 
 #define AHB_AVPC_MCCIF_FIFOCTRL_TEGRA2_OFFSET 0x23C
-#define AHB_AVPC_MCCIF_FIFOCTRL_TEGRAX1_OFFSET 0x12C
+#define AHB_AVPC_MCCIF_FIFOCTRL_TEGRAX1_OFFSET 0x11C
 #define AHB_AVPC_MCCIF_FIFOCTRL_RESET  0x00000000
 typedef union ahb_avpc_mccif_fifoctrl_u {
     struct {
@@ -701,7 +701,8 @@ typedef union ahb_arbitration_disable_u {
 } ahb_arbitration_disable_t;
 
 #define AHB_ARBITRATION_PRIORITY_CTRL_OFFSET 0x4
-#define AHB_ARBITRATION_PRIORITY_CTRL_RESET  0x00000000
+#define AHB_ARBITRATION_PRIORITY_CTRL_TEGRA2_RESET  0x00000000
+#define AHB_ARBITRATION_PRIORITY_CTRL_TEGRAX1_RESET 0xE0000000
 typedef union ahb_arbitration_priority_ctrl_u {
     struct {
         unsigned int ahb_priority_select:29;/*  0 = low priority */

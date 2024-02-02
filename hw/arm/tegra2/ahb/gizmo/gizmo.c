@@ -50,8 +50,8 @@ typedef struct tegra_ahb_gizmo_state {
     DEFINE_REG32(nand);
     DEFINE_REG32(sdmmc4);
     DEFINE_REG32(xio);
-    DEFINE_REG32(tzram);
     DEFINE_REG32(se);
+    DEFINE_REG32(tzram);
     DEFINE_REG32(bsev);
     DEFINE_REG32(bsea);
     DEFINE_REG32(nor);
@@ -80,12 +80,14 @@ typedef struct tegra_ahb_gizmo_state {
     DEFINE_REG32(ahb_arbitration_cop_abort_info);
     DEFINE_REG32(ahb_arbitration_cop_abort_addr);
     DEFINE_REG32(ahb_spare_reg);
+    DEFINE_REG32(xbar_spare_reg);
     DEFINE_REG32(ahb_avpc_mccif_fifoctrl);
     DEFINE_REG32(ahb_timeout_wcoal_avpc);
     DEFINE_REG32(ahb_mpcore_mccif_fifoctrl);
     DEFINE_REG32(ahb_arbitration_disable);
     DEFINE_REG32(ahb_arbitration_priority_ctrl);
     DEFINE_REG32(ahb_arbitration_usr_protect);
+    uint32_t regs[TEGRA_AHB_GIZMO_SIZE>>2];
 } tegra_ahb_gizmo;
 
 static const VMStateDescription vmstate_tegra_ahb_gizmo = {
@@ -109,8 +111,8 @@ static const VMStateDescription vmstate_tegra_ahb_gizmo = {
         VMSTATE_UINT32(nand.reg32, tegra_ahb_gizmo),
         VMSTATE_UINT32(sdmmc4.reg32, tegra_ahb_gizmo),
         VMSTATE_UINT32(xio.reg32, tegra_ahb_gizmo),
-        VMSTATE_UINT32(tzram.reg32, tegra_ahb_gizmo),
         VMSTATE_UINT32(se.reg32, tegra_ahb_gizmo),
+        VMSTATE_UINT32(tzram.reg32, tegra_ahb_gizmo),
         VMSTATE_UINT32(bsev.reg32, tegra_ahb_gizmo),
         VMSTATE_UINT32(bsea.reg32, tegra_ahb_gizmo),
         VMSTATE_UINT32(nor.reg32, tegra_ahb_gizmo),
@@ -139,21 +141,64 @@ static const VMStateDescription vmstate_tegra_ahb_gizmo = {
         VMSTATE_UINT32(ahb_arbitration_cop_abort_info.reg32, tegra_ahb_gizmo),
         VMSTATE_UINT32(ahb_arbitration_cop_abort_addr.reg32, tegra_ahb_gizmo),
         VMSTATE_UINT32(ahb_spare_reg.reg32, tegra_ahb_gizmo),
+        VMSTATE_UINT32(xbar_spare_reg.reg32, tegra_ahb_gizmo),
         VMSTATE_UINT32(ahb_avpc_mccif_fifoctrl.reg32, tegra_ahb_gizmo),
         VMSTATE_UINT32(ahb_timeout_wcoal_avpc.reg32, tegra_ahb_gizmo),
         VMSTATE_UINT32(ahb_mpcore_mccif_fifoctrl.reg32, tegra_ahb_gizmo),
         VMSTATE_UINT32(ahb_arbitration_disable.reg32, tegra_ahb_gizmo),
         VMSTATE_UINT32(ahb_arbitration_priority_ctrl.reg32, tegra_ahb_gizmo),
         VMSTATE_UINT32(ahb_arbitration_usr_protect.reg32, tegra_ahb_gizmo),
+        VMSTATE_UINT32_ARRAY(regs, tegra_ahb_gizmo, TEGRA_AHB_GIZMO_SIZE>>2),
         VMSTATE_END_OF_LIST()
     }
 };
+
+static uint32_t tegra_ahb_gizmo_regdef_tegrax1_reset_table[] = {
+    TEGRA_REGDEF_TABLE_RESET(AHB_ARBITRATION_PRIORITY_CTRL_0, 0x8, 0xE0000000)
+    TEGRA_REGDEF_TABLE_RESET(AHB_GIZMO_AHB_MEM_0, 0x10, 0x00020385)
+    TEGRA_REGDEF_TABLE_RESET(AHB_GIZMO_APB_DMA_0, 0x14, 0x00020000)
+    TEGRA_REGDEF_TABLE_RESET(AHB_GIZMO_USB_0, 0x20, 0x00020087)
+    TEGRA_REGDEF_TABLE_RESET(AHB_GIZMO_AHB_XBAR_BRIDGE_0, 0x24, 0x0000008D)
+    TEGRA_REGDEF_TABLE_RESET(AHB_GIZMO_CPU_AHB_BRIDGE_0, 0x28, 0x00060000)
+    TEGRA_REGDEF_TABLE_RESET(AHB_GIZMO_COP_AHB_BRIDGE_0, 0x2C, 0x00060000)
+    TEGRA_REGDEF_TABLE_RESET(AHB_GIZMO_XBAR_APB_CTLR_0, 0x30, 0x00000008)
+    TEGRA_REGDEF_TABLE_RESET(AHB_GIZMO_SE_0, 0x50, 0x00020000)
+    TEGRA_REGDEF_TABLE_RESET(AHB_GIZMO_TZRAM_0, 0x54, 0x00000081)
+    TEGRA_REGDEF_TABLE_RESET(AHB_GIZMO_USB2_0, 0x7C, 0x00020087)
+    TEGRA_REGDEF_TABLE_RESET(AHB_GIZMO_ARC_0, 0x98, 0x00060000)
+    TEGRA_REGDEF_TABLE_RESET(AHB_AHB_MEM_PREFETCH_CFG5_0, 0xCC, 0x14800800)
+    TEGRA_REGDEF_TABLE_RESET(AHB_AHB_MEM_PREFETCH_CFG6_0, 0xD0, 0x18800800)
+    TEGRA_REGDEF_TABLE_RESET(AHB_AHB_MEM_PREFETCH_CFG7_0, 0xD4, 0x1C800800)
+    TEGRA_REGDEF_TABLE_RESET(AHB_AHB_MEM_PREFETCH_CFG8_0, 0xD8, 0x20800800)
+    TEGRA_REGDEF_TABLE_RESET(AHB_AHB_MEM_PREFETCH_CFG3_0, 0xE4, 0x0C800800)
+    TEGRA_REGDEF_TABLE_RESET(AHB_AHB_MEM_PREFETCH_CFG4_0, 0xE8, 0x10800800)
+    TEGRA_REGDEF_TABLE_RESET(AHB_AHB_MEM_PREFETCH_CFG1_0, 0xF0, 0x04800800)
+    TEGRA_REGDEF_TABLE_RESET(AHB_AHB_MEM_PREFETCH_CFG2_0, 0xF4, 0x08800800)
+    TEGRA_REGDEF_TABLE_RESET(AHB_AHB_SPARE_REG_0, 0x110, 0x00000060)
+    TEGRA_REGDEF_TABLE_RESET(AHB_TIMEOUT_WCOAL_AVPC_0, 0x124, 0x00000032)
+};
+
+static hwaddr tegra_ahb_gizmo_adjust_offset(hwaddr offset)
+{
+    if (tegra_board >= TEGRAX1_BOARD) { // Convert X1 offsets to TEGRA2.
+        if (offset >= AHB_ARBITRATION_CPU_ABORT_INFO_OFFSET && offset <= AHB_ARBITRATION_COP_ABORT_ADDR_OFFSET) {
+            if (offset == AHB_ARBITRATION_CPU_ABORT_INFO_OFFSET || AHB_ARBITRATION_COP_ABORT_INFO_OFFSET) // These sets of regs were swapped since TEGRA2->X1.
+                offset += 0x4;
+            else
+                offset -= 0x4;
+        }
+    }
+
+    return offset;
+}
 
 static uint64_t tegra_ahb_gizmo_priv_read(void *opaque, hwaddr offset,
                                           unsigned size)
 {
     tegra_ahb_gizmo *s = opaque;
     uint64_t ret = 0;
+
+    offset = tegra_ahb_gizmo_adjust_offset(offset);
 
     switch (offset) {
     case AHB_MEM_OFFSET:
@@ -198,11 +243,11 @@ static uint64_t tegra_ahb_gizmo_priv_read(void *opaque, hwaddr offset,
     case XIO_OFFSET:
         ret = s->xio.reg32;
         break;
-    case TZRAM_OFFSET:
-        if (tegra_board >= TEGRAX1_BOARD) ret = s->tzram.reg32;
-        break;
     case SE_OFFSET:
         if (tegra_board >= TEGRAX1_BOARD) ret = s->se.reg32;
+        break;
+    case TZRAM_OFFSET:
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->tzram.reg32;
         break;
     case BSEV_OFFSET:
         ret = s->bsev.reg32;
@@ -288,6 +333,9 @@ static uint64_t tegra_ahb_gizmo_priv_read(void *opaque, hwaddr offset,
     case AHB_SPARE_REG_OFFSET:
         if (tegra_board >= TEGRAX1_BOARD) ret = s->ahb_spare_reg.reg32;
         break;
+    case XBAR_SPARE_REG_OFFSET:
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->xbar_spare_reg.reg32;
+        break;
     case AHB_MPCORE_MCCIF_FIFOCTRL_OFFSET:
         if (tegra_board >= TEGRAX1_BOARD) ret = s->ahb_mpcore_mccif_fifoctrl.reg32;
         break;
@@ -301,6 +349,9 @@ static uint64_t tegra_ahb_gizmo_priv_read(void *opaque, hwaddr offset,
         ret = s->ahb_arbitration_usr_protect.reg32;
         break;
     default:
+        if (tegra_board >= TEGRAX1_BOARD && offset != s->ahb_avpc_mccif_fifoctrl_offset && offset != s->ahb_timeout_wcoal_avpc_offset) {
+            if (offset <= sizeof(s->regs)-4) ret = s->regs[offset>>2];
+        }
         break;
     }
 
@@ -320,6 +371,8 @@ static void tegra_ahb_gizmo_priv_write(void *opaque, hwaddr offset,
                                        uint64_t value, unsigned size)
 {
     tegra_ahb_gizmo *s = opaque;
+
+    offset = tegra_ahb_gizmo_adjust_offset(offset);
 
     switch (offset) {
     case AHB_MEM_OFFSET:
@@ -378,13 +431,13 @@ static void tegra_ahb_gizmo_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->xio.reg32, value);
         s->xio.reg32 = value;
         break;
-    case TZRAM_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->tzram.reg32, value);
-        if (tegra_board >= TEGRAX1_BOARD) s->tzram.reg32 = value;
-        break;
     case SE_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->se.reg32, value);
         if (tegra_board >= TEGRAX1_BOARD) s->se.reg32 = value;
+        break;
+    case TZRAM_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->tzram.reg32, value);
+        if (tegra_board >= TEGRAX1_BOARD) s->tzram.reg32 = value;
         break;
     case BSEV_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->bsev.reg32, value);
@@ -474,6 +527,10 @@ static void tegra_ahb_gizmo_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->ahb_spare_reg.reg32, value);
         if (tegra_board >= TEGRAX1_BOARD) s->ahb_spare_reg.reg32 = value;
         break;
+    case XBAR_SPARE_REG_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->xbar_spare_reg.reg32, value);
+        if (tegra_board >= TEGRAX1_BOARD) s->xbar_spare_reg.reg32 = value;
+        break;
     case AHB_MPCORE_MCCIF_FIFOCTRL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->ahb_mpcore_mccif_fifoctrl.reg32, value);
         if (tegra_board >= TEGRAX1_BOARD) s->ahb_mpcore_mccif_fifoctrl.reg32 = value;
@@ -499,6 +556,12 @@ static void tegra_ahb_gizmo_priv_write(void *opaque, hwaddr offset,
             TRACE_WRITE(s->iomem.addr, offset, s->ahb_timeout_wcoal_avpc.reg32, value);
             s->ahb_timeout_wcoal_avpc.reg32 = value;
         }
+        if (tegra_board >= TEGRAX1_BOARD) {
+            if (offset <= sizeof(s->regs)-4) {
+                TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
+                s->regs[offset>>2] = value;
+            }
+        }
         else TRACE_WRITE(s->iomem.addr, offset, 0, value);
         break;
     }
@@ -522,8 +585,8 @@ static void tegra_ahb_gizmo_priv_reset(DeviceState *dev)
     s->nand.reg32 = NAND_RESET;
     s->sdmmc4.reg32 = SDMMC4_RESET;
     s->xio.reg32 = XIO_RESET;
-    s->tzram.reg32 = TZRAM_RESET;
     s->se.reg32 = SE_RESET;
+    s->tzram.reg32 = TZRAM_RESET;
     s->bsev.reg32 = BSEV_RESET;
     s->bsea.reg32 = BSEA_RESET;
     s->nor.reg32 = NOR_RESET;
@@ -552,20 +615,36 @@ static void tegra_ahb_gizmo_priv_reset(DeviceState *dev)
     s->ahb_arbitration_cop_abort_info.reg32 = AHB_ARBITRATION_COP_ABORT_INFO_RESET;
     s->ahb_arbitration_cop_abort_addr.reg32 = AHB_ARBITRATION_COP_ABORT_ADDR_RESET;
     s->ahb_spare_reg.reg32 = AHB_SPARE_REG_RESET;
+    s->xbar_spare_reg.reg32 = XBAR_SPARE_REG_RESET;
     s->ahb_avpc_mccif_fifoctrl.reg32 = AHB_AVPC_MCCIF_FIFOCTRL_RESET;
     s->ahb_timeout_wcoal_avpc.reg32 = AHB_TIMEOUT_WCOAL_AVPC_RESET;
     s->ahb_mpcore_mccif_fifoctrl.reg32 = AHB_MPCORE_MCCIF_FIFOCTRL_RESET;
     s->ahb_arbitration_disable.reg32 = AHB_ARBITRATION_DISABLE_RESET;
-    s->ahb_arbitration_priority_ctrl.reg32 = AHB_ARBITRATION_PRIORITY_CTRL_RESET;
     s->ahb_arbitration_usr_protect.reg32 = AHB_ARBITRATION_USR_PROTECT_RESET;
+
+    memset(s->regs, 0, sizeof(s->regs));
 
     if (tegra_board >= TEGRAX1_BOARD) {
         s->ahb_avpc_mccif_fifoctrl_offset = AHB_AVPC_MCCIF_FIFOCTRL_TEGRAX1_OFFSET;
         s->ahb_timeout_wcoal_avpc_offset = AHB_TIMEOUT_WCOAL_AVPC_TEGRAX1_OFFSET;
+
+        for (size_t i=0; i<sizeof(tegra_ahb_gizmo_regdef_tegrax1_reset_table)/sizeof(uint32_t); i+=2) {
+            uint32_t offset = tegra_ahb_gizmo_regdef_tegrax1_reset_table[i];
+            uint32_t value = tegra_ahb_gizmo_regdef_tegrax1_reset_table[i+1];
+
+            offset-= 0x4; // MMIO is mapped to base+0x4.
+
+            tegra_ahb_gizmo_priv_write(s, offset, value, 4);
+        }
+
+        // Setup regs as validated by Erista NX_Bootloader with certain versions.
+        s->regs[(0x90-0x4)>>2] = 0x00020000;
     }
     else {
         s->ahb_avpc_mccif_fifoctrl_offset = AHB_AVPC_MCCIF_FIFOCTRL_TEGRA2_OFFSET;
         s->ahb_timeout_wcoal_avpc_offset = AHB_TIMEOUT_WCOAL_AVPC_TEGRA2_OFFSET;
+
+        s->ahb_arbitration_priority_ctrl.reg32 = AHB_ARBITRATION_PRIORITY_CTRL_TEGRA2_RESET;
     }
 }
 
