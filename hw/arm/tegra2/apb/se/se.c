@@ -1092,6 +1092,14 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
             s->rsa_keytable[rsa_tableoffset] = value;
         break;
 
+        case SE_CRYPTO_SECURITY_PERKEY_OFFSET ... SE_CRYPTO_SECURITY_PERKEY_OFFSET+sizeof(s->regs.SE_CRYPTO_SECURITY_PERKEY)-1:
+            s->regs.SE_CRYPTO_SECURITY_PERKEY &= value;
+        break;
+
+        case SE_RSA_SECURITY_PERKEY_OFFSET ... SE_RSA_SECURITY_PERKEY_OFFSET+sizeof(s->regs.SE_RSA_SECURITY_PERKEY)-1:
+            s->regs.SE_RSA_SECURITY_PERKEY &= value;
+        break;
+
         case SE_RSA_KEYTABLE_ACCESS_OFFSET ... SE_RSA_KEYTABLE_ACCESS_OFFSET+sizeof(s->regs.SE_RSA_KEYTABLE_ACCESS)-1:
             s->regs.SE_RSA_KEYTABLE_ACCESS[(offset - SE_RSA_KEYTABLE_ACCESS_OFFSET) / 4] &= value;
         break;
