@@ -22,8 +22,22 @@
 #ifndef TEGRA_MC_H
 #define TEGRA_MC_H
 
-#define EMEM_ADR_CFG_OFFSET 0x10
-#define EMEM_ADR_CFG_RESET  0x00040202
+#define ERR_STATUS_OFFSET 0x8
+#define ERR_STATUS_RESET  0x00000000
+typedef union err_status_u {
+    uint32_t reg32;
+} err_status_t;
+
+#define SMMU_CONFIG_OFFSET 0x10
+#define SMMU_CONFIG_RESET  0x00000000
+typedef union smmu_config_u {
+    uint32_t reg32;
+} smmu_config_t;
+
+#define EMEM_ADR_CFG_TEGRA2_OFFSET  0x10
+#define EMEM_ADR_CFG_TEGRAX1_OFFSET 0x54
+#define EMEM_ADR_CFG_TEGRA2_RESET  0x00040202
+#define EMEM_ADR_CFG_TEGRAX1_RESET 0x00000000
 typedef union emem_adr_cfg_u {
     struct {
         unsigned int emem_colwidth:3;       /* 0 = W7; 1 = W8; 2 = W9; 3 = W10; 4 = W11 */
