@@ -703,6 +703,13 @@ void tegra_se_lock_aes_keyslot(uint32_t slot, uint32_t flags) {
         s->regs.SE_CRYPTO_SECURITY_PERKEY &= ~(1<<slot);
 }
 
+void tegra_se_set_aes_keyslot(uint32_t slot, void* key, size_t key_size) {
+    tegra_se *s = tegra_se_dev;
+
+    if (key_size > 0x20) key_size = 0x20;
+    memcpy(&s->aes_keytable[slot*0x10], key, key_size);
+}
+
 static uint64_t tegra_se_priv_read(void *opaque, hwaddr offset,
                                      unsigned size)
 {

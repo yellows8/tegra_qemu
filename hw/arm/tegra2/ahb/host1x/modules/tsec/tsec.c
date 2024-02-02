@@ -58,8 +58,10 @@ typedef struct tegra_tsec_state {
     uint32_t regs[TEGRA_TSEC_SIZE>>2];
     bool outdata_set;
     bool package1_key_set;
+    bool tsec_root_key_set;
     uint32_t outdata[4];
     uint32_t package1_key[4];
+    uint32_t tsec_root_key[4];
 } tegra_tsec;
 
 // From hactool.
@@ -84,8 +86,10 @@ static const VMStateDescription vmstate_tegra_tsec = {
         VMSTATE_UINT32_ARRAY(regs, tegra_tsec, TEGRA_TSEC_SIZE>>2),
         VMSTATE_BOOL(outdata_set, tegra_tsec),
         VMSTATE_BOOL(package1_key_set, tegra_tsec),
+        VMSTATE_BOOL(tsec_root_key_set, tegra_tsec),
         VMSTATE_UINT32_ARRAY(outdata, tegra_tsec, 4),
         VMSTATE_UINT32_ARRAY(package1_key, tegra_tsec, 4),
+        VMSTATE_UINT32_ARRAY(tsec_root_key, tegra_tsec, 4),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -180,6 +184,11 @@ static void tegra_tsec_priv_write(void *opaque, hwaddr offset,
 
                             tegra_se_crypto_operation(s->package1_key, pk11_info.iv, QCRYPTO_CIPHER_ALG_AES_128, QCRYPTO_CIPHER_MODE_CBC, false, inbuf, NULL, pk11_size);
 
+                            if (s->tsec_root_key_set)
+                                tegra_se_set_aes_keyslot(13, s->tsec_root_key, sizeof(s->tsec_root_key));
+                            if (s->outdata_set) // tsec_key
+                                tegra_se_set_aes_keyslot(12, s->outdata, sizeof(s->outdata));
+
                             tegra_se_lock_aes_keyslot(13, 0x100);
 
                             if (bl_ep >= pk11_size) {
@@ -228,6 +237,28 @@ static uint32_t tegra_tsec_module_read(struct host1x_module *module,
     return tegra_tsec_priv_read(module->opaque, offset<<2, 4);
 }
 
+static void tegra_tsec_load_key(const char *name, void* outdata, size_t maxsize, bool *flag)
+{
+    Error *err = NULL;
+    uint8_t *data=NULL;
+    size_t datalen = 0;
+    *flag = false;
+    if (qcrypto_secret_lookup(name, &data, &datalen, &err)==0) {
+        if (datalen > maxsize) {
+            error_setg(&err, "tegra.tsec: Invalid datalen for secret %s, datalen=0x%lx expected <=0x%lx.", name, datalen, maxsize);
+        }
+        else {
+            memcpy(outdata, data, datalen);
+            *flag = true;
+        }
+        g_free(data);
+        data = NULL;
+        datalen = 0;
+    }
+    if (err) error_report_err(err);
+    err = NULL;
+}
+
 static void tegra_tsec_priv_reset(DeviceState *dev)
 {
     tegra_tsec *s = TEGRA_TSEC(dev);
@@ -241,38 +272,10 @@ static void tegra_tsec_priv_reset(DeviceState *dev)
 
     // Load the tegra.tsec.outdata and tegra.tsec.package1_key secret into outdata/package1_key.
     if (s->engine == TEGRA_TSEC_ENGINE_TSEC) {
-        Error *err = NULL;
-        uint8_t *data=NULL;
-        size_t datalen = 0;
-        if (qcrypto_secret_lookup("tegra.tsec.outdata", &data, &datalen, &err)==0) {
-            if (datalen > sizeof(s->outdata)) {
-                error_setg(&err, "tegra.tsec: Invalid datalen for secret tegra.tsec.outdata, datalen=0x%lx expected <=0x%lx.", datalen, sizeof(s->outdata));
-            }
-            else {
-                memcpy(s->outdata, data, datalen);
-                s->outdata_set = true;
-            }
-            g_free(data);
-            data = NULL;
-            datalen = 0;
-        }
-        if (err) error_report_err(err);
-        err = NULL;
+        tegra_tsec_load_key("tegra.tsec.outdata", s->outdata, sizeof(s->outdata), &s->outdata_set);
 
-        if (qcrypto_secret_lookup("tegra.tsec.package1_key", &data, &datalen, &err)==0) {
-            if (datalen > sizeof(s->package1_key)) {
-                error_setg(&err, "tegra.tsec: Invalid datalen for secret tegra.tsec.package1_key, datalen=0x%lx expected <=0x%lx.", datalen, sizeof(s->package1_key));
-            }
-            else {
-                memcpy(s->package1_key, data, datalen);
-                s->package1_key_set = true;
-            }
-            g_free(data);
-            data = NULL;
-            datalen = 0;
-        }
-        if (err) error_report_err(err);
-        err = NULL;
+        tegra_tsec_load_key("tegra.tsec.package1_key", s->package1_key, sizeof(s->package1_key), &s->package1_key_set);
+        tegra_tsec_load_key("tegra.tsec.tsec_root_key", s->tsec_root_key, sizeof(s->tsec_root_key), &s->tsec_root_key_set);
     }
 }
 

@@ -57,7 +57,7 @@ Run Tegra X1
 
 * SE AES keys can optionally be specified via input secrets if needed. Repeat as needed for each keyslot: ``-object secret,id=se.aeskeyslot{decimal keyslot 0-15},file={path to raw keydata}`` Note that this should also include any keys which would be setup internally by tsec if required.
 
-* The TSEC outdata can optionally be configured with (size <=0x10-bytes): ``-object secret,id=tegra.tsec.outdata,file={path}`` The key used by tsec for PK11 decryption can be set with (should not be used if PK11-decryption isn't used): ``-object secret,id=tegra.tsec.package1_key,file={path}``
+* The TSEC outdata can optionally be configured with (size <=0x10-bytes): ``-object secret,id=tegra.tsec.outdata,file={path}`` The key used by tsec for PK11 decryption can be set with (should not be used if PK11-decryption isn't used): ``-object secret,id=tegra.tsec.package1_key,file={path}`` tegra.tsec.outdata is also used to set the tsec_key SE keyslot when package1_key is specified during PK11 decryption handling. To set the tsec_root_key SE keyslot when package1_key is specified during PK11 decryption handling (size <=0x10-bytes): ``-object secret,id=tegra.tsec.tsec_root_key,file={path}``
 
 * The ``-rotate {value}`` option is also supported for rotating the display.
 

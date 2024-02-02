@@ -48,4 +48,6 @@ int tegra_se_crypto_operation(void* key, void* iv, QCryptoCipherAlgorithm cipher
 
 void tegra_se_lock_aes_keyslot(uint32_t slot, uint32_t flags);
 
+void tegra_se_set_aes_keyslot(uint32_t slot, void* key, size_t key_size);
+
 #endif // TEGRA_SE_H
