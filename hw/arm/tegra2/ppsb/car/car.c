@@ -645,11 +645,10 @@ static void set_rst_devices_l(uint32_t value)
 
     if (rst.set_tmr_rst) {
         TPRINT("car: resetting timers\n");
-        tegra_device_reset( DEVICE(tegra_timer1_dev) );
-        tegra_device_reset( DEVICE(tegra_timer2_dev) );
+        for (size_t i=0; i<ARRAY_SIZE(tegra_timer_devs); i++) {
+            if (tegra_timer_devs[i]) tegra_device_reset( DEVICE(tegra_timer_devs[i]) );
+        }
         tegra_device_reset( DEVICE(tegra_timer_us_dev) );
-        tegra_device_reset( DEVICE(tegra_timer3_dev) );
-        tegra_device_reset( DEVICE(tegra_timer4_dev) );
     }
 
     if (rst.set_gpio_rst) {

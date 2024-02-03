@@ -24,32 +24,29 @@
 #ifndef TEGRA_WDT_H
 #define TEGRA_WDT_H
 
-#define PTV_OFFSET 0x0
-#define PTV_RESET  0x00000000
-typedef union ptv_u {
-    struct {
-        unsigned int tmr_ptv:29;            /* Trigger Value: count trigger value (count length). This is in n+1 scheme. If you program the value n, the count trigger value will actually be n+1 */
-        unsigned int undefined_bit_29:1;
-        unsigned int per:1;                 /* Enable Periodic Interrupt; 0 = DISABLE; 1 = ENABLE */
-        unsigned int en:1;                  /* Enable Timer; 0 = DISABLE; 1 = ENABLE */
-    };
-
+#define CONFIG_OFFSET 0x0
+#define CONFIG_RESET  0x00000000
+typedef union config_u {
     uint32_t reg32;
-} ptv_t;
+} config_t;
 
-#define PCR_OFFSET 0x4
-#define PCR_RESET  0x00000000
-#define PCR_WRMASK 0xE0000000
-typedef union pcr_u {
-    struct {
-        unsigned int tmr_pcv:29;            /* Counter value: decrements from PTV */
-        unsigned int undefined_bit_29:1;
-        unsigned int intr_clr:1;            /* 1 = clears the interrupt, 0 = no affect. Write-1-to-Clear */
-        unsigned int undefined_bit_31:1;
-    };
-
+#define STATUS_OFFSET 0x4
+#define STATUS_RESET  0x00000000
+typedef union status_u {
     uint32_t reg32;
-} pcr_t;
+} status_t;
+
+#define COMMAND_OFFSET 0x8
+#define COMMAND_RESET  0x00000000
+typedef union command_u {
+    uint32_t reg32;
+} command_t;
+
+#define UNLOCK_PATTERN_OFFSET 0xC
+#define UNLOCK_PATTERN_RESET  0x00000000
+typedef union unlock_pattern_u {
+    uint32_t reg32;
+} unlock_pattern_t;
 
 #define DEFINE_REG32(reg) reg##_t reg
 
@@ -58,9 +55,10 @@ typedef struct tegra_wdt_state {
 
     MemoryRegion iomem;
     ptimer_state *ptimer;
-    DEFINE_REG32(ptv);
-    DEFINE_REG32(pcr);
-    uint32_t regs[4];
+    DEFINE_REG32(config);
+    DEFINE_REG32(status);
+    DEFINE_REG32(command);
+    DEFINE_REG32(unlock_pattern);
     qemu_irq irq;
     int irq_sts;
 } tegra_wdt;

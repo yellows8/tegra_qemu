@@ -49,9 +49,10 @@ static const VMStateDescription vmstate_tegra_wdt = {
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
         VMSTATE_PTIMER(ptimer, tegra_wdt),
-        VMSTATE_UINT32(ptv.reg32, tegra_wdt),
-        VMSTATE_UINT32(pcr.reg32, tegra_wdt),
-        VMSTATE_UINT32_ARRAY(regs, tegra_wdt, 4),
+        VMSTATE_UINT32(config.reg32, tegra_wdt),
+        VMSTATE_UINT32(status.reg32, tegra_wdt),
+        VMSTATE_UINT32(command.reg32, tegra_wdt),
+        VMSTATE_UINT32(unlock_pattern.reg32, tegra_wdt),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -77,17 +78,20 @@ static uint64_t tegra_wdt_priv_read(void *opaque, hwaddr offset,
     uint64_t ret = 0;
 
     switch (offset) {
-    /*case PTV_OFFSET:
-        ret = s->ptv.reg32;
+    case CONFIG_OFFSET:
+        ret = s->config.reg32;
         break;
-    case PCR_OFFSET:
-        s->pcr.tmr_pcv = ptimer_get_count(s->ptimer);
-        ret = s->pcr.reg32;
-        break;*/
+    case STATUS_OFFSET:
+        ret = s->status.reg32;
+        break;
+    case COMMAND_OFFSET:
+        ret = s->command.reg32;
+        break;
+    case UNLOCK_PATTERN_OFFSET:
+        ret = s->unlock_pattern.reg32;
+        break;
     default:
         TRACE_READ(s->iomem.addr, offset, ret);
-        if (offset+size <= sizeof(s->regs)) ret = s->regs[offset>>2];
-        //g_assert_not_reached();
         break;
     }
 
@@ -102,11 +106,11 @@ static void tegra_wdt_priv_write(void *opaque, hwaddr offset,
     tegra_wdt *s = opaque;
 
     switch (offset) {
-    /*case PTV_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->ptv.reg32, value);
-        s->ptv.reg32 = value;
+    case CONFIG_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->config.reg32, value);
+        s->config.reg32 = value;
 
-        ptimer_transaction_begin(s->ptimer);
+        /*ptimer_transaction_begin(s->ptimer);
         ptimer_stop(s->ptimer);
 
         if (!s->ptv.en) {
@@ -120,22 +124,28 @@ static void tegra_wdt_priv_write(void *opaque, hwaddr offset,
 
         ptimer_set_limit(s->ptimer, s->ptv.tmr_ptv + 1, 1);
         ptimer_run(s->ptimer, !s->ptv.per);
-        ptimer_transaction_commit(s->ptimer);
+        ptimer_transaction_commit(s->ptimer);*/
         break;
-    case PCR_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->pcr.reg32, value & PCR_WRMASK);
-        WR_MASKED(s->pcr.reg32, value, PCR);
+    case STATUS_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->status.reg32, value);
+        s->status.reg32 = value;
 
-        if (s->pcr.intr_clr && s->irq_sts) {
+        /*if (s->pcr.intr_clr && s->irq_sts) {
             TRACE_IRQ_LOWER(s->iomem.addr, s->irq);
             s->irq_sts = 0;
 //             TPRINT("timer irq cleared\n");;
-        }
-        break;*/
+        }*/
+        break;
+    case COMMAND_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->command.reg32, value);
+        s->command.reg32 = value;
+        break;
+    case UNLOCK_PATTERN_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->unlock_pattern.reg32, value);
+        s->unlock_pattern.reg32 = value;
+        break;
     default:
         TRACE_WRITE(s->iomem.addr, offset, 0, value);
-        if (offset+size <= sizeof(s->regs)) s->regs[offset>>2] = value;
-        //g_assert_not_reached();
         break;
     }
 }
@@ -144,9 +154,10 @@ static void tegra_wdt_priv_reset(DeviceState *dev)
 {
     tegra_wdt *s = TEGRA_WDT(dev);
 
-    s->ptv.reg32 = PTV_RESET;
-    s->pcr.reg32 = PCR_RESET;
-    memset(s->regs, 0, sizeof(s->regs));
+    s->config.reg32 = CONFIG_RESET;
+    s->status.reg32 = STATUS_RESET;
+    s->command.reg32 = COMMAND_RESET;
+    s->unlock_pattern.reg32 = UNLOCK_PATTERN_RESET;
     s->irq_sts = 0;
 }
 

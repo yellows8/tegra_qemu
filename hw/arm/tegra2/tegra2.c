@@ -422,11 +422,11 @@ static void tegra2_init(MachineState *machine)
     }
 
     /* Timer1 */
-    tegra_timer1_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[0] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR1_BASE, DIRQ(INT_TMR1));
 
     /* Timer2 */
-    tegra_timer2_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[1] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR2_BASE, DIRQ(INT_TMR2));
 
     /* TimerUS */
@@ -434,11 +434,11 @@ static void tegra2_init(MachineState *machine)
                                               TEGRA_TMRUS_BASE, NULL);
 
     /* Timer3 */
-    tegra_timer3_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[2] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR3_BASE, DIRQ(INT_TMR3));
 
     /* Timer4 */
-    tegra_timer4_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[3] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR4_BASE, DIRQ(INT_TMR4));
 
     /* UARTD controller */

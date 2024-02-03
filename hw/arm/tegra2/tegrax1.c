@@ -606,15 +606,15 @@ static void __tegrax1_init(MachineState *machine)
     tegra_sdmmc4_dev = tegra_init_sdmmc(3, TEGRA_SDMMC4_BASE, DIRQ(INT_SDMMC4), true, 0x400000, &tegra_sdmmc4_vendor_dev);
 
     /* Timer0 */
-    tegra_timer10_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[0] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR0_BASE, DIRQ(INT_TMR0));
 
     /* Timer1 */
-    tegra_timer1_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[1] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR1_BASE, DIRQ(INT_TMR1));
 
     /* Timer2 */
-    tegra_timer2_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[2] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR2_BASE, DIRQ(INT_TMR2));
 
     /* TimerUS */
@@ -622,60 +622,64 @@ static void __tegrax1_init(MachineState *machine)
                                               TEGRA_TMRUS_BASE, NULL);
 
     /* Timer3 */
-    tegra_timer3_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[3] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR3_BASE, DIRQ(INT_TMR3));
 
     /* Timer4 */
-    tegra_timer4_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[4] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR4_BASE, DIRQ(INT_TMR4));
 
     /* Timer5 */
-    tegra_timer5_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[5] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR5_BASE, DIRQ(INT_TMR5));
 
     /* Timer6 */
-    tegra_timer6_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[6] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR6_BASE, DIRQ(INT_TMR6));
 
     /* Timer7 */
-    tegra_timer7_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[7] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR7_BASE, DIRQ(INT_TMR7));
 
     /* Timer8 */
-    tegra_timer8_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[8] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR8_BASE, DIRQ(INT_TMR8));
 
     /* Timer9 */
-    tegra_timer9_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[9] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR9_BASE, DIRQ(INT_TMR9));
 
     /* Timer10 */
-    tegra_timer10_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[10] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR10_BASE, DIRQ(INT_TMR10));
 
     /* Timer11 */
-    tegra_timer11_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[11] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR11_BASE, DIRQ(INT_TMR11));
 
     /* Timer12 */
-    tegra_timer12_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[12] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR12_BASE, DIRQ(INT_TMR12));
 
     /* Timer13 */
-    tegra_timer13_dev = sysbus_create_simple("tegra.timer",
+    tegra_timer_devs[13] = sysbus_create_simple("tegra.timer",
                                             TEGRA_TMR13_BASE, DIRQ(INT_TMR13));
 
     /* WDT */
-    tegra_wdt0_dev = sysbus_create_simple("tegra.wdt",
-                                           TEGRA_WDT0_BASE, DIRQ(INT_WDT_CPU));
-    tegra_wdt1_dev = sysbus_create_simple("tegra.wdt",
-                                           TEGRA_WDT1_BASE, DIRQ(INT_WDT_CPU));
-    tegra_wdt2_dev = sysbus_create_simple("tegra.wdt",
-                                           TEGRA_WDT2_BASE, DIRQ(INT_WDT_CPU));
-    tegra_wdt3_dev = sysbus_create_simple("tegra.wdt",
-                                           TEGRA_WDT3_BASE, DIRQ(INT_WDT_CPU));
-    tegra_wdt4_dev = sysbus_create_simple("tegra.wdt",
-                                           TEGRA_WDT4_BASE, DIRQ(INT_WDT_AVP));
+    tegra_wdt_devs[0] = sysbus_create_simple("tegra.wdt",
+                                             TEGRA_WDT0_BASE, DIRQ(INT_WDT_CPU));
+    tegra_wdt_devs[1] = sysbus_create_simple("tegra.wdt",
+                                             TEGRA_WDT1_BASE, DIRQ(INT_WDT_CPU));
+    tegra_wdt_devs[2] = sysbus_create_simple("tegra.wdt",
+                                             TEGRA_WDT2_BASE, DIRQ(INT_WDT_CPU));
+    tegra_wdt_devs[3] = sysbus_create_simple("tegra.wdt",
+                                             TEGRA_WDT3_BASE, DIRQ(INT_WDT_CPU));
+    tegra_wdt_devs[4] = sysbus_create_simple("tegra.wdt",
+                                             TEGRA_WDT4_BASE, DIRQ(INT_WDT_AVP));
+
+    /* Timer Shared */
+    tegra_timer_shared_dev = sysbus_create_simple("tegra.timer_shared",
+                                                  TEGRA_TMR_SHARED_BASE, NULL);
 
     /* UART controllers */
     tegra_uarta_dev = serial_mm_init(sysmem, TEGRA_UARTA_BASE, 2,

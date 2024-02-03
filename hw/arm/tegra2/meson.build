@@ -19,6 +19,7 @@ arm_ss.add(files(
   'ppsb/timer/timer.c',
   'ppsb/timer/timer_us.c',
   'ppsb/timer/wdt.c',
+  'ppsb/timer/timer_shared.c',
 
   'ahb/avpcache/avpcache.c',
   'ahb/apb_dma/apb_dma.c',
