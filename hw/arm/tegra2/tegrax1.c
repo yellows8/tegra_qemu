@@ -508,6 +508,9 @@ static void __tegrax1_init(MachineState *machine)
     sysbus_mmio_map(SYS_BUS_DEVICE(tegra_sb_dev), 0, TEGRA_SB_BASE);
     sysbus_mmio_map(SYS_BUS_DEVICE(tegra_sb_dev), 1, TEGRA_IPATCH_BASE);
 
+    /* Activity Monitor */
+    tegra_actmon_dev = tegra_init_dummyio(TEGRA_ACTMON_BASE, TEGRA_ACTMON_SIZE, "tegra.actmon");
+
     /* Embedded memory controller */
     tegra_emc_dev = sysbus_create_simple("tegra.emc", TEGRA_EMC_BASE, NULL);
     tegra_emc0_dev = sysbus_create_simple("tegra.emc", TEGRA_EMC0_BASE, NULL);
