@@ -165,6 +165,24 @@ typedef union irda_csr_u {
     uint32_t reg32;
 } irda_csr_t;
 
+#define RX_FIFO_CFG_OFFSET 0x24
+#define RX_FIFO_CFG_RESET  0x00000001
+typedef union rx_fifo_cfg_u {
+    uint32_t reg32;
+} rx_fifo_cfg_t;
+
+#define MIE_OFFSET 0x28
+#define MIE_RESET  0x0000000F
+typedef union mie_u {
+    uint32_t reg32;
+} mie_t;
+
+#define VENDOR_STATUS_OFFSET 0x2C
+#define VENDOR_STATUS_RESET  0x00000000
+typedef union vendor_status_u {
+    uint32_t reg32;
+} vendor_status_t;
+
 #define ASR_OFFSET 0x3C
 #define ASR_RESET  0x00000000
 typedef union asr_u {

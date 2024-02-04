@@ -42,6 +42,9 @@ typedef struct tegra_uart_state {
     DEFINE_REG32(msr);
     DEFINE_REG32(spr);
     DEFINE_REG32(irda_csr);
+    DEFINE_REG32(rx_fifo_cfg);
+    DEFINE_REG32(mie);
+    DEFINE_REG32(vendor_status);
     DEFINE_REG32(asr);
 } tegra_uart;
 
@@ -59,6 +62,9 @@ static const VMStateDescription vmstate_tegra_uart = {
         VMSTATE_UINT32(msr.reg32, tegra_uart),
         VMSTATE_UINT32(spr.reg32, tegra_uart),
         VMSTATE_UINT32(irda_csr.reg32, tegra_uart),
+        VMSTATE_UINT32(rx_fifo_cfg.reg32, tegra_uart),
+        VMSTATE_UINT32(mie.reg32, tegra_uart),
+        VMSTATE_UINT32(vendor_status.reg32, tegra_uart),
         VMSTATE_UINT32(asr.reg32, tegra_uart),
         VMSTATE_END_OF_LIST()
     }
@@ -69,6 +75,8 @@ static uint64_t tegra_uart_priv_read(void *opaque, hwaddr offset,
 {
     tegra_uart *s = opaque;
     uint64_t ret = 0;
+
+    offset+= 0x20; // MMIO is mapped to base+0x20.
 
     switch (offset) {
     case THR_DLAB_OFFSET:
@@ -98,6 +106,15 @@ static uint64_t tegra_uart_priv_read(void *opaque, hwaddr offset,
     case IRDA_CSR_OFFSET:
         ret = s->irda_csr.reg32;
         break;
+    case RX_FIFO_CFG_OFFSET:
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->rx_fifo_cfg.reg32;
+        break;
+    case MIE_OFFSET:
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->mie.reg32;
+        break;
+    case VENDOR_STATUS_OFFSET:
+        if (tegra_board >= TEGRAX1_BOARD) ret = s->vendor_status.reg32;
+        break;
     case ASR_OFFSET:
         ret = s->asr.reg32;
         break;
@@ -114,6 +131,8 @@ static void tegra_uart_priv_write(void *opaque, hwaddr offset,
                                   uint64_t value, unsigned size)
 {
     tegra_uart *s = opaque;
+
+    offset+= 0x20;
 
     switch (offset) {
     case THR_DLAB_OFFSET:
@@ -148,6 +167,18 @@ static void tegra_uart_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->irda_csr.reg32, value);
         s->irda_csr.reg32 = value;
         break;
+    case RX_FIFO_CFG_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->rx_fifo_cfg.reg32, value);
+        if (tegra_board >= TEGRAX1_BOARD) s->rx_fifo_cfg.reg32 = value;
+        break;
+    case MIE_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->mie.reg32, value);
+        if (tegra_board >= TEGRAX1_BOARD) s->mie.reg32 = value;
+        break;
+    case VENDOR_STATUS_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->vendor_status.reg32, value);
+        if (tegra_board >= TEGRAX1_BOARD) s->vendor_status.reg32 = value;
+        break;
     case ASR_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->asr.reg32, value);
         s->asr.reg32 = value;
@@ -171,6 +202,9 @@ static void tegra_uart_priv_reset(DeviceState *dev)
     s->msr.reg32 = MSR_RESET;
     s->spr.reg32 = SPR_RESET;
     s->irda_csr.reg32 = IRDA_CSR_RESET;
+    s->rx_fifo_cfg.reg32 = RX_FIFO_CFG_RESET;
+    s->mie.reg32 = MIE_RESET;
+    s->vendor_status.reg32 = VENDOR_STATUS_RESET;
     s->asr.reg32 = ASR_RESET;
 }
 
@@ -185,7 +219,7 @@ static void tegra_uart_priv_realize(DeviceState *dev, Error **errp)
     tegra_uart *s = TEGRA_UART(dev);
 
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_uart_mem_ops, s,
-                          "tegra.uart", 64);
+                          "tegra.uart", 0x20);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 }
 
