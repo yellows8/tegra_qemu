@@ -86,7 +86,7 @@ static uint64_t tegra_dc_priv_read(void *opaque, hwaddr offset,
     offset >>= 2;
 
     switch (offset) {
-    case 0x0 ... 0x4C1:
+    case 0x0 ... 0x4FF:
         if (offset < 0x80 || offset >= 0x300)
             ret = dc_handler.read(&s->dc, offset);
         else if (tegra_board >= TEGRAX1_BOARD) {
@@ -198,7 +198,7 @@ static void tegra_dc_priv_write(void *opaque, hwaddr offset,
     offset >>= 2;
 
     switch (offset) {
-    case 0x0 ... 0x4C1:
+    case 0x0 ... 0x4FF:
         TRACE_WRITE(s->iomem.addr, offset, old, value);
         if (offset < 0x80 || offset >= 0x300) {
             dc_handler.write(&s->dc, offset, value);
@@ -442,6 +442,7 @@ static uint32_t tegra_dc_module_read(struct host1x_module *module,
     return ret;
 }
 
+// NOTE: Blending is not handled.
 static void tegra_dc_compose(void *opaque)
 {
     tegra_dc *s = opaque;
@@ -458,6 +459,21 @@ static void tegra_dc_compose(void *opaque)
     }
 
     qemu_console_resize(s->console, width, height); // This will internally do nothing if resize isn't needed.
+
+    // Fill the image with the background color. pixman color is 16bit.
+    if (tegra_board >= TEGRAX1_BOARD) {
+        pixman_rectangle16_t rect = { .x = 0, .y = 0, .width = width, .height = height };
+        pixman_color_t color = { .red = s->dc.disp_blend_background_color.bkgnd_red<<8,
+                               .green = s->dc.disp_blend_background_color.bkgnd_green<<8,
+                               .blue = s->dc.disp_blend_background_color.bkgnd_blue<<8,
+                               .alpha = s->dc.disp_blend_background_color.bkgnd_alpha<<8 };
+
+        pixman_image_fill_rectangles(PIXMAN_OP_SRC,
+                                     qemu_console_surface(s->console)->image,
+                                     &color,
+                                     1,
+                                     &rect);
+    }
 
     tegra_dc_compose_window(s->console, &s->win_a);
     tegra_dc_compose_window(s->console, &s->win_b);

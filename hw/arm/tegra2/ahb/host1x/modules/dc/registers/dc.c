@@ -444,6 +444,9 @@ static uint32_t dc_read(void *regs, uint32_t offset)
     case DISP_DISP_MISC_CONTROL_OFFSET:
         ret = dc->disp_disp_misc_control.reg32;
         break;
+    case DISP_BLEND_BACKGROUND_COLOR_OFFSET:
+        if (tegra_board >= TEGRAX1_BOARD) ret = dc->disp_blend_background_color.reg32;
+        break;
     default:
         //g_assert_not_reached();
     }
@@ -900,6 +903,9 @@ static void dc_write(void *regs, uint32_t offset, uint32_t value)
     case DISP_DISP_MISC_CONTROL_OFFSET:
         dc->disp_disp_misc_control.reg32 = value;
         break;
+    case DISP_BLEND_BACKGROUND_COLOR_OFFSET:
+        if (tegra_board >= TEGRAX1_BOARD) dc->disp_blend_background_color.reg32 = value;
+        break;
     default:
         //g_assert_not_reached();
     }
@@ -1050,5 +1056,5 @@ regs_io_handler dc_handler = {
     .write = dc_write,
     .reset = dc_reset,
     .begin = 0x0,
-    .end   = 0x4C1,
+    .end   = 0x4FF,
 };

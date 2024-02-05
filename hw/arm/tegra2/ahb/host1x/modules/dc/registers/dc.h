@@ -2491,6 +2491,19 @@ typedef union disp_disp_misc_control_u {
     uint32_t reg32;
 } disp_disp_misc_control_t;
 
+#define DISP_BLEND_BACKGROUND_COLOR_OFFSET 0x4E4
+#define DISP_BLEND_BACKGROUND_COLOR_RESET  0x00000000
+typedef union disp_blend_background_color_u {
+    struct {
+        unsigned int bkgnd_red:8;
+        unsigned int bkgnd_green:8;
+        unsigned int bkgnd_blue:8;
+        unsigned int bkgnd_alpha:8;
+    };
+
+    uint32_t reg32;
+} disp_blend_background_color_t;
+
 typedef struct dc_regs {
     DEFINE_REG32(cmd_cont_syncpt_vsync);
     DEFINE_REG32(cmd_ctxsw);
@@ -2628,6 +2641,7 @@ typedef struct dc_regs {
     DEFINE_REG32(disp_mccif_display1b_hyst);
     DEFINE_REG32(disp_dac_crt_ctrl);
     DEFINE_REG32(disp_disp_misc_control);
+    DEFINE_REG32(disp_blend_background_color);
 } dc_regs;
 
 extern regs_io_handler dc_handler;
