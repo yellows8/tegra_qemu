@@ -18,15 +18,24 @@
  *  with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
-// Based on timer.c. TODO: Properly impl this?
+// Based on timer.c.
 
 #include "tegra_common.h"
 
 #include "hw/ptimer.h"
 #include "hw/sysbus.h"
 #include "qemu/main-loop.h"
+#include "qemu/log.h"
+#include "qapi/error.h"
+#include "sysemu/sysemu.h"
+#include "qapi/qapi-commands.h"
+#include "sysemu/watchdog.h"
+
+#include "tegra_cpu.h"
 
 #include "wdt.h"
+#include "timer.h"
+#include "devices.h"
 #include "iomap.h"
 #include "tegra_trace.h"
 
@@ -53,23 +62,91 @@ static const VMStateDescription vmstate_tegra_wdt = {
         VMSTATE_UINT32(status.reg32, tegra_wdt),
         VMSTATE_UINT32(command.reg32, tegra_wdt),
         VMSTATE_UINT32(unlock_pattern.reg32, tegra_wdt),
+        VMSTATE_INT32(expiration_count, tegra_wdt),
         VMSTATE_END_OF_LIST()
     }
 };
 
-/*static void tegra_wdt_alarm(void *opaque)
+static inline tegra_timer *tegra_wdt_get_timer_source(void *opaque)
+{
+    tegra_wdt *s = opaque;
+    tegra_timer *timer = NULL;
+
+    if (s->config.timer_source < ARRAY_SIZE(tegra_timer_devs)) {
+        timer = tegra_timer_devs[s->config.timer_source];
+    }
+
+    return timer;
+}
+
+void tegra_wdt_alarm(void *opaque)
 {
     tegra_wdt *s = opaque;
 
-    s->ptv.en = s->ptv.per;
+    s->expiration_count++;
 
 //     TPRINT("[%lu] tegra_wdt_alarm!\n", qemu_clock_get_us(QEMU_CLOCK_VIRTUAL));
-    if (!s->irq_sts) {
-	TRACE_IRQ_RAISE(s->iomem.addr, s->irq);
-    }
 
-    s->irq_sts = 1;
-}*/
+    if (s->expiration_count==1) { // IRQ
+        if (s->config.interrupt_en) {
+            if (!s->status.interrupt_status) {
+	        TRACE_IRQ_RAISE(s->iomem.addr, s->irq);
+            }
+
+            s->status.interrupt_status = 1;
+        }
+    }
+    else {
+        tegra_timer *timer = tegra_wdt_get_timer_source(s);
+        if (timer && !timer->pcr_read) {
+            if (s->expiration_count==2) { // FIQ
+                if (s->config.fiq_enable) {
+                    if (!s->status.fiq_status) {
+	                TRACE_IRQ_RAISE(s->iomem.addr, s->fiq);
+                    }
+
+                    s->status.fiq_status = 1;
+                }
+            }
+            else if (s->expiration_count==3) { // Directed reset
+                for (int cpu_id=0; cpu_id<5; cpu_id++) {
+                    if (s->config.core_reset_bitmap_en & (1<<cpu_id)) {
+                        qemu_log_mask(LOG_GUEST_ERROR, "tegra.wdt: Asserting reset for cpu %d.\n", cpu_id);
+                        tegra_cpu_reset_assert(cpu_id);
+                    }
+                }
+            }
+            else if (s->expiration_count==4) { // System reset
+                if (s->status.interrupt_status) {
+                    TRACE_IRQ_LOWER(s->iomem.addr, s->irq);
+                    s->status.interrupt_status = 0;
+                }
+
+                if (s->status.fiq_status) {
+                    TRACE_IRQ_LOWER(s->iomem.addr, s->fiq);
+                    s->status.fiq_status = 0;
+                }
+
+                if (s->config.system_reset_enable || s->config.pmc2car_reset_enable) {
+                    qemu_log_mask(LOG_GUEST_ERROR, "tegra.wdt: Requesting a system reset.\n");
+                    Error *err = NULL;
+                    qmp_watchdog_set_action(WATCHDOG_ACTION_RESET, &err);
+                    watchdog_perform_action();
+                    if (err) error_report_err(err);
+                }
+                else {
+                    for (int cpu_id=0; cpu_id<5; cpu_id++) {
+                        if (s->config.core_reset_bitmap_en & (1<<cpu_id)) {
+                            qemu_log_mask(LOG_GUEST_ERROR, "tegra.wdt: Deasserting reset for cpu %d.\n", cpu_id);
+                            tegra_cpu_reset_deassert(cpu_id, 0);
+                        }
+                    }
+                }
+                s->status.enabled = 0;
+            }
+        }
+    }
+}
 
 static uint64_t tegra_wdt_priv_read(void *opaque, hwaddr offset,
                                       unsigned size)
@@ -82,7 +159,13 @@ static uint64_t tegra_wdt_priv_read(void *opaque, hwaddr offset,
         ret = s->config.reg32;
         break;
     case STATUS_OFFSET:
-        ret = s->status.reg32;
+        status_t out = { .reg32 = s->status.reg32 };
+        out.current_expiration_count = s->expiration_count+1;
+
+        tegra_timer *timer = tegra_wdt_get_timer_source(s);
+        if (timer) out.current_count = tegra_timer_get_count(timer);
+
+        ret = out.reg32;
         break;
     case COMMAND_OFFSET:
         ret = s->command.reg32;
@@ -108,37 +191,32 @@ static void tegra_wdt_priv_write(void *opaque, hwaddr offset,
     switch (offset) {
     case CONFIG_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->config.reg32, value);
-        s->config.reg32 = value;
-
-        /*ptimer_transaction_begin(s->ptimer);
-        ptimer_stop(s->ptimer);
-
-        if (!s->ptv.en) {
-            ptimer_transaction_commit(s->ptimer);
-            break;
+        if (s->status.enabled)
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra.wdt: Ignoring write to CONFIG with the watchdog already enabled.\n");
+        else {
+            s->config.reg32 = value;
         }
-
-//         TPRINT("[%lu] timer set to %d\n", qemu_clock_get_us(QEMU_CLOCK_VIRTUAL), s->ptv.tmr_ptv);
-
-        //assert((s->ptv.tmr_ptv && s->ptv.per) || !s->ptv.per);
-
-        ptimer_set_limit(s->ptimer, s->ptv.tmr_ptv + 1, 1);
-        ptimer_run(s->ptimer, !s->ptv.per);
-        ptimer_transaction_commit(s->ptimer);*/
         break;
-    case STATUS_OFFSET:
+    case STATUS_OFFSET: // STATUS is read-only.
         TRACE_WRITE(s->iomem.addr, offset, s->status.reg32, value);
-        s->status.reg32 = value;
-
-        /*if (s->pcr.intr_clr && s->irq_sts) {
-            TRACE_IRQ_LOWER(s->iomem.addr, s->irq);
-            s->irq_sts = 0;
-//             TPRINT("timer irq cleared\n");;
-        }*/
+        qemu_log_mask(LOG_GUEST_ERROR, "tegra.wdt: Ignoring write to read-only STATUS.\n");
         break;
     case COMMAND_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->command.reg32, value);
         s->command.reg32 = value;
+        if (s->command.start_counter) { // enable counter
+            s->status.enabled = 1;
+            s->expiration_count = -1;
+            s->status.interrupt_status = 0;
+            s->status.fiq_status = 0;
+
+            tegra_timer *timer = tegra_wdt_get_timer_source(s);
+            if (timer) timer->pcr_read = false;
+        }
+        else if (s->command.disable_counter && s->unlock_pattern.unlock_pattern == 0xC45A) { // disable counter
+            s->status.enabled = 0;
+        }
+        s->unlock_pattern.unlock_pattern = 0;
         break;
     case UNLOCK_PATTERN_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->unlock_pattern.reg32, value);
@@ -158,7 +236,7 @@ static void tegra_wdt_priv_reset(DeviceState *dev)
     s->status.reg32 = STATUS_RESET;
     s->command.reg32 = COMMAND_RESET;
     s->unlock_pattern.reg32 = UNLOCK_PATTERN_RESET;
-    s->irq_sts = 0;
+    s->expiration_count = -1;
 }
 
 static const MemoryRegionOps tegra_wdt_mem_ops = {
@@ -172,15 +250,11 @@ static void tegra_wdt_priv_realize(DeviceState *dev, Error **errp)
     tegra_wdt *s = TEGRA_WDT(dev);
 
     sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq);
+    sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->fiq);
 
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_wdt_mem_ops, s,
                           TYPE_TEGRA_WDT, TEGRA_WDT0_SIZE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
-
-    /*s->ptimer = ptimer_init(tegra_wdt_alarm, s, PTIMER_POLICY);
-    ptimer_transaction_begin(s->ptimer);
-    ptimer_set_freq(s->ptimer, 1000000 * SCALE);
-    ptimer_transaction_commit(s->ptimer);*/
 }
 
 static void tegra_wdt_class_init(ObjectClass *klass, void *data)

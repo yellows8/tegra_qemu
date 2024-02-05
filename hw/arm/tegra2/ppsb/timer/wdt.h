@@ -27,24 +27,52 @@
 #define CONFIG_OFFSET 0x0
 #define CONFIG_RESET  0x00000000
 typedef union config_u {
+    struct {
+        unsigned int timer_source:4;
+        unsigned int period:8;
+        unsigned int interrupt_en:1;
+        unsigned int fiq_enable:1;
+        unsigned int system_reset_enable:1;
+        unsigned int pmc2car_reset_enable:1;
+        unsigned int core_reset_bitmap_en:5;
+    };
+
     uint32_t reg32;
 } config_t;
 
 #define STATUS_OFFSET 0x4
 #define STATUS_RESET  0x00000000
 typedef union status_u {
+    struct {
+        unsigned int enabled:1;
+        unsigned int interrupt_status:1;
+        unsigned int fiq_status:1;
+        unsigned int undefined_bit_3:1;
+        unsigned int current_count:8;
+        unsigned int current_expiration_count:2;
+    };
+
     uint32_t reg32;
 } status_t;
 
 #define COMMAND_OFFSET 0x8
 #define COMMAND_RESET  0x00000000
 typedef union command_u {
+    struct {
+        unsigned int start_counter:1;
+        unsigned int disable_counter:1;
+    };
+
     uint32_t reg32;
 } command_t;
 
 #define UNLOCK_PATTERN_OFFSET 0xC
 #define UNLOCK_PATTERN_RESET  0x00000000
 typedef union unlock_pattern_u {
+    struct {
+        unsigned int unlock_pattern:15;
+    };
+
     uint32_t reg32;
 } unlock_pattern_t;
 
@@ -60,7 +88,10 @@ typedef struct tegra_wdt_state {
     DEFINE_REG32(command);
     DEFINE_REG32(unlock_pattern);
     qemu_irq irq;
-    int irq_sts;
+    qemu_irq fiq;
+    int expiration_count;
 } tegra_wdt;
+
+void tegra_wdt_alarm(void *opaque);
 
 #endif // TEGRA_WDT_H

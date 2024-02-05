@@ -31,6 +31,7 @@
 #include "tegra_cpu.h"
 #include "tegra_trace.h"
 #include "devices.h"
+#include "iomap.h"
 
 #include "evp.h"
 
@@ -42,6 +43,8 @@ typedef struct tegra_evp_state {
 
     MemoryRegion iomem;
     MemoryRegion lovec_mem;
+    uint32_t cpu_reset_vector;
+    uint32_t bpmp_reset_vector;
     uint32_t evp_regs[2][36];
 } tegra_evp;
 
@@ -50,6 +53,8 @@ static const VMStateDescription vmstate_tegra_evp = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
+        VMSTATE_UINT32(cpu_reset_vector, tegra_evp),
+        VMSTATE_UINT32(bpmp_reset_vector, tegra_evp),
         VMSTATE_UINT32_2DARRAY(evp_regs, tegra_evp, 2, 36),
         VMSTATE_END_OF_LIST()
     }
@@ -170,9 +175,10 @@ static void tegra_evp_priv_reset(DeviceState *dev)
     tegra_evp *s = TEGRA_EVP(dev);
     int i;
 
-    for (i = 0; i < 2; i++) {
-        /*if (i!=0)
-            s->evp_regs[i][0]  = EVP_RESET_VECTOR_RESET;*/
+    s->evp_regs[0][0] = s->cpu_reset_vector;
+    s->evp_regs[1][0] = s->bpmp_reset_vector;
+
+    for (i = 0; i < 1; i++) {
         s->evp_regs[i][1]  = EVP_UNDEF_VECTOR_RESET;
         s->evp_regs[i][2]  = EVP_SWI_VECTOR_RESET;
         s->evp_regs[i][3]  = EVP_PREFETCH_ABORT_VECTOR_RESET;
@@ -211,7 +217,7 @@ static void tegra_evp_priv_reset(DeviceState *dev)
     }
 
     for (i = 1; i < 0x20>>2; i++) {
-        s->evp_regs[1][i] = 0x00100000 + (i<<2);
+        s->evp_regs[1][i] = TEGRA_IROM_BASE + (i<<2);
     }
 }
 
@@ -299,8 +305,8 @@ static void tegra_evp_priv_realize(DeviceState *dev, Error **errp)
 }
 
 static Property tegra_evp_properties[] = {
-    DEFINE_PROP_UINT32("cpu-reset-vector", tegra_evp, evp_regs[0][0], EVP_RESET_VECTOR_RESET), \
-    DEFINE_PROP_UINT32("bpmp-reset-vector", tegra_evp, evp_regs[1][0], 0x00100000), \
+    DEFINE_PROP_UINT32("cpu-reset-vector", tegra_evp, cpu_reset_vector, EVP_RESET_VECTOR_RESET), \
+    DEFINE_PROP_UINT32("bpmp-reset-vector", tegra_evp, bpmp_reset_vector, TEGRA_IROM_BASE), \
     DEFINE_PROP_END_OF_LIST(),
 };
 

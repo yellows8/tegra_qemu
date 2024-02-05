@@ -60,6 +60,10 @@ typedef struct tegra_timer_state {
     DEFINE_REG32(pcr);
     qemu_irq irq;
     int irq_sts;
+    uint32_t id;
+    bool pcr_read;
 } tegra_timer;
+
+uint64_t tegra_timer_get_count(void *opaque);
 
 #endif // TEGRA_TIMER_H

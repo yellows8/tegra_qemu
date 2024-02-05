@@ -24,8 +24,10 @@
 #include "qemu/main-loop.h"
 
 #include "timer.h"
+#include "wdt.h"
 #include "iomap.h"
 #include "tegra_trace.h"
+#include "devices.h"
 
 #define TYPE_TEGRA_TIMER "tegra.timer"
 #define TEGRA_TIMER(obj) OBJECT_CHECK(tegra_timer, (obj), TYPE_TEGRA_TIMER)
@@ -48,6 +50,8 @@ static const VMStateDescription vmstate_tegra_timer = {
         VMSTATE_PTIMER(ptimer, tegra_timer),
         VMSTATE_UINT32(ptv.reg32, tegra_timer),
         VMSTATE_UINT32(pcr.reg32, tegra_timer),
+        VMSTATE_UINT32(id, tegra_timer),
+        VMSTATE_BOOL(pcr_read, tegra_timer),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -64,6 +68,22 @@ static void tegra_timer_alarm(void *opaque)
     }
 
     s->irq_sts = 1;
+
+    // Handle the watchdog timers which are configured for using the current timer.
+    for (size_t i=0; i<ARRAY_SIZE(tegra_wdt_devs); i++) {
+        tegra_wdt *wdt = tegra_wdt_devs[i];
+        if (wdt && wdt->status.enabled && wdt->config.timer_source == s->id) {
+            ptimer_set_limit(s->ptimer, wdt->config.period ? wdt->config.period : 0xFF, 1);
+            tegra_wdt_alarm(wdt);
+        }
+    }
+}
+
+uint64_t tegra_timer_get_count(void *opaque)
+{
+    tegra_timer *s = opaque;
+
+    return ptimer_get_count(s->ptimer);
 }
 
 static uint64_t tegra_timer_priv_read(void *opaque, hwaddr offset,
@@ -77,8 +97,9 @@ static uint64_t tegra_timer_priv_read(void *opaque, hwaddr offset,
         ret = s->ptv.reg32;
         break;
     case PCR_OFFSET:
-        s->pcr.tmr_pcv = ptimer_get_count(s->ptimer);
+        s->pcr.tmr_pcv = tegra_timer_get_count(s);
         ret = s->pcr.reg32;
+        s->pcr_read = true; // Used by wdt.
         break;
     default:
         TRACE_READ(s->iomem.addr, offset, ret);
@@ -141,6 +162,7 @@ static void tegra_timer_priv_reset(DeviceState *dev)
     s->ptv.reg32 = PTV_RESET;
     s->pcr.reg32 = PCR_RESET;
     s->irq_sts = 0;
+    s->pcr_read = false;
 }
 
 static const MemoryRegionOps tegra_timer_mem_ops = {
@@ -165,10 +187,16 @@ static void tegra_timer_priv_realize(DeviceState *dev, Error **errp)
     ptimer_transaction_commit(s->ptimer);
 }
 
+static Property tegra_timer_properties[] = {
+    DEFINE_PROP_UINT32("id", tegra_timer, id, 0), \
+    DEFINE_PROP_END_OF_LIST(),
+};
+
 static void tegra_timer_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    device_class_set_props(dc, tegra_timer_properties);
     dc->realize = tegra_timer_priv_realize;
     dc->vmsd = &vmstate_tegra_timer;
     dc->reset = tegra_timer_priv_reset;

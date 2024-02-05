@@ -339,6 +339,17 @@ static void* tegra_init_dummyio(hwaddr base, uint32_t size, const char *name)
     return tmpdev;
 }
 
+static void* tegra_init_timer(hwaddr base, qemu_irq irq, uint32_t id)
+{
+    void* tmpdev = qdev_new("tegra.timer");
+    qdev_prop_set_uint32(tmpdev, "id", id);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(tmpdev), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(tmpdev), 0, base);
+    sysbus_connect_irq(SYS_BUS_DEVICE(tmpdev), 0, irq);
+
+    return tmpdev;
+}
+
 static void __tegrax1_init(MachineState *machine)
 {
     MemoryRegion *cop_sysmem = g_new0(MemoryRegion, 1);
@@ -606,66 +617,53 @@ static void __tegrax1_init(MachineState *machine)
     tegra_sdmmc4_dev = tegra_init_sdmmc(3, TEGRA_SDMMC4_BASE, DIRQ(INT_SDMMC4), true, 0x400000, &tegra_sdmmc4_vendor_dev);
 
     /* Timer0 */
-    tegra_timer_devs[0] = sysbus_create_simple("tegra.timer",
-                                            TEGRA_TMR0_BASE, DIRQ(INT_TMR0));
+    tegra_timer_devs[0] = tegra_init_timer(TEGRA_TMR0_BASE, DIRQ(INT_TMR0), 0);
 
     /* Timer1 */
-    tegra_timer_devs[1] = sysbus_create_simple("tegra.timer",
-                                            TEGRA_TMR1_BASE, DIRQ(INT_TMR1));
+    tegra_timer_devs[1] = tegra_init_timer(TEGRA_TMR1_BASE, DIRQ(INT_TMR1), 1);
 
     /* Timer2 */
-    tegra_timer_devs[2] = sysbus_create_simple("tegra.timer",
-                                            TEGRA_TMR2_BASE, DIRQ(INT_TMR2));
+    tegra_timer_devs[2] = tegra_init_timer(TEGRA_TMR2_BASE, DIRQ(INT_TMR2), 2);
 
     /* TimerUS */
     tegra_timer_us_dev = sysbus_create_simple("tegra.timer_us",
                                               TEGRA_TMRUS_BASE, NULL);
 
     /* Timer3 */
-    tegra_timer_devs[3] = sysbus_create_simple("tegra.timer",
-                                            TEGRA_TMR3_BASE, DIRQ(INT_TMR3));
+    tegra_timer_devs[3] = tegra_init_timer(TEGRA_TMR3_BASE, DIRQ(INT_TMR3), 3);
 
     /* Timer4 */
-    tegra_timer_devs[4] = sysbus_create_simple("tegra.timer",
-                                            TEGRA_TMR4_BASE, DIRQ(INT_TMR4));
+    tegra_timer_devs[4] = tegra_init_timer(TEGRA_TMR4_BASE, DIRQ(INT_TMR4), 4);
 
     /* Timer5 */
-    tegra_timer_devs[5] = sysbus_create_simple("tegra.timer",
-                                            TEGRA_TMR5_BASE, DIRQ(INT_TMR5));
+    tegra_timer_devs[5] = tegra_init_timer(TEGRA_TMR5_BASE, DIRQ(INT_TMR5), 5);
 
     /* Timer6 */
-    tegra_timer_devs[6] = sysbus_create_simple("tegra.timer",
-                                            TEGRA_TMR6_BASE, DIRQ(INT_TMR6));
+    tegra_timer_devs[6] = tegra_init_timer(TEGRA_TMR6_BASE, DIRQ(INT_TMR6), 6);
 
     /* Timer7 */
-    tegra_timer_devs[7] = sysbus_create_simple("tegra.timer",
-                                            TEGRA_TMR7_BASE, DIRQ(INT_TMR7));
+    tegra_timer_devs[7] = tegra_init_timer(TEGRA_TMR7_BASE, DIRQ(INT_TMR7), 7);
 
     /* Timer8 */
-    tegra_timer_devs[8] = sysbus_create_simple("tegra.timer",
-                                            TEGRA_TMR8_BASE, DIRQ(INT_TMR8));
+    tegra_timer_devs[8] = tegra_init_timer(TEGRA_TMR8_BASE, DIRQ(INT_TMR8), 8);
 
     /* Timer9 */
-    tegra_timer_devs[9] = sysbus_create_simple("tegra.timer",
-                                            TEGRA_TMR9_BASE, DIRQ(INT_TMR9));
+    tegra_timer_devs[9] = tegra_init_timer(TEGRA_TMR9_BASE, DIRQ(INT_TMR9), 9);
 
     /* Timer10 */
-    tegra_timer_devs[10] = sysbus_create_simple("tegra.timer",
-                                            TEGRA_TMR10_BASE, DIRQ(INT_TMR10));
+    tegra_timer_devs[10] = tegra_init_timer(TEGRA_TMR10_BASE, DIRQ(INT_TMR10), 10);
 
     /* Timer11 */
-    tegra_timer_devs[11] = sysbus_create_simple("tegra.timer",
-                                            TEGRA_TMR11_BASE, DIRQ(INT_TMR11));
+    tegra_timer_devs[11] = tegra_init_timer(TEGRA_TMR11_BASE, DIRQ(INT_TMR11), 11);
 
     /* Timer12 */
-    tegra_timer_devs[12] = sysbus_create_simple("tegra.timer",
-                                            TEGRA_TMR12_BASE, DIRQ(INT_TMR12));
+    tegra_timer_devs[12] = tegra_init_timer(TEGRA_TMR12_BASE, DIRQ(INT_TMR12), 12);
 
     /* Timer13 */
-    tegra_timer_devs[13] = sysbus_create_simple("tegra.timer",
-                                            TEGRA_TMR13_BASE, DIRQ(INT_TMR13));
+    tegra_timer_devs[13] = tegra_init_timer(TEGRA_TMR13_BASE, DIRQ(INT_TMR13), 13);
 
     /* WDT */
+
     tegra_wdt_devs[0] = sysbus_create_simple("tegra.wdt",
                                              TEGRA_WDT0_BASE, DIRQ(INT_WDT_CPU));
     tegra_wdt_devs[1] = sysbus_create_simple("tegra.wdt",
@@ -676,6 +674,12 @@ static void __tegrax1_init(MachineState *machine)
                                              TEGRA_WDT3_BASE, DIRQ(INT_WDT_CPU));
     tegra_wdt_devs[4] = sysbus_create_simple("tegra.wdt",
                                              TEGRA_WDT4_BASE, DIRQ(INT_WDT_AVP));
+
+    for (i = 0; i < TEGRAX1_NCPUS; i++) {
+        cpudev = DEVICE(qemu_get_cpu(i));
+        sysbus_connect_irq(tegra_wdt_devs[i], 1,
+                           qdev_get_gpio_in(cpudev, ARM_CPU_FIQ));
+    }
 
     /* Timer Shared */
     tegra_timer_shared_dev = sysbus_create_simple("tegra.timer_shared",
@@ -1003,6 +1007,11 @@ static void tegrax1_reset(MachineState *state, ShutdownCause cause)
 {
 //     remote_io_init("10.1.1.3:45312");
     //tegra_trace_init();
+
+    for (int i = 0; i < TEGRAX1_NCPUS; i++) {
+        tegra_cpu_reset_assert(i);
+    }
+
     qemu_devices_reset(cause);
 
     int cpu_id = state->firmware != NULL || state->bootloader != NULL ? TEGRA_BPMP : TEGRA_CCPLEX_CORE0;
