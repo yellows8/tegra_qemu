@@ -54,6 +54,7 @@
 #include "net/net.h"
 
 #include "ahb/host1x/modules/tsec/tsec.h"
+#include "apb/pmc/pmc.h"
 
 #include "devices.h"
 #include "iomap.h"
@@ -385,7 +386,7 @@ static void __tegrax1_init(MachineState *machine)
                                    BOOTROM_LOVEC_BASE, 0x100000, RO);*/
 
     memory_region_add_and_init_ram(sysmem, "tegra.irom",
-                                   TEGRA_IROM_BASE, TEGRA_IROM_SIZE, RO);
+                                   TEGRA_IROM_BASE, TEGRA_IROM_SIZE, /*RO*/RW); // TODO: loader.c only loads a rom once when the MemoryRegion is RO. Fix this properly.
 
     memory_region_add_and_init_ram(sysmem, "tegra.ahb_a1",
                                    0x78000000, SZ_16M, RW);
@@ -1013,6 +1014,8 @@ static void tegrax1_reset(MachineState *state, ShutdownCause cause)
     }
 
     qemu_devices_reset(cause);
+
+    tegra_pmc_reset(tegra_pmc_dev, cause);
 
     int cpu_id = state->firmware != NULL || state->bootloader != NULL ? TEGRA_BPMP : TEGRA_CCPLEX_CORE0;
     tegra_cpu_unpowergate(cpu_id);

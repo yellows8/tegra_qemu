@@ -35,6 +35,7 @@
 
 #include "wdt.h"
 #include "timer.h"
+#include "../apb/pmc/pmc.h"
 #include "devices.h"
 #include "iomap.h"
 #include "tegra_trace.h"
@@ -130,6 +131,7 @@ void tegra_wdt_alarm(void *opaque)
                 if (s->config.system_reset_enable || s->config.pmc2car_reset_enable) {
                     qemu_log_mask(LOG_GUEST_ERROR, "tegra.wdt: Requesting a system reset.\n");
                     Error *err = NULL;
+                    tegra_pmc_set_rst_status(0x1); // RST_SOURCE = WATCHDOG
                     qmp_watchdog_set_action(WATCHDOG_ACTION_RESET, &err);
                     watchdog_perform_action();
                     if (err) error_report_err(err);

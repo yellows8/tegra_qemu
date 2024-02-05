@@ -27,6 +27,7 @@
 #include "iomap.h"
 #include "tegra_trace.h"
 #include "tegra_cpu.h"
+#include "devices.h"
 
 #define TYPE_TEGRA_PMC "tegra.pmc"
 #define TEGRA_PMC(obj) OBJECT_CHECK(tegra_pmc, (obj), TYPE_TEGRA_PMC)
@@ -999,7 +1000,14 @@ static void tegra_pmc_priv_write(void *opaque, hwaddr offset,
     }
 }
 
-static void tegra_pmc_priv_reset(DeviceState *dev)
+void tegra_pmc_set_rst_status(uint32_t value)
+{
+    tegra_pmc *s = tegra_pmc_dev;
+
+    s->regs[(RST_STATUS_OFFSET-0x160)>>2] = value;
+}
+
+void tegra_pmc_reset(DeviceState *dev, ShutdownCause cause)
 {
     tegra_pmc *s = TEGRA_PMC(dev);
 
@@ -1032,60 +1040,69 @@ static void tegra_pmc_priv_reset(DeviceState *dev)
     s->bondout_mirror_access.reg32 = BONDOUT_MIRROR_ACCESS_RESET;
     s->gate.reg32 = GATE_RESET;
 
-    s->scratch0.reg32 = SCRATCH0_RESET;
-    s->scratch1.reg32 = SCRATCH1_RESET;
-    s->scratch2.reg32 = SCRATCH2_RESET;
-    s->scratch3.reg32 = SCRATCH3_RESET;
-    s->scratch4.reg32 = SCRATCH4_RESET;
-    s->scratch5.reg32 = SCRATCH5_RESET;
-    s->scratch6.reg32 = SCRATCH6_RESET;
-    s->scratch7.reg32 = SCRATCH7_RESET;
-    s->scratch8.reg32 = SCRATCH8_RESET;
-    s->scratch9.reg32 = SCRATCH9_RESET;
-    s->scratch10.reg32 = SCRATCH10_RESET;
-    s->scratch11.reg32 = SCRATCH11_RESET;
-    s->scratch12.reg32 = SCRATCH12_RESET;
-    s->scratch13.reg32 = SCRATCH13_RESET;
-    s->scratch14.reg32 = SCRATCH14_RESET;
-    s->scratch15.reg32 = SCRATCH15_RESET;
-    s->scratch16.reg32 = SCRATCH16_RESET;
-    s->scratch17.reg32 = SCRATCH17_RESET;
-    s->scratch18.reg32 = SCRATCH18_RESET;
-    s->scratch19.reg32 = SCRATCH19_RESET;
-    s->scratch20.reg32 = SCRATCH20_RESET;
-    s->scratch21.reg32 = SCRATCH21_RESET;
-    s->scratch22.reg32 = SCRATCH22_RESET;
-    s->scratch23.reg32 = SCRATCH23_RESET;
-    s->scratch24.reg32 = SCRATCH24_RESET;
-    s->scratch25.reg32 = SCRATCH25_RESET;
-    s->scratch26.reg32 = SCRATCH26_RESET;
-    s->scratch27.reg32 = SCRATCH27_RESET;
-    s->scratch28.reg32 = SCRATCH28_RESET;
-    s->scratch29.reg32 = SCRATCH29_RESET;
-    s->scratch30.reg32 = SCRATCH30_RESET;
-    s->scratch31.reg32 = SCRATCH31_RESET;
-    s->scratch32.reg32 = SCRATCH32_RESET;
-    s->scratch33.reg32 = SCRATCH33_RESET;
-    s->scratch34.reg32 = SCRATCH34_RESET;
-    s->scratch35.reg32 = SCRATCH35_RESET;
-    s->scratch36.reg32 = SCRATCH36_RESET;
-    s->scratch37.reg32 = SCRATCH37_RESET;
-    s->scratch38.reg32 = SCRATCH38_RESET;
-    s->scratch39.reg32 = SCRATCH39_RESET;
-    s->scratch40.reg32 = SCRATCH40_RESET;
-    s->scratch41.reg32 = SCRATCH41_RESET;
-    s->scratch42.reg32 = SCRATCH42_RESET;
-    s->secure_scratch0.reg32 = SECURE_SCRATCH0_RESET;
-    s->secure_scratch1.reg32 = SECURE_SCRATCH1_RESET;
-    s->secure_scratch2.reg32 = SECURE_SCRATCH2_RESET;
-    s->secure_scratch3.reg32 = SECURE_SCRATCH3_RESET;
-    s->secure_scratch4.reg32 = SECURE_SCRATCH4_RESET;
-    s->secure_scratch5.reg32 = SECURE_SCRATCH5_RESET;
+    // Skip init for SCRATCH-regs/default-zero regs for guest-reset. TODO: Is this correct / is there more regs to skip etc?
+    if (cause != SHUTDOWN_CAUSE_GUEST_RESET) {
+        s->scratch0.reg32 = SCRATCH0_RESET;
+        s->scratch1.reg32 = SCRATCH1_RESET;
+        s->scratch2.reg32 = SCRATCH2_RESET;
+        s->scratch3.reg32 = SCRATCH3_RESET;
+        s->scratch4.reg32 = SCRATCH4_RESET;
+        s->scratch5.reg32 = SCRATCH5_RESET;
+        s->scratch6.reg32 = SCRATCH6_RESET;
+        s->scratch7.reg32 = SCRATCH7_RESET;
+        s->scratch8.reg32 = SCRATCH8_RESET;
+        s->scratch9.reg32 = SCRATCH9_RESET;
+        s->scratch10.reg32 = SCRATCH10_RESET;
+        s->scratch11.reg32 = SCRATCH11_RESET;
+        s->scratch12.reg32 = SCRATCH12_RESET;
+        s->scratch13.reg32 = SCRATCH13_RESET;
+        s->scratch14.reg32 = SCRATCH14_RESET;
+        s->scratch15.reg32 = SCRATCH15_RESET;
+        s->scratch16.reg32 = SCRATCH16_RESET;
+        s->scratch17.reg32 = SCRATCH17_RESET;
+        s->scratch18.reg32 = SCRATCH18_RESET;
+        s->scratch19.reg32 = SCRATCH19_RESET;
+        s->scratch20.reg32 = SCRATCH20_RESET;
+        s->scratch21.reg32 = SCRATCH21_RESET;
+        s->scratch22.reg32 = SCRATCH22_RESET;
+        s->scratch23.reg32 = SCRATCH23_RESET;
+        s->scratch24.reg32 = SCRATCH24_RESET;
+        s->scratch25.reg32 = SCRATCH25_RESET;
+        s->scratch26.reg32 = SCRATCH26_RESET;
+        s->scratch27.reg32 = SCRATCH27_RESET;
+        s->scratch28.reg32 = SCRATCH28_RESET;
+        s->scratch29.reg32 = SCRATCH29_RESET;
+        s->scratch30.reg32 = SCRATCH30_RESET;
+        s->scratch31.reg32 = SCRATCH31_RESET;
+        s->scratch32.reg32 = SCRATCH32_RESET;
+        s->scratch33.reg32 = SCRATCH33_RESET;
+        s->scratch34.reg32 = SCRATCH34_RESET;
+        s->scratch35.reg32 = SCRATCH35_RESET;
+        s->scratch36.reg32 = SCRATCH36_RESET;
+        s->scratch37.reg32 = SCRATCH37_RESET;
+        s->scratch38.reg32 = SCRATCH38_RESET;
+        s->scratch39.reg32 = SCRATCH39_RESET;
+        s->scratch40.reg32 = SCRATCH40_RESET;
+        s->scratch41.reg32 = SCRATCH41_RESET;
+        s->scratch42.reg32 = SCRATCH42_RESET;
+        s->secure_scratch0.reg32 = SECURE_SCRATCH0_RESET;
+        s->secure_scratch1.reg32 = SECURE_SCRATCH1_RESET;
+        s->secure_scratch2.reg32 = SECURE_SCRATCH2_RESET;
+        s->secure_scratch3.reg32 = SECURE_SCRATCH3_RESET;
+        s->secure_scratch4.reg32 = SECURE_SCRATCH4_RESET;
+        s->secure_scratch5.reg32 = SECURE_SCRATCH5_RESET;
 
-    /* Set ODMDATA for UARTD */
-    s->scratch20.reg32 = (3 << 18) | (3 << 15);
+        /* Set ODMDATA for UARTD */
+        s->scratch20.reg32 = (3 << 18) | (3 << 15);
 
-    memset(s->regs, 0, sizeof(s->regs));
+        memset(s->regs, 0, sizeof(s->regs));
+    }
+    else {
+        memset(s->regs, 0, RST_STATUS_OFFSET-0x160);
+        memset(&s->regs[(RST_STATUS_OFFSET+0x4-0x160)>>2], 0, BONDOUT_MIRROR3_OFFSET-(RST_STATUS_OFFSET+0x4));
+        memset(&s->regs[(UTMIP_UHSIC_LINE_WAKEUP_OFFSET-0x160)>>2], 0, SECURE_SCRATCH8_OFFSET-UTMIP_UHSIC_LINE_WAKEUP_OFFSET);
+        memset(&s->regs[(CNTRL2_OFFSET-0x160)>>2], 0, SCRATCH56_OFFSET-CNTRL2_OFFSET);
+    }
 
     if (tegra_board >= TEGRAX1_BOARD) {
         s->cntrl.reg32 = CNTRL_TEGRAX1_RESET;
@@ -1144,7 +1161,6 @@ static void tegra_pmc_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_pmc_priv_realize;
     dc->vmsd = &vmstate_tegra_pmc;
-    dc->reset = tegra_pmc_priv_reset;
 }
 
 static const TypeInfo tegra_pmc_info = {
