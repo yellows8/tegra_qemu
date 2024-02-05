@@ -22,6 +22,7 @@
 #include "hw/sysbus.h"
 #include "sysemu/runstate.h"
 #include "sysemu/sysemu.h"
+#include "qemu/log.h"
 
 #include "pmc.h"
 #include "iomap.h"
@@ -615,8 +616,8 @@ static void tegra_pmc_priv_write(void *opaque, hwaddr offset,
         s->cntrl.reg32 = value;
 
         if (s->cntrl.reg32 & 0x10) {
-            TPRINT("pmc reboot request!\n");
-            qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_RESET);
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra.pmc: Requesting a system reset.\n");
+            qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
         }
         break;
     case SEC_DISABLE_OFFSET:
