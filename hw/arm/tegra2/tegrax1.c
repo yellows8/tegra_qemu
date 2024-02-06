@@ -55,6 +55,7 @@
 
 #include "ahb/host1x/modules/tsec/tsec.h"
 #include "apb/pmc/pmc.h"
+#include "ahb/sb/sb.h"
 
 #include "devices.h"
 #include "iomap.h"
@@ -87,58 +88,6 @@ struct CPUAddressSpace {
     struct AddressSpaceDispatch *memory_dispatch;
     MemoryListener tcg_as_listener;
 };
-
-#if 0
-static uint32_t tegra_bootmon[] = {
-    0xe3a00206, /* ldr r0, =TEGRA_PG */
-    /*0xe5901000,*/ /* ldr r1, [r0]] */
-    0xe3a01001, /* mov r1, #1*/
-    0xe59f0054, /* ldr r0, =TEGRA_PG_A9 */
-    0xe1500001, /* cmp r0, r1 */
-    0x1a00000f, /* bne boot         @ on AVP */
-    0xee100fb0, /* mrc 15, 0, r0, cr0, cr0, {5} */
-    0xe200000f, /* and r0, r0, #0xF */
-    0xe3500000, /* cmp r0, #0 */
-    0x0a00000b, /* beq boot */
-    0xe59f303c, /* ldr r3, =bootX */
-    0xe5930000, /* ldr r0, [r3] */
-    0xe3500001, /* cmp r0, #1 */
-    0x1a000007, /* bne boot */
-    0xe59f2030, /* ldr r2, =TEGRA_ARM_INT_DIST_BASE */
-    0xe3a01001, /* mov r1, #1 */
-    0xe5821000, /* str r1, [r2]         @ set GICC_CTLR.Enable */
-    0xe3a010ff, /* mov r1, #0xff */
-    0xe5821004, /* str r1, [r2, #4]     @ set GIC_PMR.Priority to 0xff */
-    0xf57ff04f, /* dsb */
-    0xe3a01001, /* mov r1, #1 */
-    0xe5831000, /* str r1, [r3] */
-/* boot: */
-    0xe59f0014, /* ldr r0, =TEGRA_EXCEPTION_VECTORS_BASE */
-    0xe5900000, /* ldr r0, [r0] */
-    0xe12fff10, /* bx  r0 */
-    0x00000000, /* bootX */
-    0x55555555, /* TEGRA_PG_A9 */
-    0x00000060, /* TEGRA_PG */
-    0x50041000, /* TEGRA_ARM_INT_DIST_BASE */
-    0x6000f000, /* TEGRA_EXCEPTION_VECTORS_BASE */
-};
-#endif
-
-#if 0
-static uint32_t tegra_bootmon[] = { // CCPLEX reset vector
-    0xd29e201e, /*mov     x30, #0xf100*/
-    0xf2ac001e, /*movk    x30, #0x6000, lsl #16*/
-    0xb94003de, /*ldr     w30, [x30]*/
-    0xeb1f03df, /*cmp     x30, xzr*/
-    0x540000a1, /*b.ne    <jump>*/
-    0xd298461e, /*mov     x30, #0xc230*/
-    0xf2ac001e, /*movk    x30, #0x6000, lsl #16*/
-    0xf94003de, /*ldr     x30, [x30]*/
-    0x927ffbde, /*and     x30, x30, #0xfffffffffffffffe*/
-/* jump:*/
-    0xd61f03c0, /*br      x30*/
-};
-#endif
 
 static uint32_t tegra_bootrom[] = {
     0xea000006, /* b reset_addr */
@@ -279,30 +228,15 @@ static void load_memory_images(MachineState *machine)
 
     /* Load IROM */
     if (machine->firmware == NULL) {
-        rom_add_blob_fixed("bpmp.bootrom", tegra_bootrom, sizeof(tegra_bootrom),
-                           TEGRA_IROM_BASE);
+        /*rom_add_blob_fixed("bpmp.bootrom", tegra_bootrom, sizeof(tegra_bootrom),
+                           TEGRA_IROM_BASE);*/
+        tegra_sb_load_irom_fixed(tegra_sb_dev, tegra_bootrom, sizeof(tegra_bootrom));
     }
     else {
-        assert(load_image_targphys(machine->firmware, TEGRA_IROM_BASE,
-                                   TEGRA_IROM_SIZE) > 0);
+        /*assert(load_image_targphys(machine->firmware, TEGRA_IROM_BASE,
+                                   TEGRA_IROM_SIZE) > 0);*/
+        assert(tegra_sb_load_irom_file(tegra_sb_dev, machine->firmware) > 0);
     }
-
-    /*for (tmp = 0; tmp < ARRAY_SIZE(tegra_bootmon); tmp++)
-        tegra_bootmon[tmp] = tswap32(tegra_bootmon[tmp]);*/
-
-    /* Load boot monitor */
-    /*rom_add_blob_fixed("bootmon", tegra_bootmon, sizeof(tegra_bootmon),
-                       BOOTMON_BASE);*/
-
-    /*if (machine->firmware != NULL) { // secmon
-        tmp = load_image_targphys(machine->firmware, 0x040030000, 128*1024);
-        assert(tmp > 0);
-    }*/
-
-    /*if (machine->kernel_filename != NULL) { // raw package2
-        load_image_targphys(machine->kernel_filename, 0xA9800000,
-                            machine->ram_size - 0x29800000);
-    }*/
 }
 
 static void* tegra_init_sdmmc(int index, hwaddr base, qemu_irq irq, bool emmc, uint32_t bootpartsize, void** vendor_dev)
@@ -385,8 +319,8 @@ static void __tegrax1_init(MachineState *machine)
     /*memory_region_add_and_init_ram(sysmem, "tegra.irom_lovec",
                                    BOOTROM_LOVEC_BASE, 0x100000, RO);*/
 
-    memory_region_add_and_init_ram(sysmem, "tegra.irom",
-                                   TEGRA_IROM_BASE, TEGRA_IROM_SIZE, /*RO*/RW); // TODO: loader.c only loads a rom once when the MemoryRegion is RO. Fix this properly.
+    /*memory_region_add_and_init_ram(sysmem, "tegra.irom",
+                                   TEGRA_IROM_BASE, TEGRA_IROM_SIZE, RO);*/
 
     memory_region_add_and_init_ram(sysmem, "tegra.ahb_a1",
                                    0x78000000, SZ_16M, RW);
@@ -519,6 +453,7 @@ static void __tegrax1_init(MachineState *machine)
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_sb_dev), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(tegra_sb_dev), 0, TEGRA_SB_BASE);
     sysbus_mmio_map(SYS_BUS_DEVICE(tegra_sb_dev), 1, TEGRA_IPATCH_BASE);
+    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_sb_dev), 2, TEGRA_IROM_BASE);
 
     /* Activity Monitor */
     tegra_actmon_dev = tegra_init_dummyio(TEGRA_ACTMON_BASE, TEGRA_ACTMON_SIZE, "tegra.actmon");
