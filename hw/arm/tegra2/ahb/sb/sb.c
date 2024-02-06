@@ -51,7 +51,6 @@ typedef struct tegra_sb_state {
     MemoryRegion irom_iomem;
     uint32_t regs[TEGRA_SB_SIZE>>2];
     uint32_t ipatch_regs[1+IPATCH_MAX];
-    uint16_t ipatch_original_values[IPATCH_MAX];
     uint8_t irom[TEGRA_IROM_SIZE];
 } tegra_sb;
 
@@ -62,7 +61,6 @@ static const VMStateDescription vmstate_tegra_sb = {
     .fields = (VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, tegra_sb, TEGRA_SB_SIZE>>2),
         VMSTATE_UINT32_ARRAY(ipatch_regs, tegra_sb, 1+IPATCH_MAX),
-        VMSTATE_UINT16_ARRAY(ipatch_original_values, tegra_sb, IPATCH_MAX),
         VMSTATE_UINT8_ARRAY(irom, tegra_sb, TEGRA_IROM_SIZE),
         VMSTATE_END_OF_LIST()
     }
@@ -99,7 +97,6 @@ static void tegra_sb_priv_write(void *opaque, hwaddr offset,
     TRACE_WRITE(s->iomem.addr, offset, 0, value);
 
     uint32_t csr_old = s->regs[CSR_OFFSET>>2];
-    uint32_t patch_value = 0xeafffffe; // "b ."
     if (offset == CSR_OFFSET) value |= s->regs[CSR_OFFSET>>2] & 0x10; // PIROM_DISABLE can only be set.
 
     s->regs[offset/sizeof(uint32_t)] = (s->regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
@@ -107,11 +104,8 @@ static void tegra_sb_priv_write(void *opaque, hwaddr offset,
     if (offset == CSR_OFFSET) {
         if ((csr_old & s->regs[CSR_OFFSET>>2]) ^ 0x10) { // PIROM_DISABLE is now set.
             hwaddr addr = TEGRA_IROM_BASE + (s->regs[PIROM_START_OFFSET>>2] & ~0x7F);
-            for (; addr < TEGRA_IROM_BASE + TEGRA_IROM_SIZE; addr+=4) {
-                address_space_write_rom(&address_space_memory, addr,
-                                        MEMTXATTRS_UNSPECIFIED, &patch_value,
-                                        sizeof(patch_value));
-            }
+            cpu_flush_icache_range(addr, TEGRA_IROM_BASE + TEGRA_IROM_SIZE - addr);
+            // The actual prot-reads are handled with the irom-read func below.
         }
     }
 }
@@ -138,6 +132,8 @@ static void tegra_ipatch_priv_write(void *opaque, hwaddr offset,
 
      if (offset+size <= sizeof(s->ipatch_regs)) {
          s->ipatch_regs[offset/sizeof(uint32_t)] = (s->ipatch_regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
+
+         cpu_flush_icache_range(TEGRA_IROM_BASE, TEGRA_IROM_SIZE);
      }
 }
 
@@ -213,6 +209,8 @@ static void tegra_sb_priv_reset(DeviceState *dev)
     memset(s->regs, 0, sizeof(s->regs));
     memset(s->ipatch_regs, 0, sizeof(s->ipatch_regs));
     s->regs[PIROM_START_OFFSET>>2] = PIROM_START_RESET;
+
+    cpu_flush_icache_range(TEGRA_IROM_BASE, TEGRA_IROM_SIZE);
 }
 
 static const MemoryRegionOps tegra_sb_mem_ops = {
