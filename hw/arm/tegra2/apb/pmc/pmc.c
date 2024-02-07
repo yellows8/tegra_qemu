@@ -370,7 +370,20 @@ static uint64_t tegra_pmc_priv_read(void *opaque, hwaddr offset,
         ret = s->remove_clamping_cmd.reg32;
         break;
     case PWRGATE_STATUS_OFFSET:
-        ret = s->pwrgate_status.reg32;
+        pwrgate_status_t tmp = s->pwrgate_status;
+
+        if (tegra_board >= TEGRAX1_BOARD) {
+            for (int cpu_id=0; cpu_id < TEGRAX1_CCPLEX_NCORES; cpu_id++) {
+                int partid = cpu_id == 0 ? 14 : 9 + cpu_id-1;
+                tmp.reg32 &= ~(1<<partid);
+                tmp.reg32 |= (tegra_cpu_is_powergated(cpu_id)==0)<<partid;
+            }
+        }
+        else {
+            s->pwrgate_status.cpu = (tegra_cpu_is_powergated(TEGRA_CCPLEX_CORE0) && tegra_cpu_is_powergated(TEGRA_CCPLEX_CORE1))==0;
+        }
+
+        ret = tmp.reg32;
         break;
     case PWRGOOD_TIMER_OFFSET:
         ret = s->pwrgood_timer.reg32;
