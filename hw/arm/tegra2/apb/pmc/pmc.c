@@ -685,7 +685,7 @@ static void tegra_pmc_priv_write(void *opaque, hwaddr offset,
                 if (s->pwrgate_toggle.partid >= 9 && s->pwrgate_toggle.partid <= 14) {
                     int cpu_id = s->pwrgate_toggle.partid < 14 ? s->pwrgate_toggle.partid - 8 : 0;
                     if (cpu_id < TEGRAX1_CCPLEX_NCORES) {
-                        if (s->pwrgate_status.reg32 & (1 << s->pwrgate_toggle.partid))
+                        if (tegra_cpu_is_powergated(cpu_id))
                             tegra_cpu_unpowergate(cpu_id);
                         else
                             tegra_cpu_powergate(cpu_id);
@@ -694,7 +694,7 @@ static void tegra_pmc_priv_write(void *opaque, hwaddr offset,
             }
             else {
                 if (s->pwrgate_toggle.partid == 0) {
-                    if (s->pwrgate_status.cpu) {
+                    if (tegra_cpu_is_powergated(TEGRA_CCPLEX_CORE0) && tegra_cpu_is_powergated(TEGRA_CCPLEX_CORE1)) {
                         tegra_cpu_unpowergate(TEGRA_CCPLEX_CORE0);
                         tegra_cpu_unpowergate(TEGRA_CCPLEX_CORE1);
                     }
