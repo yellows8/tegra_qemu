@@ -502,10 +502,18 @@ static int tegra_flow_powergate(tegra_flow *s, int cpu_id, int is_sibling)
     }
 
     if (s->csr[cpu_id].wait_wfe_bitmap) {
-        uint32_t wfe_bitmap = tegra_get_wfe_bitmap();
+        uint32_t wfe_bitmap = tegra_get_wfe_bitmap(0);
         wfe_bitmap &= s->csr[cpu_id].wait_wfe_bitmap;
 
         if (s->csr[cpu_id].wait_wfe_bitmap != wfe_bitmap) {
+//             tegra_cpu_halt(cpu_id);
+            return 0;
+        }
+    } else if (s->csr[cpu_id].wait_wfi_bitmap) {
+        uint32_t wfi_bitmap = tegra_get_wfe_bitmap(1);
+        wfi_bitmap &= s->csr[cpu_id].wait_wfi_bitmap;
+
+        if (s->csr[cpu_id].wait_wfi_bitmap != wfi_bitmap) {
 //             tegra_cpu_halt(cpu_id);
             return 0;
         }
@@ -513,6 +521,7 @@ static int tegra_flow_powergate(tegra_flow *s, int cpu_id, int is_sibling)
         return 0;
     }
 
+    tegra_cpu_reset_assert(cpu_id);
     tegra_cpu_powergate(cpu_id);
 
     if (s->halt_events[cpu_id].mode & WAITEVENT) {
@@ -604,11 +613,11 @@ static void tegra_flow_update_mode(tegra_flow *s, int cpu_id, int in_wfe)
     }
 }
 
-void tegra_flow_wfe_handle(int cpu_id)
+void tegra_flow_wfe_handle(int cpu_id, int type)
 {
     tegra_flow *s = tegra_flow_dev;
 
-    tegra_flow_update_mode(s, cpu_id, 1);
+    tegra_flow_update_mode(s, cpu_id, 1+type);
 }
 
 void tegra_flow_event_write(void *opaque, hwaddr offset,

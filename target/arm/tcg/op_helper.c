@@ -369,7 +369,7 @@ static inline int check_wfx_trap(CPUARMState *env, bool is_wfe)
 }
 #endif
 
-void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
+void __attribute__((weak)) HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
 {
 #ifdef CONFIG_USER_ONLY
     /*

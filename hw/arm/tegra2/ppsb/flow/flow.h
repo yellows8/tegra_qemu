@@ -65,8 +65,9 @@ typedef union csr_u {
         unsigned int enable:1;
         unsigned int event_enable:1;
         unsigned int undefined_bits_2_3:2;
-        unsigned int wait_wfe_bitmap:2;
-        unsigned int undefined_bits_6_13:8;
+        unsigned int wait_wfe_bitmap:4;
+        unsigned int wait_wfi_bitmap:4;
+        unsigned int enable_ext:2;
         unsigned int event_flag:1;
         unsigned int intr_flag:1;           /* TRUE when Interrupt is Active -- Write-1-to-Clear */
         unsigned int pwr_off_sts:1;
