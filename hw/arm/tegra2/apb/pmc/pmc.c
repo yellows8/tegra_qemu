@@ -1013,6 +1013,14 @@ static void tegra_pmc_priv_write(void *opaque, hwaddr offset,
         if (offset>=0x160) {
             if (offset == AOTAG_INTR_DIS_OFFSET)
                 s->regs[(AOTAG_INTR_EN_OFFSET-0x160)>>2] &= ~(value & 0x3);
+            else if (offset == IO_DPD3_REQ_OFFSET || offset == IO_DPD4_REQ_OFFSET) {
+                s->regs[(offset-0x160)>>2] = value;
+                if (offset == IO_DPD3_REQ_OFFSET) {
+                    if (tegra_board == TEGRAX1PLUS_BOARD) value &= ~0x6000;
+                }
+                else if (offset == IO_DPD4_REQ_OFFSET) value &= ~0xE000;
+                s->regs[(offset-0x160+0x4)>>2] = value & 0xFFFFFFF; // STATUS
+            }
             else
                 s->regs[(offset-0x160)>>2] = value;
         }

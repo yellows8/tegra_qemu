@@ -1182,6 +1182,10 @@ typedef union gate_u {
 #define CNTRL2_OFFSET 0x440
 #define CNTRL2_RESET 0x00000000
 
+#define IO_DPD3_REQ_OFFSET 0x45C
+
+#define IO_DPD4_REQ_OFFSET 0x464
+
 #define AOTAG_CFG_OFFSET 0x484
 
 #define AOTAG_INTR_EN_OFFSET 0x4B8
