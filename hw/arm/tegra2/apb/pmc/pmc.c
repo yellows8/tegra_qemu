@@ -373,11 +373,17 @@ static uint64_t tegra_pmc_priv_read(void *opaque, hwaddr offset,
         pwrgate_status_t tmp = s->pwrgate_status;
 
         if (tegra_board >= TEGRAX1_BOARD) {
+            bool crail = 0, flag = 0;
             for (int cpu_id=0; cpu_id < TEGRAX1_CCPLEX_NCORES; cpu_id++) {
                 int partid = cpu_id == 0 ? 14 : 9 + cpu_id-1;
+
+                flag = (tegra_cpu_is_powergated(cpu_id)==0);
+                crail |= flag;
+
                 tmp.reg32 &= ~(1<<partid);
-                tmp.reg32 |= (tegra_cpu_is_powergated(cpu_id)==0)<<partid;
+                tmp.reg32 |= flag<<partid;
             }
+            tmp.cpu = crail; // CRAIL: CPU Rail
         }
         else {
             s->pwrgate_status.cpu = (tegra_cpu_is_powergated(TEGRA_CCPLEX_CORE0) && tegra_cpu_is_powergated(TEGRA_CCPLEX_CORE1))==0;
