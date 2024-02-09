@@ -274,15 +274,20 @@ static void* tegra_init_dummyio(hwaddr base, uint32_t size, const char *name)
     return tmpdev;
 }
 
-static void* tegra_init_timer(hwaddr base, qemu_irq irq, uint32_t id)
+static void* tegra_init_obj(hwaddr base, qemu_irq irq, const char *name, const char *prop_name, uint32_t value)
 {
-    void* tmpdev = qdev_new("tegra.timer");
-    qdev_prop_set_uint32(tmpdev, "id", id);
+    void* tmpdev = qdev_new(name);
+    qdev_prop_set_uint32(tmpdev, prop_name, value);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tmpdev), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(tmpdev), 0, base);
     sysbus_connect_irq(SYS_BUS_DEVICE(tmpdev), 0, irq);
 
     return tmpdev;
+}
+
+static void* tegra_init_timer(hwaddr base, qemu_irq irq, uint32_t id)
+{
+    return tegra_init_obj(base, irq, "tegra.timer", "id", id);
 }
 
 static void __tegrax1_init(MachineState *machine)
@@ -496,9 +501,9 @@ static void __tegrax1_init(MachineState *machine)
     tegra_fuse_dev = sysbus_create_simple("tegra.fuse", TEGRA_FUSE_BASE, NULL);
 
     /* SE */
-    tegra_se_dev = sysbus_create_simple("tegra.se", TEGRA_SE_BASE, DIRQ(INT_SE));
+    tegra_se_dev = tegra_init_obj(TEGRA_SE_BASE, DIRQ(INT_SE), "tegra.se", "engine", 1);
     if (tegra_board == TEGRAX1PLUS_BOARD) {
-        tegra_se2_dev = sysbus_create_simple("tegra.se", TEGRA_SE2_BASE, DIRQ(INT_SE)); // NOTE: This IRQ is likely wrong?
+        tegra_se2_dev = tegra_init_obj(TEGRA_SE2_BASE, DIRQ(INT_SE), "tegra.se", "engine", 2); // NOTE: This IRQ is likely wrong?
     }
 
     /* SYSCTR0 */

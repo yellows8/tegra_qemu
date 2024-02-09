@@ -67,6 +67,7 @@ typedef struct tegra_se_state {
 
     qemu_irq irq;
     MemoryRegion iomem;
+    uint32_t engine;
 
     union {
         struct SecurityEngineRegisters {
@@ -142,6 +143,7 @@ static const VMStateDescription vmstate_tegra_se = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
+        VMSTATE_UINT32(engine, tegra_se),
         VMSTATE_UINT32_ARRAY(regs_raw, tegra_se, 0xE18>>2),
         VMSTATE_UINT32_ARRAY(aes_keytable, tegra_se, 0x10*0x10),
         VMSTATE_UINT32_ARRAY(rsa_keytable, tegra_se, 0x100),
@@ -731,7 +733,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 {
     tegra_se *s = opaque;
 
-    assert(offset < sizeof(s->regs_raw));
+    assert(offset+size <= sizeof(s->regs_raw));
 
     TRACE_WRITE(s->iomem.addr, offset, 0, value);
 
@@ -770,6 +772,32 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
             if (s->regs.SE_INT_ENABLE & s->regs.SE_INT_STATUS) TRACE_IRQ_RAISE(s->iomem.addr, s->irq);
 
             if (offset == SE_OPERATION_OFFSET) {
+                uint32_t op = s->regs.SE_OPERATION;
+
+                if (op==3) { // CTX_SAVE
+                    bool ctx_save_auto_enable = s->regs.SE_CTX_SAVE_AUTO & 0x1;
+
+                    if (ctx_save_auto_enable && tegra_board < TEGRAX1PLUS_BOARD) {
+                        qemu_log_mask(LOG_GUEST_ERROR, "tegra.se: Ignoring attempt to use automatic context save since the current board doesn't support it.\n");
+                    }
+                    else if (ctx_save_auto_enable) { // Automatic context save
+                        uint32_t cnt = s->engine == 1 ? 133 : 646;
+
+                        s->regs.SE_CTX_SAVE_AUTO &= ~(0x3FF<<16); // CTX_SAVE_AUTO_CURR_CNT
+                        s->regs.SE_CTX_SAVE_AUTO |= cnt<<16;
+
+                        // TODO: Actually handle context?
+                    }
+                    else { // Original context save. TODO
+                    }
+
+                    break;
+                }
+                else if (op!=1) { // START
+                    qemu_log_mask(LOG_UNIMP, "tegra.se: Ignoring op=%d.\n", op);
+                    break;
+                }
+
                 if (cfg_dst==0) dma_memory_read(&address_space_memory, s->regs.SE_OUT_LL_ADDR, &out_entry, sizeof(out_entry), MEMTXATTRS_UNSPECIFIED);
                 //printf("se in: 0x%x, 0x%x, 0x%x\n", in_entry.zero, in_entry.address, in_entry.size);
                 //printf("se out: 0x%x, 0x%x, 0x%x\n", out_entry.zero, out_entry.address, out_entry.size);
@@ -1176,10 +1204,16 @@ static void tegra_se_priv_realize(DeviceState *dev, Error **errp)
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 }
 
+static Property tegra_se_properties[] = {
+    DEFINE_PROP_UINT32("engine", tegra_se, engine, 1), \
+    DEFINE_PROP_END_OF_LIST(),
+};
+
 static void tegra_se_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    device_class_set_props(dc, tegra_se_properties);
     dc->realize = tegra_se_priv_realize;
     dc->vmsd = &vmstate_tegra_se;
     dc->reset = tegra_se_priv_reset;
