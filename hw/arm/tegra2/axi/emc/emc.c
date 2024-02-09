@@ -189,6 +189,7 @@ typedef struct tegra_emc_state {
     DEFINE_REG32(cfg_clktrim);
     DEFINE_REG32(cfg_clktrim_1);
     DEFINE_REG32(cfg_clktrim_2);
+    uint32_t regs[0xED4>>2];
 } tegra_emc;
 
 static const VMStateDescription vmstate_tegra_emc = {
@@ -350,6 +351,7 @@ static const VMStateDescription vmstate_tegra_emc = {
         VMSTATE_UINT32(cfg_clktrim.reg32, tegra_emc),
         VMSTATE_UINT32(cfg_clktrim_1.reg32, tegra_emc),
         VMSTATE_UINT32(cfg_clktrim_2.reg32, tegra_emc),
+        VMSTATE_UINT32_ARRAY(regs, tegra_emc, 0xED4>>2),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -824,6 +826,7 @@ static uint64_t tegra_emc_priv_read(void *opaque, hwaddr offset,
         ret = s->cfg_clktrim_2.reg32;
         break;
     default:
+        if (offset+size <= sizeof(s->regs)) ret = s->regs[offset>>2];
         break;
     }
 
@@ -1045,14 +1048,28 @@ static void tegra_emc_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->self_ref.reg32, value);
         s->self_ref.reg32 = value;
 
+        s->emc_status.dram_in_self_refresh = 0;
+        emc_chan = tegra_emc0_dev;
+        if (emc_chan) emc_chan->emc_status.dram_in_self_refresh = 0;
+        emc_chan = tegra_emc1_dev;
+        if (emc_chan) emc_chan->emc_status.dram_in_self_refresh = 0;
+
         if (s->self_ref.self_ref_cmd) {
             int i;
 
-            for (i = 0; i < s->adr_cfg.emem_numdev + 1; i++)
-                s->emc_status.dram_in_self_refresh |= 1 << i;
-        } else {
-            s->emc_status.dram_in_self_refresh = 0;
+            uint32_t tmp = ~s->self_ref.sref_dev_selectn & 0x3;
+            int numdev = tegra_board < TEGRAX1_BOARD ? s->adr_cfg.emem_numdev : s->adr_cfg.reg32 & 0x1;
+            for (i = 0; i < numdev + 1; i++) {
+                if (tmp & (1<<i)) {
+                    s->emc_status.dram_in_self_refresh |= 1 << i;
+                    emc_chan = tegra_emc0_dev;
+                    if (emc_chan) emc_chan->emc_status.dram_in_self_refresh |= 1 << i;
+                    emc_chan = tegra_emc1_dev;
+                    if (emc_chan) emc_chan->emc_status.dram_in_self_refresh |= 1 << i;
+                }
+            }
         }
+
         break;
     case DPD_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->dpd.reg32, value);
@@ -1345,7 +1362,12 @@ static void tegra_emc_priv_write(void *opaque, hwaddr offset,
         s->cfg_clktrim_2.reg32 = value;
         break;
     default:
-        TRACE_WRITE(s->iomem.addr, offset, 0, value);
+        if (offset+size <= sizeof(s->regs)) {
+            TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
+            s->regs[offset>>2] = value;
+        }
+        else
+            TRACE_WRITE(s->iomem.addr, offset, 0, value);
         break;
     }
 }
@@ -1510,6 +1532,8 @@ static void tegra_emc_priv_reset(DeviceState *dev)
     s->cfg_clktrim_2.reg32 = CFG_CLKTRIM_2_RESET;
 
     s->emc_status.no_outstanding_transactions = 1;
+
+    memset(s->regs, 0, sizeof(s->regs));
 }
 
 static const MemoryRegionOps tegra_emc_mem_ops = {
