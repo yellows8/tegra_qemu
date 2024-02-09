@@ -674,6 +674,13 @@ static void tegra_pmc_priv_write(void *opaque, hwaddr offset,
     case DPD_ENABLE_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->dpd_enable.reg32, value);
         s->dpd_enable.reg32 = value;
+
+        if (s->dpd_enable.on) {
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra.pmc: Requesting a system suspend.\n");
+            tegra_cpu_reset_assert(TEGRA_BPMP);
+            tegra_cpu_powergate(TEGRA_BPMP);
+            qemu_system_suspend_request();
+        }
         break;
     case CLAMP_STATUS_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->clamp_status.reg32, value);
