@@ -91,6 +91,12 @@ void tegra_evp_set_bpmp_reset_vector(uint64_t value) {
     s->evp_regs[1][0] = value;
 }
 
+bool tegra_evp_is_bpmp_reset_vector_default(void) {
+    tegra_evp *s = TEGRA_EVP(tegra_evp_dev);
+
+    return s->bpmp_reset_vector == TEGRA_IROM_BASE;
+}
+
 static uint64_t tegra_evp_priv_read(void *opaque, hwaddr offset,
                                     unsigned size)
 {

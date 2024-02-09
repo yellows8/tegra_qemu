@@ -22,6 +22,7 @@
 #include "hw/sysbus.h"
 #include "sysemu/runstate.h"
 #include "sysemu/sysemu.h"
+#include "hw/boards.h"
 #include "qemu/log.h"
 
 #include "pmc.h"
@@ -29,6 +30,7 @@
 #include "tegra_trace.h"
 #include "tegra_cpu.h"
 #include "devices.h"
+#include "../ppsb/evp/evp.h"
 
 #define TYPE_TEGRA_PMC "tegra.pmc"
 #define TEGRA_PMC(obj) OBJECT_CHECK(tegra_pmc, (obj), TYPE_TEGRA_PMC)
@@ -127,6 +129,8 @@ static uint32_t tegra_pmc_regdef_tegrax1_reset_table[] = {
 
 typedef struct tegra_pmc_state {
     SysBusDevice parent_obj;
+
+    Notifier wakeup;
 
     MemoryRegion iomem;
     DEFINE_REG32(cntrl);
@@ -1035,6 +1039,34 @@ static void tegra_pmc_priv_write(void *opaque, hwaddr offset,
     }
 }
 
+static void pmc_notify_wakeup(Notifier *notifier, void *data)
+{
+    tegra_pmc *s = container_of(notifier, tegra_pmc, wakeup);
+    WakeupReason *reason = data;
+
+    if (!s->dpd_enable.on) return;
+    if (!tegra_evp_is_bpmp_reset_vector_default()) {
+        qemu_log_mask(LOG_GUEST_ERROR, "tegra.pmc: Ignoring wakeup since the BPMP initial reset vector is not IROM.\n");
+        return;
+    }
+    if (current_machine->firmware == NULL) {
+        qemu_log_mask(LOG_GUEST_ERROR, "tegra.pmc: Ignoring wakeup since the BPMP IROM was not specified via cmdline argument -bios.\n");
+        return;
+    }
+
+    switch (*reason) {
+    case QEMU_WAKEUP_REASON_RTC: // Fallthrough. TODO: Handle?
+    case QEMU_WAKEUP_REASON_PMTIMER: // Fallthrough. TODO: Handle?
+    case QEMU_WAKEUP_REASON_OTHER:
+        qemu_log_mask(LOG_GUEST_ERROR, "tegra.pmc: Requesting a system reset due to wakeup.\n");
+        s->regs[(RST_STATUS_OFFSET-0x160)>>2] = 0x4; // RST_SOURCE = LP0
+        qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
+        break;
+    default:
+        break;
+    }
+}
+
 void tegra_pmc_set_rst_status(uint32_t value)
 {
     tegra_pmc *s = tegra_pmc_dev;
@@ -1188,6 +1220,11 @@ static void tegra_pmc_priv_realize(DeviceState *dev, Error **errp)
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_pmc_mem_ops, s,
                           "tegra.pmc", TEGRA_PMC_SIZE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
+
+    s->wakeup.notify = pmc_notify_wakeup;
+    qemu_register_wakeup_notifier(&s->wakeup);
+
+    qemu_register_wakeup_support();
 }
 
 static void tegra_pmc_class_init(ObjectClass *klass, void *data)

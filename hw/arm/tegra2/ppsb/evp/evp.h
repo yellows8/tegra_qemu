@@ -1104,5 +1104,6 @@ typedef union evp_cop_pri_fiq_vec_3_u {
 
 uint64_t tegra_evp_get_cpu_reset_vector(void);
 void tegra_evp_set_bpmp_reset_vector(uint64_t value);
+bool tegra_evp_is_bpmp_reset_vector_default(void);
 
 #endif // TEGRA_EVP_H

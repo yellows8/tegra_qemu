@@ -59,6 +59,8 @@ Run Tegra X1
 
 * The TSEC outdata can optionally be configured with (size <=0x10-bytes): ``-object secret,id=tegra.tsec.outdata,file={path}`` The key used by tsec for PK11 decryption can be set with (should not be used if PK11-decryption isn't used): ``-object secret,id=tegra.tsec.package1_key,file={path}`` tegra.tsec.outdata is also used to set the tsec_key SE keyslot during a TSEC operation. To set the tsec_root_key SE keyslot during a TSEC operation (size <=0x10-bytes): ``-object secret,id=tegra.tsec.tsec_root_key,file={path}``
 
+* To resume after sleep-mode is entered via the PMC reg, use ``system_wakeup`` via the QEMU monitor. This is only available when tegra.evp bpmp-reset-vector is left at the default, and when ``-bios`` is specified.
+
 * The ``-rotate {value}`` option is also supported for rotating the display.
 
 * To configure the value of register APB_MISC_PP_STRAPPING_OPT_A_0 (default is setup for booting from emmc): ``-global driver=tegra.apb_misc,property=pp-strapping-opt-a,value={value}``
