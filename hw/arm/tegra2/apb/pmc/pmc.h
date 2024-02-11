@@ -1176,6 +1176,12 @@ typedef union gate_u {
 #define PG_MASK_CE0_OFFSET 0x2A4
 #define PG_MASK_CE0_TEGRAX1_RESET 0x000000FF
 
+#define SECURE_SCRATCH6_OFFSET 0x224
+#define SECURE_SCRATCH6_RESET 0x00000000
+
+#define SECURE_SCRATCH7_OFFSET 0x228
+#define SECURE_SCRATCH7_RESET 0x00000000
+
 #define SECURE_SCRATCH8_OFFSET 0x300
 #define SECURE_SCRATCH8_RESET 0x00000000
 
@@ -1196,6 +1202,8 @@ typedef union gate_u {
 #define SCRATCH56_RESET 0x00000000
 
 void tegra_pmc_set_rst_status(uint32_t value);
+
+void tegra_pmc_set_srk(uint32_t *key);
 
 void tegra_pmc_reset(DeviceState *dev, ShutdownCause cause);
 

@@ -36,6 +36,7 @@
 #include "qemu/guest-random.h"
 #include "qapi/error.h"
 #include "qemu/bswap.h"
+#include "qapi/qapi-commands.h"
 
 #include "exec/address-spaces.h"
 #include "sysemu/dma.h"
@@ -48,6 +49,8 @@
 #include "qemu/log.h"
 
 #include "se.h"
+
+#include "../apb/pmc/pmc.h"
 
 #define TYPE_TEGRA_SE "tegra.se"
 #define TEGRA_SE(obj) OBJECT_CHECK(tegra_se, (obj), TYPE_TEGRA_SE)
@@ -135,6 +138,7 @@ typedef struct tegra_se_state {
     u32 aes_keytable[0x10*0x10];
     u32 rsa_keytable[0x100];
     u32 srk[0x20>>2];
+    u32 srk_iv[0x10>>2];
 
 } tegra_se;
 
@@ -712,6 +716,28 @@ void tegra_se_set_aes_keyslot(uint32_t slot, void* key, size_t key_size) {
     memcpy(&s->aes_keytable[slot*0x10], key, key_size);
 }
 
+// Extract sticky-bits state into the packed context data.
+static void tegra_se_get_context_sticky_bits(tegra_se *s, uint32_t *out)
+{
+    out[0] = s->regs.SE_SE_SECURITY & 0x7;
+    if (s->regs.SE_SE_SECURITY & (1<<16)) out[0] |= 1<<3; // SECURITY_SOFT_SETTING
+    out[0] |= (s->regs.SE_TZRAM_SECURITY & 0x3) << 4;
+    out[0] |= s->regs.SE_CRYPTO_SECURITY_PERKEY << 6;
+
+    uint32_t bitpos = 22, bitcount=0;
+    for (uint32_t i=0; i<0x10; i++, bitpos+=7) {
+        bitcount = 7;
+        if ((bitpos % 32) + bitcount > 32) bitcount = 32 - ((bitpos % 32) + bitcount);
+        out[bitpos/32] |= (s->regs.SE_CRYPTO_KEYTABLE_ACCESS[i] & ((1<<bitcount)-1)) << (bitpos % 32);
+        if (bitcount < 7)
+            out[(bitpos+bitcount)/32] |= (s->regs.SE_CRYPTO_KEYTABLE_ACCESS[i]>>bitcount & ((1<<(7-bitcount))-1)) << ((bitpos+bitcount) % 32);
+    }
+
+    out[4] |= (s->regs.SE_RSA_SECURITY_PERKEY & 0x3) << 6;
+    out[4] |= (s->regs.SE_RSA_KEYTABLE_ACCESS[0] & 0x7) << 8;
+    out[4] |= (s->regs.SE_RSA_KEYTABLE_ACCESS[1] & 0x7) << 11;
+}
+
 static uint64_t tegra_se_priv_read(void *opaque, hwaddr offset,
                                      unsigned size)
 {
@@ -746,6 +772,8 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
     uint32_t n_buf[0x40]={};
     uint32_t e_buf[0x40]={};
 
+    uint32_t sticky_bits[0x20>>2]={};
+
     uint32_t cfg_dst = (s->regs.SE_CONFIG >> 2) & 0x7;
 
     if (offset == SE_OPERATION_OFFSET || (offset == SE_RSA_KEYTABLE_ADDR_OFFSET && cfg_dst==0)) {
@@ -771,14 +799,20 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
             s->regs.SE_INT_STATUS |= 1<<4; // INT_STATUS_SE_OP_DONE
             if (s->regs.SE_INT_ENABLE & s->regs.SE_INT_STATUS) TRACE_IRQ_RAISE(s->iomem.addr, s->irq);
 
+            bool ctxsave = false;
+
             if (offset == SE_OPERATION_OFFSET) {
                 uint32_t op = s->regs.SE_OPERATION;
+
+                dma_addr_t tmplen_in = in_entry.size;
+                void* databuf_in = NULL;
+                uint32_t ctxsave_src = (s->regs.SE_CTX_SAVE_CONFIG >> 29) & 0x7;
 
                 if (op==3) { // CTX_SAVE
                     bool ctx_save_auto_enable = s->regs.SE_CTX_SAVE_AUTO & 0x1;
 
-                    if (ctx_save_auto_enable && tegra_board < TEGRAX1PLUS_BOARD) {
-                        qemu_log_mask(LOG_GUEST_ERROR, "tegra.se: Ignoring attempt to use automatic context save since the current board doesn't support it.\n");
+                    if (ctx_save_auto_enable != (tegra_board >= TEGRAX1PLUS_BOARD)) {
+                        qemu_log_mask(LOG_GUEST_ERROR, "tegra.se: Ignoring attempt to use automatic/original context save since the current board doesn't support it.\n");
                     }
                     else if (ctx_save_auto_enable) { // Automatic context save
                         uint32_t cnt = s->engine == 1 ? 133 : 646;
@@ -788,15 +822,50 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 
                         // TODO: Actually handle context?
                     }
-                    else { // Original context save. TODO
+                    else { // Original context save.
+                        ctxsave = true;
+
+                        uint32_t word_quad=0;
+                        if (ctxsave_src!=4) { // MEM, handled below.
+                           if (ctxsave_src==0) { // STICKY_BITS
+                               uint32_t tmpaddr = (s->regs.SE_CTX_SAVE_CONFIG >> 24) & 0x1; // CTX_SAVE_CONFIG_STICKY_WORD_QUAD
+                               tegra_se_get_context_sticky_bits(s, sticky_bits);
+                               databuf_in = &sticky_bits[tmpaddr*0x4];
+                           }
+                           else if (ctxsave_src==1) { // RSA_KEYTABLE
+                               uint32_t tmpaddr = (s->regs.SE_CTX_SAVE_CONFIG >> 16) & 0x3; // CTX_SAVE_CONFIG_RSA_KEY_INDEX
+                               word_quad = (s->regs.SE_CTX_SAVE_CONFIG>>12) & 0xF; // CTX_SAVE_CONFIG_RSA_WORD_QUAD
+                               tmpaddr = (tmpaddr*0x40) + (word_quad*0x4);
+                               databuf_in = &s->rsa_keytable[tmpaddr];
+                           }
+                           else if (ctxsave_src==2) { // AES_KEYTABLE
+                               uint32_t tmpaddr = (s->regs.SE_CTX_SAVE_CONFIG >> 8) & 0xF; // CTX_SAVE_CONFIG_AES_KEY_INDEX
+                               word_quad = s->regs.SE_CTX_SAVE_CONFIG & 0x3; // CTX_SAVE_CONFIG_AES_WORD_QUAD
+                               tmpaddr = (tmpaddr*0x10) | (word_quad*0x4);
+                               databuf_in = &s->aes_keytable[tmpaddr];
+                           }
+                           // 3: PKA1_STICKY_BITS, not impl'd
+                           // 4: MEM, handled below.
+                           else if (ctxsave_src==6) { // SRK
+                               tegra_pmc_set_srk(s->srk);
+                               break;
+                           }
+                           else {
+                               qemu_log_mask(LOG_UNIMP, "tegra.se: Ignoring unsupported ctxsave_src=%d.\n", ctxsave_src);
+                               break;
+                           }
+                           tmplen_in = 0x10;
+                        }
                     }
 
-                    break;
+                    if (!ctxsave) break;
                 }
                 else if (op!=1) { // START
-                    qemu_log_mask(LOG_UNIMP, "tegra.se: Ignoring op=%d.\n", op);
+                    qemu_log_mask(LOG_UNIMP, "tegra.se: Ignoring unsupported op=%d.\n", op);
                     break;
                 }
+
+                if (op==1 || (ctxsave && ctxsave_src==4)) databuf_in = dma_memory_map(&address_space_memory, in_entry.address, &tmplen_in, DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
 
                 if (cfg_dst==0) dma_memory_read(&address_space_memory, s->regs.SE_OUT_LL_ADDR, &out_entry, sizeof(out_entry), MEMTXATTRS_UNSPECIFIED);
                 //printf("se in: 0x%x, 0x%x, 0x%x\n", in_entry.zero, in_entry.address, in_entry.size);
@@ -829,8 +898,9 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     databuf_outsize = sizeof(s->aes_keytable) - (keyoff<<2);
                 }
                 else if (cfg_dst==3) { // SRK
-                    databuf_out = &s->srk; // This is unused except for this dst-buf.
+                    databuf_out = &s->srk;
                     databuf_outsize = sizeof(s->srk);
+                    memset(s->srk_iv, 0, sizeof(s->srk_iv));
                 }
                 else if (cfg_dst==4) { // RSA_REG
                     databuf_out = &s->regs.SE_RSA_OUTPUT;
@@ -852,6 +922,9 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     bool encrypt = (cfg>>8) & 0x1; // CRYPTO_CONFIG_CORE_SEL
                     //uint32_t ctr_cntn = (cfg>>11) & 0xFF;
                     uint32_t keyindex = (cfg>>24) & 0xF;
+                    uint8_t *key = (uint8_t*)&s->aes_keytable[keyindex*0x10];
+
+                    if (ctxsave) hash_enable = false;
 
                     if (hash_enable && !encrypt) {
                         qemu_log_mask(LOG_UNIMP, "tegra.se: AES hash_enable=1 with encrypt=0 is not supported.\n");
@@ -883,23 +956,28 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 
                         QCryptoCipherMode mode = QCRYPTO_CIPHER_MODE__MAX;
 
-                        if (xor_pos==0) mode = QCRYPTO_CIPHER_MODE_ECB; // BYPASS
-                        else if (input_sel==3) mode = QCRYPTO_CIPHER_MODE_CTR; // LINEAR_CTR
-                        else if (xor_pos==2 || xor_pos==3) mode = QCRYPTO_CIPHER_MODE_CBC; // TOP/BOTTOM
+                        if (ctxsave) {
+                            encrypt = true;
+                            mode = QCRYPTO_CIPHER_MODE_CBC;
+                            key = (uint8_t*)s->srk;
+                        }
                         else {
-                            qemu_log_mask(LOG_UNIMP, "tegra.se: Unsupported SE AES mode, SE_CRYPTO_CONFIG: 0x%x.\n", cfg);
+                            if (xor_pos==0) mode = QCRYPTO_CIPHER_MODE_ECB; // BYPASS
+                            else if (input_sel==3) mode = QCRYPTO_CIPHER_MODE_CTR; // LINEAR_CTR
+                            else if (xor_pos==2 || xor_pos==3) mode = QCRYPTO_CIPHER_MODE_CBC; // TOP/BOTTOM
+                            else {
+                                qemu_log_mask(LOG_UNIMP, "tegra.se: Unsupported SE AES mode, SE_CRYPTO_CONFIG: 0x%x.\n", cfg);
+                            }
                         }
 
                         if (cipher_alg!=QCRYPTO_CIPHER_ALG__MAX && mode!=QCRYPTO_CIPHER_MODE__MAX) {
-                            QCryptoCipher *cipher = qcrypto_cipher_ctx_new(cipher_alg, mode, (uint8_t*)&s->aes_keytable[keyindex*0x10], qcrypto_cipher_get_key_len(cipher_alg), &err);
+                            QCryptoCipher *cipher = qcrypto_cipher_ctx_new(cipher_alg, mode, key, qcrypto_cipher_get_key_len(cipher_alg), &err);
 
                             if (cipher) {
-                                dma_addr_t tmplen_in = in_entry.size;
-                                void* databuf_in = dma_memory_map(&address_space_memory, in_entry.address, &tmplen_in, DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
-
                                 size_t blocklen = qcrypto_cipher_get_block_len(cipher_alg);
                                 datasize = (s->regs.SE_CRYPTO_LAST_BLOCK+1)*blocklen;
                                 if (!hash_enable && datasize > databuf_outsize) datasize = databuf_outsize;
+                                if (datasize > tmplen_in) datasize = tmplen_in;
 
                                 if (databuf_in==NULL || databuf_out==NULL) {
                                     qemu_log_mask(LOG_GUEST_ERROR, "tegra.se: Failed to DMA map AES input/output buffer.\n");
@@ -914,11 +992,17 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                         }
                                     }
                                     else if (mode != QCRYPTO_CIPHER_MODE_ECB) {
-                                        memcpy(iv, &s->aes_keytable[keyindex*0x10 + (iv_select==0 ? 0x8 : 0xC)], 0x10);
+                                        if (!ctxsave)
+                                            memcpy(iv, &s->aes_keytable[keyindex*0x10 + (iv_select==0 ? 0x8 : 0xC)], 0x10);
+                                        else
+                                            memcpy(iv, s->srk_iv, 0x10);
                                     }
 
-                                    qemu_log("tegra_se_aes_info keyindex = %u, cfg_dst = %u, tmpmode = 0x%x, mode = %d, encrypt = %d, perkey[%u] = 0x%x\n", keyindex, cfg_dst, tmpmode, mode, encrypt,  keyindex, (s->regs.SE_CRYPTO_SECURITY_PERKEY & (1<<keyindex))!=0);
-                                    se_log_hexdump("tegra_se_aes_key", &s->aes_keytable[keyindex*0x10], qcrypto_cipher_get_key_len(cipher_alg));
+                                    if (!ctxsave)
+                                        qemu_log("tegra_se_aes_info keyindex = %u, cfg_dst = %u, tmpmode = 0x%x, mode = %d, encrypt = %d, perkey[%u] = 0x%x\n", keyindex, cfg_dst, tmpmode, mode, encrypt,  keyindex, (s->regs.SE_CRYPTO_SECURITY_PERKEY & (1<<keyindex))!=0);
+                                    else
+                                        qemu_log("tegra_se_aes_info cfg_dst = %u, tmpmode = 0x%x, ctxsave_src = 0x%x\n", cfg_dst, tmpmode, ctxsave_src);
+                                    se_log_hexdump("tegra_se_aes_key", key, qcrypto_cipher_get_key_len(cipher_alg));
                                     se_log_hexdump("tegra_se_crypto_input", databuf_in, 0x10);
 
                                     int tmpret=0;
@@ -961,7 +1045,10 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                                     }
                                                 }
                                                 else {
-                                                    memcpy(&s->aes_keytable[keyindex*0x10 + 0xC], iv, 0x10);
+                                                    if (!ctxsave)
+                                                        memcpy(&s->aes_keytable[keyindex*0x10 + 0xC], iv, 0x10);
+                                                    else
+                                                        memcpy(s->srk_iv, iv, 0x10);
                                                 }
                                             }
                                         }
@@ -969,8 +1056,6 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 
                                     se_log_hexdump("tegra_se_crypto_output", databuf_out, 0x10);
                                 }
-
-                                if (databuf_in) dma_memory_unmap(&address_space_memory, databuf_in, tmplen_in, DMA_DIRECTION_TO_DEVICE, tmplen_in);
 
                                 qcrypto_cipher_free(cipher);
                             }
@@ -1090,6 +1175,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                         qcrypto_akcipher_free(akcipher);
                     }
                 }
+                if (databuf_in && !(ctxsave && ctxsave_src!=4)) dma_memory_unmap(&address_space_memory, databuf_in, tmplen_in, DMA_DIRECTION_TO_DEVICE, tmplen_in);
                 if (cfg_dst==0 && databuf_out) dma_memory_unmap(&address_space_memory, databuf_out, databuf_outsize, DMA_DIRECTION_FROM_DEVICE, datasize);
                 if (err) error_report_err(err);
             }
@@ -1152,6 +1238,8 @@ static void tegra_se_priv_reset(DeviceState *dev)
     memset(&s->regs, 0, sizeof(s->regs));
     memset(s->aes_keytable, 0, sizeof(s->aes_keytable));
     memset(s->rsa_keytable, 0, sizeof(s->rsa_keytable));
+    memset(s->srk, 0, sizeof(s->srk));
+    memset(s->srk_iv, 0, sizeof(s->srk_iv));
 
     s->regs.SE_SE_SECURITY = 0x00010005; // SECURITY_HARD_SETTING = NONSECURE, SECURITY_PERKEY_SETTING = NONSECURE, SECURITY_SOFT_SETTING = NONSECURE
     if (tegra_board == TEGRAX1PLUS_BOARD) s->regs.SE_SE_SECURITY |= 1<<5; // SE_SECURITY TX1+ sticky bit
