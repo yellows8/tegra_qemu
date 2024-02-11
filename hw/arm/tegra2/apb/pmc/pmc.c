@@ -723,7 +723,8 @@ static void tegra_pmc_priv_write(void *opaque, hwaddr offset,
         break;
     case REMOVE_CLAMPING_CMD_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->remove_clamping_cmd.reg32, value);
-        s->remove_clamping_cmd.reg32 = value;
+        s->clamp_status.reg32 &= ~(s->pwrgate_status.reg32 & value);
+        s->remove_clamping_cmd.reg32 = 0;
         break;
     case PWRGOOD_TIMER_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pwrgood_timer.reg32, value);
