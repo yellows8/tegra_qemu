@@ -1205,6 +1205,8 @@ void tegra_pmc_set_rst_status(uint32_t value);
 
 void tegra_pmc_set_srk(uint32_t *key);
 
+void tegra_pmc_update_crail(void);
+
 void tegra_pmc_reset(DeviceState *dev, ShutdownCause cause);
 
 #endif // TEGRA_PMC_H

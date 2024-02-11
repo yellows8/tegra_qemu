@@ -40,6 +40,8 @@
 #include "tegra_cpu.h"
 #include "tegra_trace.h"
 
+#include "../apb/pmc/pmc.h"
+
 #define TYPE_TEGRA_FLOW_CTRL "tegra.flow"
 #define TEGRA_FLOW_CTRL(obj) OBJECT_CHECK(tegra_flow, (obj), TYPE_TEGRA_FLOW_CTRL)
 #define DEFINE_REG32(reg) reg##_t reg
@@ -372,6 +374,7 @@ static void tegra_flow_run_cpu(int cpu_id)
 {
     if (tegra_cpu_is_powergated(cpu_id)) {
         tegra_cpu_unpowergate(cpu_id);
+        tegra_pmc_update_crail();
     } else {
         tegra_cpu_unhalt(cpu_id);
     }
@@ -523,6 +526,7 @@ static int tegra_flow_powergate(tegra_flow *s, int cpu_id, int is_sibling)
 
     tegra_cpu_reset_assert(cpu_id);
     tegra_cpu_powergate(cpu_id);
+    tegra_pmc_update_crail();
 
     if (s->halt_events[cpu_id].mode & WAITEVENT) {
         if (!tegra_flow_arm_event(s, cpu_id, 1)) {
@@ -538,6 +542,7 @@ static int tegra_flow_powergate(tegra_flow *s, int cpu_id, int is_sibling)
 
     if (!(s->halt_events[cpu_id].mode & STOP)) {
         tegra_cpu_unpowergate(cpu_id);
+        tegra_pmc_update_crail();
     }
 
     return 1;
