@@ -56,6 +56,7 @@
 #include "ahb/host1x/modules/tsec/tsec.h"
 #include "apb/pmc/pmc.h"
 #include "ahb/sb/sb.h"
+#include "ppsb/evp/evp.h"
 
 #include "devices.h"
 #include "iomap.h"
@@ -956,6 +957,7 @@ static void tegrax1_reset(MachineState *state, ShutdownCause cause)
     qemu_devices_reset(cause);
 
     tegra_pmc_reset(tegra_pmc_dev, cause);
+    tegra_evp_reset(tegra_evp_dev, cause);
 
     int cpu_id = state->firmware != NULL || state->bootloader != NULL ? TEGRA_BPMP : TEGRA_CCPLEX_CORE0;
     tegra_cpu_unpowergate(cpu_id);

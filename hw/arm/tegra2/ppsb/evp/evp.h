@@ -1106,4 +1106,6 @@ uint64_t tegra_evp_get_cpu_reset_vector(void);
 void tegra_evp_set_bpmp_reset_vector(uint64_t value);
 bool tegra_evp_is_bpmp_reset_vector_default(void);
 
+void tegra_evp_reset(DeviceState *dev, ShutdownCause cause);
+
 #endif // TEGRA_EVP_H

@@ -45,6 +45,7 @@ typedef struct tegra_evp_state {
     MemoryRegion lovec_mem;
     uint32_t cpu_reset_vector;
     uint32_t bpmp_reset_vector;
+    uint32_t cold_bpmp_reset_vector;
     uint32_t evp_regs[2][36];
 } tegra_evp;
 
@@ -55,6 +56,7 @@ static const VMStateDescription vmstate_tegra_evp = {
     .fields = (VMStateField[]) {
         VMSTATE_UINT32(cpu_reset_vector, tegra_evp),
         VMSTATE_UINT32(bpmp_reset_vector, tegra_evp),
+        VMSTATE_UINT32(cold_bpmp_reset_vector, tegra_evp),
         VMSTATE_UINT32_2DARRAY(evp_regs, tegra_evp, 2, 36),
         VMSTATE_END_OF_LIST()
     }
@@ -176,13 +178,13 @@ static void tegra_evp_lovec_priv_write(void *opaque, hwaddr offset,
     TRACE_WRITE(s->lovec_mem.addr, offset, 0, value);
 }
 
-static void tegra_evp_priv_reset(DeviceState *dev)
+void tegra_evp_reset(DeviceState *dev, ShutdownCause cause)
 {
     tegra_evp *s = TEGRA_EVP(dev);
     int i;
 
     s->evp_regs[0][0] = s->cpu_reset_vector;
-    s->evp_regs[1][0] = s->bpmp_reset_vector;
+    s->evp_regs[1][0] = cause != SHUTDOWN_CAUSE_GUEST_RESET ? s->cold_bpmp_reset_vector : s->bpmp_reset_vector;
 
     for (i = 0; i < 1; i++) {
         s->evp_regs[i][1]  = EVP_UNDEF_VECTOR_RESET;
@@ -313,6 +315,7 @@ static void tegra_evp_priv_realize(DeviceState *dev, Error **errp)
 static Property tegra_evp_properties[] = {
     DEFINE_PROP_UINT32("cpu-reset-vector", tegra_evp, cpu_reset_vector, EVP_RESET_VECTOR_RESET), \
     DEFINE_PROP_UINT32("bpmp-reset-vector", tegra_evp, bpmp_reset_vector, TEGRA_IROM_BASE), \
+    DEFINE_PROP_UINT32("cold-bpmp-reset-vector", tegra_evp, cold_bpmp_reset_vector, TEGRA_IROM_BASE), \
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -323,7 +326,6 @@ static void tegra_evp_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, tegra_evp_properties);
     dc->realize = tegra_evp_priv_realize;
     dc->vmsd = &vmstate_tegra_evp;
-    dc->reset = tegra_evp_priv_reset;
 }
 
 static const TypeInfo tegra_evp_info = {
