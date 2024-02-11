@@ -828,7 +828,7 @@ static void __tegrax1_init(MachineState *machine)
     sysbus_connect_irq(s, 0, DIRQ(INT_NVJPG));
 
     /* Process generator tag */
-    //sysbus_create_simple("tegra.pg", 0x60000000, NULL);
+    sysbus_create_simple("tegra.pg", 0x60000000, NULL);
 
     /* Multi-CPU shared resources access arbitration */
     tegra_arb_sema_dev = sysbus_create_varargs("tegra.arb_sema",
