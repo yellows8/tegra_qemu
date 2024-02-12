@@ -727,7 +727,7 @@ static void tegra_se_get_context_sticky_bits(tegra_se *s, uint32_t *out)
     uint32_t bitpos = 22, bitcount=0;
     for (uint32_t i=0; i<0x10; i++, bitpos+=7) {
         bitcount = 7;
-        if ((bitpos % 32) + bitcount > 32) bitcount = 32 - ((bitpos % 32) + bitcount);
+        if ((bitpos % 32) + bitcount > 32) bitcount -= ((bitpos % 32) + bitcount) - 32;
         out[bitpos/32] |= (s->regs.SE_CRYPTO_KEYTABLE_ACCESS[i] & ((1<<bitcount)-1)) << (bitpos % 32);
         if (bitcount < 7)
             out[(bitpos+bitcount)/32] |= (s->regs.SE_CRYPTO_KEYTABLE_ACCESS[i]>>bitcount & ((1<<(7-bitcount))-1)) << ((bitpos+bitcount) % 32);
