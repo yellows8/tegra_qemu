@@ -140,6 +140,20 @@ typedef struct tegra_se_state {
     u32 srk[0x20>>2];
     u32 srk_iv[0x10>>2];
 
+    struct {
+        u32 aes_keytable[0x10*0x10];
+        u32 rsa_keytable[0x100];
+
+        u32 SE_SE_SECURITY;
+        u32 SE_TZRAM_SECURITY;
+
+        u32 SE_CRYPTO_SECURITY_PERKEY;
+        uint8_t SE_CRYPTO_KEYTABLE_ACCESS[0x10];
+
+        u32 SE_RSA_SECURITY_PERKEY;
+        uint8_t SE_RSA_KEYTABLE_ACCESS[0x2];
+    } context;
+
 } tegra_se;
 
 static const VMStateDescription vmstate_tegra_se = {
@@ -152,6 +166,17 @@ static const VMStateDescription vmstate_tegra_se = {
         VMSTATE_UINT32_ARRAY(aes_keytable, tegra_se, 0x10*0x10),
         VMSTATE_UINT32_ARRAY(rsa_keytable, tegra_se, 0x100),
         VMSTATE_UINT32_ARRAY(srk, tegra_se, 0x20>>2),
+        VMSTATE_UINT32_ARRAY(srk_iv, tegra_se, 0x10>>2),
+
+        VMSTATE_UINT32_ARRAY(context.aes_keytable, tegra_se, 0x10*0x10),
+        VMSTATE_UINT32_ARRAY(context.rsa_keytable, tegra_se, 0x100),
+        VMSTATE_UINT32(context.SE_SE_SECURITY, tegra_se),
+        VMSTATE_UINT32(context.SE_TZRAM_SECURITY, tegra_se),
+        VMSTATE_UINT32(context.SE_CRYPTO_SECURITY_PERKEY, tegra_se),
+        VMSTATE_UINT8_ARRAY(context.SE_CRYPTO_KEYTABLE_ACCESS, tegra_se, 0x10),
+        VMSTATE_UINT32(context.SE_RSA_SECURITY_PERKEY, tegra_se),
+        VMSTATE_UINT8_ARRAY(context.SE_RSA_KEYTABLE_ACCESS, tegra_se, 0x2),
+
         VMSTATE_END_OF_LIST()
     }
 };
@@ -738,6 +763,24 @@ static void tegra_se_get_context_sticky_bits(tegra_se *s, uint32_t *out)
     out[4] |= (s->regs.SE_RSA_KEYTABLE_ACCESS[1] & 0x7) << 11;
 }
 
+static void tegra_se_load_context(tegra_se *s)
+{
+    memcpy(s->aes_keytable, s->context.aes_keytable, sizeof(s->context.aes_keytable));
+    memcpy(s->rsa_keytable, s->context.rsa_keytable, sizeof(s->context.rsa_keytable));
+
+    s->regs.SE_SE_SECURITY = s->context.SE_SE_SECURITY;
+    s->regs.SE_TZRAM_SECURITY = s->context.SE_TZRAM_SECURITY;
+    s->regs.SE_CRYPTO_SECURITY_PERKEY = s->context.SE_CRYPTO_SECURITY_PERKEY;
+    s->regs.SE_RSA_SECURITY_PERKEY = s->context.SE_RSA_SECURITY_PERKEY;
+
+    for (size_t i=0; i<0x10; i++)
+        s->regs.SE_CRYPTO_KEYTABLE_ACCESS[i] = s->context.SE_CRYPTO_KEYTABLE_ACCESS[i];
+    for (size_t i=0; i<0x2; i++)
+        s->regs.SE_RSA_KEYTABLE_ACCESS[i] = s->context.SE_RSA_KEYTABLE_ACCESS[i];
+
+    memset(&s->context, 0, sizeof(s->context));
+}
+
 static uint64_t tegra_se_priv_read(void *opaque, hwaddr offset,
                                      unsigned size)
 {
@@ -820,7 +863,20 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                         s->regs.SE_CTX_SAVE_AUTO &= ~(0x3FF<<16); // CTX_SAVE_AUTO_CURR_CNT
                         s->regs.SE_CTX_SAVE_AUTO |= cnt<<16;
 
-                        // TODO: Actually handle context?
+                        // Save the context.
+
+                        memcpy(s->context.aes_keytable, s->aes_keytable, sizeof(s->aes_keytable));
+                        memcpy(s->context.rsa_keytable, s->rsa_keytable, sizeof(s->rsa_keytable));
+
+                        s->context.SE_SE_SECURITY = s->regs.SE_SE_SECURITY;
+                        s->context.SE_TZRAM_SECURITY = s->regs.SE_TZRAM_SECURITY;
+                        s->context.SE_CRYPTO_SECURITY_PERKEY = s->regs.SE_CRYPTO_SECURITY_PERKEY;
+                        s->context.SE_RSA_SECURITY_PERKEY = s->regs.SE_RSA_SECURITY_PERKEY;
+
+                        for (size_t i=0; i<0x10; i++)
+                            s->context.SE_CRYPTO_KEYTABLE_ACCESS[i] = s->regs.SE_CRYPTO_KEYTABLE_ACCESS[i];
+                        for (size_t i=0; i<0x2; i++)
+                            s->context.SE_RSA_KEYTABLE_ACCESS[i] = s->regs.SE_RSA_KEYTABLE_ACCESS[i];
                     }
                     else { // Original context save.
                         ctxsave = true;
@@ -1225,6 +1281,18 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
             if (tegra_board >= TEGRAX1PLUS_BOARD) s->regs.SE_CRYPTO_KEYTABLE_ACCESS[(offset - SE_CRYPTO_KEYTABLE_ACCESS_OFFSET)>>2] |= value & 0x80;
         break;
 
+        case SE_TZRAM_OPERATION_OFFSET:
+            if (tegra_board >= TEGRAX1PLUS_BOARD) {
+                if (value & 0x1) { // REQ = INITIATE
+                    value &= ~0x1;
+                    value &= ~(1<<2); // BUSY = NO
+
+                    // We don't really need to support TZRAM save/restore since qemu memory will persist during suspend anyway.
+                }
+                s->regs.SE_TZRAM_OPERATION = value;
+            }
+        break;
+
         default:
             regs[offset/sizeof(uint32_t)] = (regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
         break;
@@ -1235,11 +1303,20 @@ static void tegra_se_priv_reset(DeviceState *dev)
 {
     tegra_se *s = TEGRA_SE(dev);
 
+    bool ctx_save_auto_enable = s->regs.SE_CTX_SAVE_AUTO & 0x1;
+
     memset(&s->regs, 0, sizeof(s->regs));
     memset(s->aes_keytable, 0, sizeof(s->aes_keytable));
     memset(s->rsa_keytable, 0, sizeof(s->rsa_keytable));
     memset(s->srk, 0, sizeof(s->srk));
     memset(s->srk_iv, 0, sizeof(s->srk_iv));
+
+    s->regs._0x814 = 0x89040800;
+
+    if (tegra_board >= TEGRAX1PLUS_BOARD && ctx_save_auto_enable) { // TODO: Move elsewhere if not correct.
+        tegra_se_load_context(s);
+        return;
+    }
 
     s->regs.SE_SE_SECURITY = 0x00010005; // SECURITY_HARD_SETTING = NONSECURE, SECURITY_PERKEY_SETTING = NONSECURE, SECURITY_SOFT_SETTING = NONSECURE
     if (tegra_board == TEGRAX1PLUS_BOARD) s->regs.SE_SE_SECURITY |= 1<<5; // SE_SECURITY TX1+ sticky bit
@@ -1271,8 +1348,6 @@ static void tegra_se_priv_reset(DeviceState *dev)
 
     s->regs.SE_RSA_SECURITY_PERKEY = 0x3;
     for (int keyslot=0; keyslot<2; keyslot++) s->regs.SE_RSA_KEYTABLE_ACCESS[keyslot] = 0x7;
-
-    s->regs._0x814 = 0x89040800;
 }
 
 static const MemoryRegionOps tegra_se_mem_ops = {
@@ -1290,6 +1365,9 @@ static void tegra_se_priv_realize(DeviceState *dev, Error **errp)
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_se_mem_ops, s,
                           "tegra.se", TEGRA_SE_SIZE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
+
+    memset(&s->regs, 0, sizeof(s->regs));
+    memset(&s->context, 0, sizeof(s->context));
 }
 
 static Property tegra_se_properties[] = {
