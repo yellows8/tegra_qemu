@@ -1083,6 +1083,13 @@ void tegra_pmc_set_srk(uint32_t *key)
     s->regs[(SECURE_SCRATCH7_OFFSET-0x160)>>2] = key[3];
 }
 
+void tegra_pmc_set_crypto_op(uint32_t value)
+{
+    tegra_pmc *s = tegra_pmc_dev;
+
+    s->crypto_op.reg32 = value;
+}
+
 void tegra_pmc_update_crail(void)
 {
     tegra_pmc *s = tegra_pmc_dev;
@@ -1122,7 +1129,6 @@ void tegra_pmc_reset(DeviceState *dev, ShutdownCause cause)
     s->auto_wake_lvl_mask.reg32 = AUTO_WAKE_LVL_MASK_RESET;
     s->wake_delay.reg32 = WAKE_DELAY_RESET;
     s->usb_debounce_del.reg32 = USB_DEBOUNCE_DEL_RESET;
-    s->crypto_op.reg32 = CRYPTO_OP_RESET;
     s->bondout_mirror0.reg32 = BONDOUT_MIRROR0_RESET;
     s->bondout_mirror1.reg32 = BONDOUT_MIRROR1_RESET;
     s->bondout_mirror2.reg32 = BONDOUT_MIRROR2_RESET;
@@ -1130,8 +1136,10 @@ void tegra_pmc_reset(DeviceState *dev, ShutdownCause cause)
     s->bondout_mirror_access.reg32 = BONDOUT_MIRROR_ACCESS_RESET;
     s->gate.reg32 = GATE_RESET;
 
-    // Skip init for SCRATCH-regs/default-zero regs for guest-reset. TODO: Is this correct / is there more regs to skip etc?
+    // Skip init for SCRATCH-regs/default-zero/etc regs for guest-reset. TODO: Is this correct / is there more regs to skip etc?
     if (cause != SHUTDOWN_CAUSE_GUEST_RESET) {
+        s->crypto_op.reg32 = CRYPTO_OP_RESET;
+
         s->scratch0.reg32 = SCRATCH0_RESET;
         s->scratch1.reg32 = SCRATCH1_RESET;
         s->scratch2.reg32 = SCRATCH2_RESET;

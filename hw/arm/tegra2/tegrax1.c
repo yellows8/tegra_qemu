@@ -957,6 +957,12 @@ static void tegrax1_reset(MachineState *state, ShutdownCause cause)
     qemu_devices_reset(cause);
 
     tegra_pmc_reset(tegra_pmc_dev, cause);
+
+    // If IROM isn't being run during cold-boot, do the same PMC write which IROM would normally handle.
+    if ((state->firmware == NULL || !tegra_evp_is_cold_bpmp_reset_vector_default()) && cause != SHUTDOWN_CAUSE_GUEST_RESET) {
+        tegra_pmc_set_crypto_op(0);
+    }
+
     tegra_evp_reset(tegra_evp_dev, cause);
 
     int cpu_id = state->firmware != NULL || state->bootloader != NULL ? TEGRA_BPMP : TEGRA_CCPLEX_CORE0;

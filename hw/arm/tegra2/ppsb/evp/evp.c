@@ -99,6 +99,12 @@ bool tegra_evp_is_bpmp_reset_vector_default(void) {
     return s->bpmp_reset_vector == TEGRA_IROM_BASE;
 }
 
+bool tegra_evp_is_cold_bpmp_reset_vector_default(void) {
+    tegra_evp *s = TEGRA_EVP(tegra_evp_dev);
+
+    return s->cold_bpmp_reset_vector == TEGRA_IROM_BASE;
+}
+
 static uint64_t tegra_evp_priv_read(void *opaque, hwaddr offset,
                                     unsigned size)
 {
