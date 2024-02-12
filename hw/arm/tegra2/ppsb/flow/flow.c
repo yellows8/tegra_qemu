@@ -571,7 +571,7 @@ static void tegra_flow_update_mode(tegra_flow *s, int cpu_id, int in_wfe)
         }
 
         if (tegra_flow_powergate(s, cpu_id, 0) ||
-           (!is_cop && flag))
+           (!is_cop && flag) || in_wfe==2) // in_wfe=2 is WFI.
         {
             bql_unlock();
             cpu_loop_exit(cs);
