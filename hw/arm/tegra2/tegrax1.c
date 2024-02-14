@@ -57,6 +57,7 @@
 #include "apb/pmc/pmc.h"
 #include "ahb/sb/sb.h"
 #include "ppsb/evp/evp.h"
+#include "apb/fuse/fuse.h"
 
 #include "devices.h"
 #include "iomap.h"
@@ -959,6 +960,8 @@ static void tegrax1_reset(MachineState *state, ShutdownCause cause)
     }
 
     tegra_evp_reset(tegra_evp_dev, cause);
+
+    tegra_fuse_reset(tegra_fuse_dev, cause);
 
     int cpu_id = state->firmware != NULL || state->bootloader != NULL ? TEGRA_BPMP : TEGRA_CCPLEX_CORE0;
     tegra_cpu_unpowergate(cpu_id);

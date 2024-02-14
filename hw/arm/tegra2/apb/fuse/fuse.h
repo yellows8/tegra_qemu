@@ -1132,4 +1132,6 @@ typedef union fuse_spare_bit_61_u {
 
 #define KFUSE_STATE_OFFSET 0x80
 
+void tegra_fuse_reset(DeviceState *dev, ShutdownCause cause);
+
 #endif // TEGRA_FUSE_H

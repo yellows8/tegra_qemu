@@ -49,6 +49,10 @@
 #include "tegra_cpu.h"
 #include "tegra_trace.h"
 
+#include "apb/pmc/pmc.h"
+#include "ppsb/evp/evp.h"
+#include "apb/fuse/fuse.h"
+
 #include "bundle/boot_iram.bin.h"
 #include "bundle/u_boot_dtb_tegra.bin.h"
 
@@ -657,6 +661,13 @@ static void tegra2_reset(MachineState *state, ShutdownCause cause)
     tegra_trace_init();
     qemu_devices_reset(cause);
 
+    tegra_pmc_reset(tegra_pmc_dev, cause);
+
+    tegra_evp_reset(tegra_evp_dev, cause);
+
+    tegra_fuse_reset(tegra_fuse_dev, cause);
+
+    tegra_cpu_unpowergate(TEGRA_BPMP);
     tegra_cpu_reset_deassert(TEGRA_BPMP, 1);
 }
 

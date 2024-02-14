@@ -21,6 +21,7 @@
 #include "tegra_common.h"
 
 #include "hw/sysbus.h"
+#include "sysemu/runstate.h"
 
 #include "fuse.h"
 #include "iomap.h"
@@ -38,6 +39,7 @@ typedef struct tegra_fuse_state {
     SysBusDevice parent_obj;
 
     MemoryRegion iomem;
+    uint32_t fuse_array_size;
     uint32_t fuse_array[0x100];
     uint32_t fuse_cache_x98[0x70>>2];
     uint32_t fuse_cache_x128[0x24>>2];
@@ -74,14 +76,15 @@ typedef struct tegra_fuse_state {
     DEFINE_REG32(fuse_private_key2);
     DEFINE_REG32(fuse_private_key3);
     DEFINE_REG32(fuse_private_key4);
-    DEFINE_REG32(fuse_reserved_odm0);
+    uint32_t fuse_reserved_odm[0x8];
+    /*DEFINE_REG32(fuse_reserved_odm0);
     DEFINE_REG32(fuse_reserved_odm1);
     DEFINE_REG32(fuse_reserved_odm2);
     DEFINE_REG32(fuse_reserved_odm3);
     DEFINE_REG32(fuse_reserved_odm4);
     DEFINE_REG32(fuse_reserved_odm5);
     DEFINE_REG32(fuse_reserved_odm6);
-    DEFINE_REG32(fuse_reserved_odm7);
+    DEFINE_REG32(fuse_reserved_odm7);*/
     /*DEFINE_REG32(fuse_spare_bit_0);
     DEFINE_REG32(fuse_spare_bit_1);
     DEFINE_REG32(fuse_spare_bit_2);
@@ -151,6 +154,7 @@ static const VMStateDescription vmstate_tegra_fuse = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
+        VMSTATE_UINT32(fuse_array_size, tegra_fuse),
         VMSTATE_UINT32_ARRAY(fuse_array, tegra_fuse, 0x100),
         VMSTATE_UINT32_ARRAY(fuse_cache_x98, tegra_fuse, 0x70>>2),
         VMSTATE_UINT32_ARRAY(fuse_cache_x128, tegra_fuse, 0x24>>2),
@@ -187,14 +191,15 @@ static const VMStateDescription vmstate_tegra_fuse = {
         VMSTATE_UINT32(fuse_private_key2.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_private_key3.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_private_key4.reg32, tegra_fuse),
-        VMSTATE_UINT32(fuse_reserved_odm0.reg32, tegra_fuse),
+        VMSTATE_UINT32_ARRAY(fuse_reserved_odm, tegra_fuse, 0x8),
+        /*VMSTATE_UINT32(fuse_reserved_odm0.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_reserved_odm1.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_reserved_odm2.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_reserved_odm3.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_reserved_odm4.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_reserved_odm5.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_reserved_odm6.reg32, tegra_fuse),
-        VMSTATE_UINT32(fuse_reserved_odm7.reg32, tegra_fuse),
+        VMSTATE_UINT32(fuse_reserved_odm7.reg32, tegra_fuse),*/
         /*VMSTATE_UINT32(fuse_spare_bit_0.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_spare_bit_1.reg32, tegra_fuse),
         VMSTATE_UINT32(fuse_spare_bit_2.reg32, tegra_fuse),
@@ -388,29 +393,8 @@ static uint64_t tegra_fuse_priv_read(void *opaque, hwaddr offset,
     case FUSE_PRIVATE_KEY4_OFFSET:
         ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key4.reg32;
         break;
-    case FUSE_RESERVED_ODM0_OFFSET:
-        ret = s->fuse_reserved_odm0.reg32;
-        break;
-    case FUSE_RESERVED_ODM1_OFFSET:
-        ret = s->fuse_reserved_odm1.reg32;
-        break;
-    case FUSE_RESERVED_ODM2_OFFSET:
-        ret = s->fuse_reserved_odm2.reg32;
-        break;
-    case FUSE_RESERVED_ODM3_OFFSET:
-        ret = s->fuse_reserved_odm3.reg32;
-        break;
-    case FUSE_RESERVED_ODM4_OFFSET:
-        ret = s->fuse_reserved_odm4.reg32;
-        break;
-    case FUSE_RESERVED_ODM5_OFFSET:
-        ret = s->fuse_reserved_odm5.reg32;
-        break;
-    case FUSE_RESERVED_ODM6_OFFSET:
-        ret = s->fuse_reserved_odm6.reg32;
-        break;
-    case FUSE_RESERVED_ODM7_OFFSET:
-        ret = s->fuse_reserved_odm7.reg32;
+    case FUSE_RESERVED_ODM0_OFFSET ... FUSE_RESERVED_ODM7_OFFSET:
+        ret = s->fuse_reserved_odm[(offset - FUSE_RESERVED_ODM0_OFFSET)>>2];
         break;
     /*case FUSE_SPARE_BIT_0_OFFSET:
         ret = s->fuse_spare_bit_0.reg32;
@@ -770,37 +754,9 @@ static void tegra_fuse_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_private_key4.reg32, value);
         s->fuse_private_key4.reg32 = value;
         break;
-    case FUSE_RESERVED_ODM0_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm0.reg32, value);
-        s->fuse_reserved_odm0.reg32 = value;
-        break;
-    case FUSE_RESERVED_ODM1_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm1.reg32, value);
-        s->fuse_reserved_odm1.reg32 = value;
-        break;
-    case FUSE_RESERVED_ODM2_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm2.reg32, value);
-        s->fuse_reserved_odm2.reg32 = value;
-        break;
-    case FUSE_RESERVED_ODM3_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm3.reg32, value);
-        s->fuse_reserved_odm3.reg32 = value;
-        break;
-    case FUSE_RESERVED_ODM4_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm4.reg32, value);
-        s->fuse_reserved_odm4.reg32 = value;
-        break;
-    case FUSE_RESERVED_ODM5_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm5.reg32, value);
-        s->fuse_reserved_odm5.reg32 = value;
-        break;
-    case FUSE_RESERVED_ODM6_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm6.reg32, value);
-        s->fuse_reserved_odm6.reg32 = value;
-        break;
-    case FUSE_RESERVED_ODM7_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm7.reg32, value);
-        s->fuse_reserved_odm7.reg32 = value;
+    case FUSE_RESERVED_ODM0_OFFSET ... FUSE_RESERVED_ODM7_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->fuse_reserved_odm[(offset - FUSE_RESERVED_ODM0_OFFSET)>>2], value);
+        s->fuse_reserved_odm[(offset - FUSE_RESERVED_ODM0_OFFSET)>>2] = value;
         break;
     /*case FUSE_SPARE_BIT_0_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->fuse_spare_bit_0.reg32, value & FUSE_SPARE_BIT_0_WRMASK);
@@ -1056,7 +1012,7 @@ static void tegra_fuse_priv_write(void *opaque, hwaddr offset,
     }
 }
 
-static void tegra_fuse_priv_reset(DeviceState *dev)
+void tegra_fuse_reset(DeviceState *dev, ShutdownCause cause)
 {
     tegra_fuse *s = TEGRA_FUSE(dev);
 
@@ -1090,14 +1046,7 @@ static void tegra_fuse_priv_reset(DeviceState *dev)
     s->fuse_private_key2.reg32 = 0xFFFFFFFF;
     s->fuse_private_key3.reg32 = 0xFFFFFFFF;
     s->fuse_private_key4.reg32 = 0xFFFFFFFF;
-    s->fuse_reserved_odm0.reg32 = 0x0;
-    s->fuse_reserved_odm1.reg32 = 0x0;
-    s->fuse_reserved_odm2.reg32 = 0x0;
-    s->fuse_reserved_odm3.reg32 = 0x0;
-    s->fuse_reserved_odm4.reg32 = 0x0;
-    s->fuse_reserved_odm5.reg32 = 0x0;
-    s->fuse_reserved_odm6.reg32 = 0x0;
-    s->fuse_reserved_odm7.reg32 = 0x0;
+    memset(s->fuse_reserved_odm, 0, sizeof(s->fuse_reserved_odm));
     /*s->fuse_spare_bit_0.reg32 = FUSE_SPARE_BIT_0_RESET;
     s->fuse_spare_bit_1.reg32 = FUSE_SPARE_BIT_1_RESET;
     s->fuse_spare_bit_2.reg32 = FUSE_SPARE_BIT_2_RESET;
@@ -1197,22 +1146,31 @@ static void tegra_fuse_priv_reset(DeviceState *dev)
     if (err) error_report_err(err);
     err = NULL;
 
-    // Load the tegra.fuse.array secret into the fuse_array.
-    // TODO: Should a different method be used to allow writing back fuses to disk, which were updated with FUSE_FUSECTRL CMD=WRITE?
-    memset(s->fuse_array, 0, sizeof(s->fuse_array));
+    if (cause != SHUTDOWN_CAUSE_GUEST_RESET) {
+        // Load the tegra.fuse.array secret into the fuse_array.
+        // TODO: Should a different method be used to allow writing back fuses to disk, which were updated with FUSE_FUSECTRL CMD=WRITE?
+        memset(s->fuse_array, 0, sizeof(s->fuse_array));
 
-    data = NULL;
-    datalen = 0;
-    if (qcrypto_secret_lookup("tegra.fuse.array", &data, &datalen, &err)==0) {
-        if (datalen > sizeof(s->fuse_array)) {
-            error_setg(&err, "tegra.fuse: Invalid datalen for secret tegra.fuse.array, datalen=0x%lx expected <=0x%lx.", datalen, sizeof(s->fuse_array));
+        data = NULL;
+        datalen = 0;
+        if (qcrypto_secret_lookup("tegra.fuse.array", &data, &datalen, &err)==0) {
+            if (datalen > sizeof(s->fuse_array)) {
+                error_setg(&err, "tegra.fuse: Invalid datalen for secret tegra.fuse.array, datalen=0x%lx expected <=0x%lx.", datalen, sizeof(s->fuse_array));
+            }
+            else {
+                memcpy(s->fuse_array, data, datalen);
+                s->fuse_array_size = datalen;
+            }
+            g_free(data);
         }
-        else {
-            memcpy(s->fuse_array, data, datalen);
-        }
-        g_free(data);
+        if (err) error_report_err(err);
     }
-    if (err) error_report_err(err);
+    else if (s->fuse_array_size >= (0x8*2 + 46)<<2) { // For guest-reset, load the (potentially updated by guest) fuse-array data into the cache-regs. Only ODM is handled since prod-hardware normally only allows writing ODM.
+        for (uint32_t odm=0; odm<0x8; odm++) {
+            uint32_t off = odm*2 + 46;
+            s->fuse_reserved_odm[odm] = extract32(s->fuse_array[off], 17, 15) | (extract32(s->fuse_array[off+2], 0, 17)<<15);
+        }
+    }
 }
 
 static const MemoryRegionOps tegra_fuse_mem_ops = {
@@ -1228,6 +1186,9 @@ static void tegra_fuse_priv_realize(DeviceState *dev, Error **errp)
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_fuse_mem_ops, s,
                           "tegra.fuse", TEGRA_FUSE_SIZE + TEGRA_KFUSE_SIZE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
+
+    s->fuse_array_size = 0;
+    memset(s->fuse_array, 0, sizeof(s->fuse_array));
 }
 
 static void tegra_fuse_class_init(ObjectClass *klass, void *data)
@@ -1236,7 +1197,6 @@ static void tegra_fuse_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_fuse_priv_realize;
     dc->vmsd = &vmstate_tegra_fuse;
-    dc->reset = tegra_fuse_priv_reset;
 }
 
 static const TypeInfo tegra_fuse_info = {
