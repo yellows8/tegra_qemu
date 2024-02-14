@@ -70,7 +70,7 @@ typedef union command_u {
 #define UNLOCK_PATTERN_RESET  0x00000000
 typedef union unlock_pattern_u {
     struct {
-        unsigned int unlock_pattern:15;
+        unsigned int unlock_pattern:16;
     };
 
     uint32_t reg32;

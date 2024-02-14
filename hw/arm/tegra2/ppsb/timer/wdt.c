@@ -215,8 +215,11 @@ static void tegra_wdt_priv_write(void *opaque, hwaddr offset,
             tegra_timer *timer = tegra_wdt_get_timer_source(s);
             if (timer) timer->pcr_read = false;
         }
-        else if (s->command.disable_counter && s->unlock_pattern.unlock_pattern == 0xC45A) { // disable counter
-            s->status.enabled = 0;
+        else if (s->command.disable_counter) { // disable counter
+            if (s->unlock_pattern.unlock_pattern == 0xC45A)
+                s->status.enabled = 0;
+            else
+                qemu_log_mask(LOG_GUEST_ERROR, "tegra.wdt: Ignoring attempt to disable counter with invalid UNLOCK_PATTERN.\n");
         }
         s->unlock_pattern.unlock_pattern = 0;
         break;
