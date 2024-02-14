@@ -20,14 +20,26 @@
 #include "tegra_common.h"
 
 #include "hw/sysbus.h"
+#include "sysemu/dma.h"
 
 #include "gr2d.h"
 #include "host1x_syncpts.h"
 #include "host1x_module.h"
+#include "../tsec/tsec.h"
 
 #include "tegra_trace.h"
 
 #define WR_MASKED(r, d, m)  r = (r & ~m##_WRMASK) | (d & m##_WRMASK)
+
+// TODO: Is this correct? How to handle TSEC_FALCON_ADDR_MSB?
+// TODO: Is this supposed to map to Methods somehow?
+static hwaddr tegra_gr2d_get_priv_offset(gr2d_regs *s, hwaddr offset, unsigned size) {
+    offset = (offset - 0x1000) << 6;
+    offset |= (s->falcon_addr & 0x3F) << 2;
+    assert(offset+size <= sizeof(s->priv));
+
+    return offset;
+}
 
 void gr2d_write(struct host1x_module *module, uint32_t offset, uint32_t data)
 {
@@ -37,16 +49,19 @@ void gr2d_write(struct host1x_module *module, uint32_t offset, uint32_t data)
 
     TRACE_WRITE(module->class_id, offset, data, data);
 
+    /*ctx_referred = regs->g2sb_switch_g2currentcontext.curr_context;
+    if (tegra_board >= TEGRAX1_BOARD) ctx_referred = (ctx->g2sb_g2classchannel_regonly.reg32 >> 12) & 0xF;
+    g_assert(ctx_referred < ARRAY_SIZE(regs->ctx));*/
+    ctx_referred = 0; // TODO: Fix. g2sb_g2classchannel_regonly is in ctx, but ctx isn't selected yet.
+    ctx = &regs->ctx[ctx_referred];
+
     switch (offset) {
     case 0x0 ... 0x4C:
         /* Just select context to use and fall through */
-        ctx_referred = regs->g2sb_switch_g2currentcontext.curr_context;
-        ctx = &regs->ctx[ctx_referred];
         break;
     case 0x1000 ... 0x9000:
         /* Same here ^ */
-        ctx_referred = offset >> 13;
-        ctx = &regs->ctx[ctx_referred];
+        if (tegra_board < TEGRAX1_BOARD) ctx_referred = offset >> 13;
         break;
     case G2SB_SWITCH_G2INTERRUPT_OFFSET:
         regs->g2sb_switch_g2interrupt.reg32 = data;
@@ -82,11 +97,52 @@ void gr2d_write(struct host1x_module *module, uint32_t offset, uint32_t data)
         regs->g2sb_switch_timeout_wcoal_g2.reg32 = data;
         return;
     default:
-        g_assert_not_reached();
+        //g_assert_not_reached();
+        //return;
+    }
+
+    if (tegra_board < TEGRAX1_BOARD) offset &= 0x7f;
+    else if (offset<<2 >= 0x1400) {
+        offset = tegra_gr2d_get_priv_offset(regs, offset<<2, 4);
+        regs->priv[offset>>2] = data;
+        if (offset == VIC_FC_COMPOSE_OFFSET && (data & 0x1)) {
+            ctx->g2sb_g2srcba.reg32 = regs->priv[VIC_SC_SFC0_BASE_LUMA_OFFSET(0)>>2]<<8; // Source buffer.
+            ctx->g2sb_g2dstba.reg32 = regs->priv[VIC_BL_TARGET_BASADR_OFFSET>>2]<<8; // Dest buffer.
+            process_2d(ctx, 0);
+        }
+        else if (offset == VIC_BL_CONFIG_OFFSET && (data & PROCESS_CFG_STRUCT_TRIGGER)) {
+            vic_config_t config={};
+            dma_memory_read(&address_space_memory, regs->priv[VIC_SC_PRAMBASE_OFFSET>>2]<<8, &config, sizeof(config), MEMTXATTRS_UNSPECIFIED);
+
+            // Load the config-struct into the tegra2 regs used by process_2d.
+
+            ctx->g2sb_g2dstps.dstx = config.out_cfg.TargetRectLeft;
+            ctx->g2sb_g2dstps.dsty = config.out_cfg.TargetRectTop;
+            ctx->g2sb_g2dstsize.dstwidth = config.out_sfc_cfg.OutSurfaceWidth + 1;
+            ctx->g2sb_g2dstsize.dstheight = config.out_sfc_cfg.OutSurfaceHeight + 1;
+
+            ctx->g2sb_g2controlmain.xdir = config.out_cfg.OutputFlipX;
+            ctx->g2sb_g2controlmain.ydir = config.out_cfg.OutputFlipY;
+            ctx->transpose = config.out_cfg.OutputTranspose;
+
+	    ctx->g2sb_g2srcps.srcx = config.slots[0].slot_cfg.SourceRectLeft >> 16;
+	    ctx->g2sb_g2srcps.srcy = config.slots[0].slot_cfg.SourceRectTop >> 16;
+            ctx->g2sb_g2srcsize.srcwidth = config.slots[0].slot_sfc_cfg.SlotSurfaceWidth + 1;
+            ctx->g2sb_g2srcsize.srcheight = config.slots[0].slot_sfc_cfg.SlotSurfaceHeight + 1;
+
+            uint32_t bpp = 4; // TODO: Handle properly?
+            ctx->g2sb_g2controlmain.dstcd = 2; // bytes-per-pixel = 4
+            ctx->g2sb_g2srcst.srcs = ctx->g2sb_g2srcsize.srcwidth * bpp;
+            ctx->g2sb_g2dstst.dsts = (ctx->transpose ? ctx->g2sb_g2dstsize.dstheight : ctx->g2sb_g2dstsize.dstwidth) * bpp;
+
+            ctx->g2sb_g2controlmain.srcsld = 0;
+            ctx->g2sb_g2controlmain.srccd = 1;
+            ctx->g2sb_g2ropfade.rop = 0xcc; // GXcopy
+        }
         return;
     }
 
-    switch (offset & 0x7f) {
+    switch (offset) {
     case G2SB_INCR_SYNCPT_OFFSET:
     {
         g2sb_incr_syncpt method = { .reg32 = data };
@@ -304,8 +360,11 @@ void gr2d_write(struct host1x_module *module, uint32_t offset, uint32_t data)
     case G2SB_G2UBA_A_SB_SURFBASE_OFFSET:
         ctx->g2sb_g2uba_a_sb_surfbase.reg32 = data;
         break;
+    case TSEC_FALCON_ADDR_OFFSET>>2:
+        if (tegra_board >= TEGRAX1_BOARD) regs->falcon_addr = data;
+        break;
     default:
-        g_assert_not_reached();
+        //g_assert_not_reached();
         break;
     }
 
@@ -325,13 +384,19 @@ uint32_t gr2d_read(struct host1x_module *module, uint32_t offset)
     gr2d_regs *regs = module->opaque;
     gr2d_ctx *ctx = NULL;
     uint32_t ret = 0;
+    uint8_t ctx_referred;
+
+    /*ctx_referred = regs->g2sb_switch_g2currentcontext.curr_context;
+    if (tegra_board >= TEGRAX1_BOARD) ctx_referred = (s->regs.g2sb_g2classchannel_regonly.reg32 >> 12) & 0xF;
+    g_assert(ctx_referred < ARRAY_SIZE(regs->ctx));*/
+    ctx_referred = 0; // TODO: See above.
+    ctx = &regs->ctx[ctx_referred];
 
     switch (offset) {
     case 0x0 ... 0x4C:
-        ctx = &regs->ctx[regs->g2sb_switch_g2currentcontext.curr_context];
         break;
     case 0x1000 ... 0x9000:
-        ctx = &regs->ctx[offset >> 13];
+        if (tegra_board < TEGRAX1_BOARD) ctx_referred = offset >> 13;
         break;
     case G2SB_SWITCH_G2INTERRUPT_OFFSET:
         ret = regs->g2sb_switch_g2interrupt.reg32;
@@ -367,11 +432,18 @@ uint32_t gr2d_read(struct host1x_module *module, uint32_t offset)
         ret = regs->g2sb_switch_timeout_wcoal_g2.reg32;
         goto out;
     default:
-        g_assert_not_reached();
-        goto out;
+        //g_assert_not_reached();
+        //goto out;
     }
 
-    switch (offset & 0x7f) {
+    if (tegra_board < TEGRAX1_BOARD) offset &= 0x7f;
+    else if (offset<<2 >= 0x1400) {
+        offset = tegra_gr2d_get_priv_offset(regs, offset<<2, 4);
+        ret = regs->priv[offset>>2];
+        return ret;
+    }
+
+    switch (offset) {
     case G2SB_INCR_SYNCPT_CNTRL_OFFSET:
         ret = ctx->g2sb_incr_syncpt_cntrl.reg32;
         break;
@@ -582,8 +654,11 @@ uint32_t gr2d_read(struct host1x_module *module, uint32_t offset)
     case G2SB_G2UBA_A_SB_SURFBASE_OFFSET:
         ret = ctx->g2sb_g2uba_a_sb_surfbase.reg32;
         break;
+    case TSEC_FALCON_ADDR_OFFSET>>2:
+        if (tegra_board >= TEGRAX1_BOARD) ret = regs->falcon_addr;
+        break;
     default:
-        g_assert_not_reached();
+        //g_assert_not_reached();
         break;
     }
 

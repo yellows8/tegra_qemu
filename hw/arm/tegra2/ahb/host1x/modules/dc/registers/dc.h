@@ -2646,4 +2646,7 @@ typedef struct dc_regs {
 
 extern regs_io_handler dc_handler;
 
+void tegra_dc_pixman_transform_flags(pixman_image_t *image, bool flipx, bool flipy, bool transpose, int *x, int *y, int *width, int *height);
+void tegra_dc_pixman_transform_rotate(pixman_image_t *image, int rotate, int *x, int *y, int *width, int *height);
+
 #endif // TEGRA_DC_H

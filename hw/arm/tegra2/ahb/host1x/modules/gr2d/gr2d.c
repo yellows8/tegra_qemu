@@ -104,6 +104,7 @@ static const VMStateDescription vmstate_gr2d_ctx = {
         VMSTATE_UINT32(g2sb_g2dstba_b_sb_surfbase.reg32, gr2d_ctx),
         VMSTATE_UINT32(g2sb_g2vba_a_sb_surfbase.reg32, gr2d_ctx),
         VMSTATE_UINT32(g2sb_g2uba_a_sb_surfbase.reg32, gr2d_ctx),
+        VMSTATE_BOOL(transpose, gr2d_ctx),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -125,6 +126,8 @@ static const VMStateDescription vmstate_tegra_gr2d = {
         VMSTATE_UINT32(regs.g2sb_switch_clken_overide.reg32, tegra_gr2d),
         VMSTATE_UINT32(regs.g2sb_switch_g2_mccif_fifoctrl.reg32, tegra_gr2d),
         VMSTATE_UINT32(regs.g2sb_switch_timeout_wcoal_g2.reg32, tegra_gr2d),
+        VMSTATE_UINT32(regs.falcon_addr, tegra_gr2d),
+        VMSTATE_UINT32_ARRAY(regs.priv, tegra_gr2d, 0x22C18>>2),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -236,6 +239,8 @@ static void tegra_gr2d_priv_reset(DeviceState *dev)
     regs->g2sb_switch_clken_overide.reg32 = G2SB_SWITCH_CLKEN_OVERIDE_RESET;
     regs->g2sb_switch_g2_mccif_fifoctrl.reg32 = G2SB_SWITCH_G2_MCCIF_FIFOCTRL_RESET;
     regs->g2sb_switch_timeout_wcoal_g2.reg32 = G2SB_SWITCH_TIMEOUT_WCOAL_G2_RESET;
+    regs->falcon_addr = 0;
+    memset(regs->priv, 0, sizeof(regs->priv));
 }
 
 static const MemoryRegionOps tegra_gr2d_mem_ops = {
@@ -252,10 +257,12 @@ static void tegra_gr2d_priv_realize(DeviceState *dev, Error **errp)
                           "tegra.gr2d", SZ_256K);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 
-    s->gr2d_module[0].class_id = 0x50,
+    s->gr2d_module[0].class_id = tegra_board >= TEGRAX1_BOARD ? 0x5D : 0x50,
     s->gr2d_module[0].reg_write = gr2d_write;
     s->gr2d_module[0].reg_read = gr2d_read;
     register_host1x_bus_module(&s->gr2d_module[0], &s->regs);
+
+    if (tegra_board >= TEGRAX1_BOARD) return;
 
     s->gr2d_module[1].class_id = 0x51,
     s->gr2d_module[1].reg_write = gr2d_write;

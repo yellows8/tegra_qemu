@@ -19,6 +19,7 @@
 
 #include "host1x_syncpts.h"
 
+#include <pixman.h>
 #include "dc.h"
 
 static uint32_t dc_read(void *regs, uint32_t offset)

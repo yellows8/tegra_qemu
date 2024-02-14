@@ -24,6 +24,7 @@
 #include "sysemu/dma.h"
 #include "hw/sysbus.h"
 
+#include "../dc/registers/dc.h"
 #include "gr2d.h"
 
 #include "tegra_trace.h"
@@ -72,7 +73,7 @@
 #define GXset           0xff
 
 /* FIXME: slow? TODO: color conversion */
-static void gr2d_copy(void *src, void *dst, int src_x, int src_y,
+/*static void gr2d_copy(void *src, void *dst, int src_x, int src_y,
                       int dst_x, int dst_y, int src_stride, int dst_stride,
                       int width, int height, int bytes_per_pixel,
                       bool invx, bool invy)
@@ -93,7 +94,7 @@ static void gr2d_copy(void *src, void *dst, int src_x, int src_y,
         src += invy ? -src_stride : src_stride;
         dst += invy ? -dst_stride : dst_stride;
     }
-}
+}*/
 
 static void __process_2d(gr2d_ctx *ctx)
 {
@@ -115,6 +116,9 @@ static void __process_2d(gr2d_ctx *ctx)
     g_assert(ctx->g2sb_g2controlmain.patsld == DISABLED);
     g_assert(ctx->g2sb_g2controlmain.patfl == DISABLED);
 
+    uint32_t bpp = 8 << ctx->g2sb_g2controlmain.dstcd;
+    //if (ctx->g2sb_g2controlmain.dstcd==3) bpp = 24;
+
     switch (ctx->g2sb_g2controlmain.cmdt) {
     case BITBLT:
         if (ctx->g2sb_g2controlmain.srcsld) {
@@ -128,15 +132,17 @@ static void __process_2d(gr2d_ctx *ctx)
             g_assert(ctx->g2sb_g2controlmain.ydir == DISABLED);
             g_assert(ctx->g2sb_g2controlmain.yflip == DISABLED);
             g_assert(ctx->g2sb_g2controlmain.xytdw == DISABLED);
-            g_assert(ctx->g2sb_g2controlmain.dstcd != RESERVED1);
+            //g_assert(ctx->g2sb_g2controlmain.dstcd != RESERVED1);
             g_assert(ctx->g2sb_g2ropfade.rop == GXcopy);
 
             dst_ptr = dma_memory_map(&address_space_memory,
                                      ALIGN(ctx->g2sb_g2dstba.reg32, 8),
                                      &dma_dst_sz, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
 
+            g_assert(dst_ptr != NULL);
+
             pixman_fill(dst_ptr, ALIGN(ctx->g2sb_g2dstst.dsts, 1) >> 2,
-                        8 << ctx->g2sb_g2controlmain.dstcd,
+                        bpp,
                         ctx->g2sb_g2dstps.dstx, ctx->g2sb_g2dstps.dsty,
                         ctx->g2sb_g2dstsize.dstwidth,
                         ctx->g2sb_g2dstsize.dstheight,
@@ -167,7 +173,7 @@ static void __process_2d(gr2d_ctx *ctx)
 
             g_assert(ctx->g2sb_g2controlmain.yflip == DISABLED);
             g_assert(ctx->g2sb_g2controlmain.xytdw == DISABLED);
-            g_assert(ctx->g2sb_g2controlmain.dstcd != RESERVED1);
+            //g_assert(ctx->g2sb_g2controlmain.dstcd != RESERVED1);
             g_assert(ctx->g2sb_g2ropfade.rop == GXcopy);
 
             /* Mono? */
@@ -181,29 +187,64 @@ static void __process_2d(gr2d_ctx *ctx)
                                      ALIGN(ctx->g2sb_g2dstba.reg32, 8),
                                      &dma_dst_sz, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
 
+            g_assert(src_ptr != NULL);
+            g_assert(dst_ptr != NULL);
+
 //             g_assert(ctx->g2sb_g2srcst.srcs != (1 << ctx->g2sb_g2controlmain.dstcd) * ctx->g2sb_g2srcsize.srcwidth);
 //             g_assert(ctx->g2sb_g2dstst.dsts != (1 << ctx->g2sb_g2controlmain.dstcd) * ctx->g2sb_g2dstsize.dstwidth);
 
-            if (ctx->g2sb_g2controlmain.xdir || ctx->g2sb_g2controlmain.ydir) {
+            /*if (ctx->g2sb_g2controlmain.xdir || ctx->g2sb_g2controlmain.ydir) {
                 gr2d_copy(src_ptr, dst_ptr,
                           ctx->g2sb_g2srcps.srcx, ctx->g2sb_g2srcps.srcy,
                           ctx->g2sb_g2dstps.dstx, ctx->g2sb_g2dstps.dsty,
                           ctx->g2sb_g2srcst.srcs, ctx->g2sb_g2dstst.dsts,
                           ctx->g2sb_g2dstsize.dstwidth,
                           ctx->g2sb_g2dstsize.dstheight,
-                          1 << ctx->g2sb_g2controlmain.dstcd,
+                          bpp/8,
                           ctx->g2sb_g2controlmain.xdir,
                           ctx->g2sb_g2controlmain.ydir);
-            } else {
-                pixman_blt(src_ptr, dst_ptr,
-                           ctx->g2sb_g2srcst.srcs >> 2,
-                           ctx->g2sb_g2dstst.dsts >> 2,
-                           8 << ctx->g2sb_g2controlmain.dstcd,
-                           8 << ctx->g2sb_g2controlmain.dstcd,
+            } else*/ {
+                pixman_image_t *image_src = NULL, *image_dst = NULL;
+
+                image_src = pixman_image_create_bits_no_clear(PIXMAN_a8r8g8b8,
+						              ctx->g2sb_g2srcsize.srcwidth,
+						              ctx->g2sb_g2srcsize.srcheight,
+						              src_ptr,
+						              ctx->g2sb_g2srcst.srcs);
+
+                image_dst = pixman_image_create_bits_no_clear(PIXMAN_a8r8g8b8,
+						              !ctx->transpose ? ctx->g2sb_g2dstsize.dstwidth : ctx->g2sb_g2dstsize.dstheight,
+						              !ctx->transpose ? ctx->g2sb_g2dstsize.dstheight : ctx->g2sb_g2dstsize.dstwidth,
+						              dst_ptr,
+						              ctx->g2sb_g2dstst.dsts);
+
+                /*pixman_blt(src_ptr, dst_ptr,
+                           ctx->g2sb_g2srcst.srcs / (bpp / 8),
+                           ctx->g2sb_g2dstst.dsts / (bpp / 8),
+                           bpp,
+                           bpp,
                            ctx->g2sb_g2srcps.srcx, ctx->g2sb_g2srcps.srcy,
                            ctx->g2sb_g2dstps.dstx, ctx->g2sb_g2dstps.dsty,
                            ctx->g2sb_g2dstsize.dstwidth,
-                           ctx->g2sb_g2dstsize.dstheight);
+                           ctx->g2sb_g2dstsize.dstheight);*/
+
+                  if (image_src && image_dst) {
+                      int x = ctx->g2sb_g2dstps.dstx, y = ctx->g2sb_g2dstps.dsty;
+                      int width = ctx->g2sb_g2dstsize.dstwidth, height = ctx->g2sb_g2dstsize.dstheight;
+
+                      tegra_dc_pixman_transform_flags(image_src, ctx->g2sb_g2controlmain.xdir, ctx->g2sb_g2controlmain.ydir, ctx->transpose, &x, &y, &width, &height);
+
+                      pixman_image_composite(PIXMAN_OP_SRC,
+                                             image_src, NULL,
+                                             image_dst,
+                                             ctx->g2sb_g2srcps.srcx, ctx->g2sb_g2srcps.srcy,
+                                             0, 0,
+                                             x, y,
+                                             width, height);
+                  }
+
+                  if (image_src) pixman_image_unref(image_src);
+                  if (image_dst) pixman_image_unref(image_dst);
             }
 
             dma_memory_unmap(&address_space_memory, dst_ptr,

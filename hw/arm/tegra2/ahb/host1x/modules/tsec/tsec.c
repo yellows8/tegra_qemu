@@ -94,15 +94,6 @@ static const VMStateDescription vmstate_tegra_tsec = {
     }
 };
 
-// TODO: Is this correct? How to handle TSEC_FALCON_ADDR_MSB?
-static hwaddr tegra_tsec_get_priv_offset(tegra_tsec *s, hwaddr offset, unsigned size) {
-    offset = (offset - 0x1000) << 6;
-    offset |= (s->regs[TSEC_FALCON_ADDR>>2] & 0x3F) << 2;
-    assert(offset+size <= sizeof(s->regs));
-
-    return offset;
-}
-
 static uint64_t tegra_tsec_priv_read(void *opaque, hwaddr offset,
                                      unsigned size)
 {
@@ -110,10 +101,6 @@ static uint64_t tegra_tsec_priv_read(void *opaque, hwaddr offset,
     uint64_t ret = 0;
 
     assert(offset+size <= sizeof(s->regs));
-
-    if (s->engine == TEGRA_TSEC_ENGINE_VIC && offset >= 0x1400) {
-        offset = tegra_tsec_get_priv_offset(s, offset, size);
-    }
 
     ret = s->regs[offset/sizeof(uint32_t)] & ((1ULL<<size*8)-1);
 
@@ -132,10 +119,6 @@ static void tegra_tsec_priv_write(void *opaque, hwaddr offset,
     tegra_tsec *s = opaque;
 
     assert(offset+size <= sizeof(s->regs));
-
-    if (s->engine == TEGRA_TSEC_ENGINE_VIC && offset >= 0x1400) {
-        offset = tegra_tsec_get_priv_offset(s, offset, size);
-    }
 
     TRACE_WRITE(s->iomem.addr, offset, 0, value);
 

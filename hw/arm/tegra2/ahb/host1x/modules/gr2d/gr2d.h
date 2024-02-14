@@ -1100,6 +1100,172 @@ typedef union g2sb_switch_timeout_wcoal_g2_u {
     uint32_t reg32;
 } g2sb_switch_timeout_wcoal_g2;
 
+// These defines are from hekate (with _OFFSET added, etc).
+#define VIC_FC_COMPOSE_OFFSET 0x10000
+
+#define VIC_SC_PRAMBASE_OFFSET 0x14000
+#define VIC_SC_PRAMSIZE_OFFSET 0x14100
+#define VIC_SC_SFC0_BASE_LUMA_OFFSET(n) (0x14300 + (n) * 0x100)
+
+#define VIC_BL_TARGET_BASADR_OFFSET 0x22000
+
+#define VIC_BL_CONFIG_OFFSET                   0x22800
+#define SUBPARTITION_MODE                      (1<<0)
+#define PROCESS_CFG_STRUCT_TRIGGER             (1<<2)
+#define SLOTMASK(n) ((n) << 8)
+
+// These VIC structs are from hekate with adjustments.
+typedef struct _OutputConfig {
+    uint64_t AlphaFillMode:3;
+    uint64_t AlphaFillSlot:3;
+    uint64_t BackgroundAlpha:10;
+    uint64_t BackgroundR:10;
+    uint64_t BackgroundG:10;
+    uint64_t BackgroundB:10;
+    uint64_t RegammaMode:2;
+    uint64_t OutputFlipX:1;
+    uint64_t OutputFlipY:1;
+    uint64_t OutputTranspose:1;
+    uint64_t rsvd1:1;
+    uint64_t rsvd2:12;
+    uint64_t TargetRectLeft:14;
+    uint64_t rsvd3:2;
+    uint64_t TargetRectRight:14;
+    uint64_t rsvd4:2;
+    uint64_t TargetRectTop:14;
+    uint64_t rsvd5:2;
+    uint64_t TargetRectBottom:14;
+    uint64_t rsvd6:2;
+} OutputConfig;
+
+typedef struct _OutputSurfaceConfig {
+    uint64_t OutPixelFormat:7;
+    uint64_t OutChromaLocHoriz:2;
+    uint64_t OutChromaLocVert:2;
+    uint64_t OutBlkKind:4;
+    uint64_t OutBlkHeight:4;
+    uint64_t rsvd0:3;
+    uint64_t rsvd1:10;
+    uint64_t OutSurfaceWidth:14;
+    uint64_t OutSurfaceHeight:14;
+    uint64_t rsvd2:4;
+    uint64_t OutLumaWidth:14;
+    uint64_t OutLumaHeight:14;
+    uint64_t rsvd3:4;
+    uint64_t OutChromaWidth:14;
+    uint64_t OutChromaHeight:14;
+    uint64_t rsvd4:4;
+} OutputSurfaceConfig;
+
+typedef struct _SlotConfig {
+    uint64_t SlotEnable:1;
+    uint64_t DeNoise:1;
+    uint64_t AdvancedDenoise:1;
+    uint64_t CadenceDetect:1;
+    uint64_t MotionMap:1;
+    uint64_t MMapCombine:1;
+    uint64_t IsEven:1;
+    uint64_t ChromaEven:1;
+    uint64_t CurrentFieldEnable:1;
+    uint64_t PrevFieldEnable:1;
+    uint64_t NextFieldEnable:1;
+    uint64_t NextNrFieldEnable:1;
+    uint64_t CurMotionFieldEnable:1;
+    uint64_t PrevMotionFieldEnable:1;
+    uint64_t PpMotionFieldEnable:1;
+    uint64_t CombMotionFieldEnable:1;
+    uint64_t FrameFormat:4;
+    uint64_t FilterLengthY:2;
+    uint64_t FilterLengthX:2;
+    uint64_t Panoramic:12;
+    uint64_t rsvd1:22;
+    uint64_t DetailFltClamp:6;
+    uint64_t FilterNoise:10;
+    uint64_t FilterDetail:10;
+    uint64_t ChromaNoise:10;
+    uint64_t ChromaDetail:10;
+    uint64_t DeinterlaceMode:4;
+    uint64_t MotionAccumWeight:3;
+    uint64_t NoiseIir:11;
+    uint64_t LightLevel:4;
+    uint64_t rsvd4:2;
+    uint64_t SoftClampLow:10;
+    uint64_t SoftClampHigh:10;
+    uint64_t rsvd5:3;
+    uint64_t rsvd6:9;
+    uint64_t PlanarAlpha:10;
+    uint64_t ConstantAlpha:1;
+    uint64_t StereoInterleave:3;
+    uint64_t ClipEnabled:1;
+    uint64_t ClearRectMask:8;
+    uint64_t DegammaMode:2;
+    uint64_t rsvd7:1;
+    uint64_t DecompressEnable:1;
+    uint64_t rsvd9:5;
+    uint64_t DecompressCtbCount:8;
+    uint64_t DecompressZbcColor:32;
+    uint64_t rsvd12:24;
+    uint64_t SourceRectLeft:30;
+    uint64_t rsvd14:2;
+    uint64_t SourceRectRight:30;
+    uint64_t rsvd15:2;
+    uint64_t SourceRectTop:30;
+    uint64_t rsvd16:2;
+    uint64_t SourceRectBottom:30;
+    uint64_t rsvd17:2;
+    uint64_t DestRectLeft:14;
+    uint64_t rsvd18:2;
+    uint64_t DestRectRight:14;
+    uint64_t rsvd19:2;
+    uint64_t DestRectTop:14;
+    uint64_t rsvd20:2;
+    uint64_t DestRectBottom:14;
+    uint64_t rsvd21:2;
+    uint64_t rsvd22:32;
+    uint64_t rsvd23:32;
+} SlotConfig;
+
+typedef struct _SlotSurfaceConfig {
+    uint64_t SlotPixelFormat:7;
+    uint64_t SlotChromaLocHoriz:2;
+    uint64_t SlotChromaLocVert:2;
+    uint64_t SlotBlkKind:4;
+    uint64_t SlotBlkHeight:4;
+    uint64_t SlotCacheWidth:3;
+    uint64_t rsvd0:10;
+    uint64_t SlotSurfaceWidth:14;
+    uint64_t SlotSurfaceHeight:14;
+    uint64_t rsvd1:4;
+    uint64_t SlotLumaWidth:14;
+    uint64_t SlotLumaHeight:14;
+    uint64_t rsvd2:4;
+    uint64_t SlotChromaWidth:14;
+    uint64_t SlotChromaHeight:14;
+    uint64_t rsvd3:4;
+} SlotSurfaceConfig;
+
+typedef struct _SlotStruct {
+    SlotConfig slot_cfg;
+    SlotSurfaceConfig slot_sfc_cfg;
+
+    uint8_t lumaKeyStruct[0x10];
+    uint8_t colorMatrixStruct[0x20];
+    uint8_t gamutMatrixStruct[0x20];
+    uint8_t blendingSlotStruct[0x10];
+} SlotStruct;
+
+typedef struct _vic_config_t {
+    uint8_t pipeConfig[0x10];
+
+    OutputConfig out_cfg;
+    OutputSurfaceConfig out_sfc_cfg;
+
+    uint8_t out_color_matrix[0x20];
+    uint8_t clear_rect[0x10 * 4];
+
+    SlotStruct slots[8];
+} vic_config_t;
+
 typedef struct gr2d_ctx_state {
     DEFINE_REG32(g2sb_incr_syncpt_cntrl);
     DEFINE_REG32(g2sb_incr_syncpt_error);
@@ -1171,6 +1337,7 @@ typedef struct gr2d_ctx_state {
     DEFINE_REG32(g2sb_g2dstba_b_sb_surfbase);
     DEFINE_REG32(g2sb_g2vba_a_sb_surfbase);
     DEFINE_REG32(g2sb_g2uba_a_sb_surfbase);
+    bool transpose;
 } gr2d_ctx;
 
 typedef struct gr2d_regs_state {
@@ -1186,6 +1353,8 @@ typedef struct gr2d_regs_state {
     DEFINE_REG32(g2sb_switch_clken_overide);
     DEFINE_REG32(g2sb_switch_g2_mccif_fifoctrl);
     DEFINE_REG32(g2sb_switch_timeout_wcoal_g2);
+    uint32_t falcon_addr;
+    uint32_t priv[0x22C18>>2];
 } gr2d_regs;
 
 typedef struct tegra_gr2d_state {

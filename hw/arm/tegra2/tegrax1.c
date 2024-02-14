@@ -741,8 +741,8 @@ static void __tegrax1_init(MachineState *machine)
     tegra_host1x_dev = sysbus_create_simple("tegra.host1x", TEGRA_HOST1X_BASE,
                                             NULL);
 
-    /* GPU 2d */
-    //tegra_gr2d_dev = sysbus_create_simple("tegra.gr2d", TEGRA_GR2D_BASE, NULL);
+    /* GPU 2d (VIC) */
+    tegra_gr2d_dev = sysbus_create_simple("tegra.gr2d", TEGRA_VIC_BASE, NULL); // DIRQ(INT_VIC_GENERAL)
 
     /* Display controllers */
     tegra_dca_dev = sysbus_create_simple("tegra.dc", TEGRA_DISPLAY_BASE,
@@ -794,14 +794,6 @@ static void __tegrax1_init(MachineState *machine)
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, TEGRA_TSECB_BASE);
     sysbus_connect_irq(s, 0, DIRQ(INT_TSECB));
-
-    tegra_vic_dev = qdev_new("tegra.tsec");
-    s = SYS_BUS_DEVICE(tegra_vic_dev);
-    qdev_prop_set_uint8(DEVICE(tegra_vic_dev), "class_id", 0x5D);
-    qdev_prop_set_uint32(DEVICE(tegra_vic_dev), "engine", TEGRA_TSEC_ENGINE_VIC);
-    sysbus_realize_and_unref(s, &error_fatal);
-    sysbus_mmio_map(s, 0, TEGRA_VIC_BASE);
-    sysbus_connect_irq(s, 0, DIRQ(INT_VIC_GENERAL));
 
     tegra_nvenc_dev = qdev_new("tegra.tsec");
     s = SYS_BUS_DEVICE(tegra_nvenc_dev);

@@ -352,6 +352,56 @@ static const MemoryRegionOps tegra_dc_mem_ops = {
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
+void tegra_dc_pixman_transform_flags(pixman_image_t *image, bool flipx, bool flipy, bool transpose, int *x, int *y, int *width, int *height)
+{
+    struct pixman_transform transform={};
+    pixman_fixed_t fw = pixman_int_to_fixed(*width), fh = pixman_int_to_fixed(*height);
+    pixman_transform_init_identity(&transform);
+
+    if (!flipx && !flipy && !transpose) return;
+
+    pixman_transform_rotate(&transform, NULL, transpose ? 0 : -pixman_fixed_1,
+                                              flipy ? 0 : (flipx ? pixman_fixed_1 : -pixman_fixed_1));
+
+    if (!flipx && !flipy && transpose)
+        pixman_transform_translate(&transform, NULL, 0, fh);
+    else
+        pixman_transform_translate(&transform, NULL, flipx ? fw : 0,
+                                                     flipy ? fh : 0);
+
+    pixman_image_set_transform(image, &transform);
+
+    if (transpose) {
+        int tmp = *y;
+        *y = *x;
+        *x = tmp;
+        tmp = *height;
+        *height = *width;
+        *width = tmp;
+    }
+}
+
+void tegra_dc_pixman_transform_rotate(pixman_image_t *image, int rotate, int *x, int *y, int *width, int *height)
+{
+    bool flipx = false, flipy = false, transpose = false;
+
+    switch (rotate) {
+    case 90:
+        transpose = true;
+        break;
+    case 180:
+        flipx = true;
+        flipy = true;
+        break;
+    case 270:
+        flipx = true;
+        transpose = true;
+        break;
+    }
+
+    tegra_dc_pixman_transform_flags(image, flipx, flipy, transpose, x, y, width, height);
+}
+
 static void tegra_dc_compose_window(QemuConsole *console, display_window *win)
 {
     if (!win->regs_active.win_options.win_enable || !win->surface)
@@ -363,33 +413,7 @@ static void tegra_dc_compose_window(QemuConsole *console, display_window *win)
     int height = win->regs_active.win_size.v_size;
 
     if (graphic_rotate) {
-        struct pixman_transform transform={};
-        pixman_fixed_t fw = pixman_int_to_fixed(width), fh = pixman_int_to_fixed(height);
-        pixman_transform_init_identity(&transform);
-
-        switch (graphic_rotate) {
-        case 90:
-            pixman_transform_rotate(&transform, NULL, 0, -pixman_fixed_1);
-            pixman_transform_translate(&transform, NULL, 0, fh);
-            break;
-        case 180:
-            pixman_transform_rotate(&transform, NULL, -pixman_fixed_1, 0);
-            pixman_transform_translate(&transform, NULL, fw, fh);
-            break;
-        case 270:
-            pixman_transform_rotate(&transform, NULL, 0, pixman_fixed_1);
-            pixman_transform_translate(&transform, NULL, fw, 0);
-            break;
-        }
-
-        pixman_image_set_transform(win->surface->image, &transform);
-
-        if (graphic_rotate == 90 || graphic_rotate == 270) {
-            x = win->regs_active.win_position.v_position;
-            y = win->regs_active.win_position.h_position;
-            width = win->regs_active.win_size.v_size;
-            height = win->regs_active.win_size.h_size;
-        }
+        tegra_dc_pixman_transform_rotate(win->surface->image, graphic_rotate, &x, &y, &width, &height);
     }
 
     pixman_image_composite(PIXMAN_OP_SRC,
