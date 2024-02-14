@@ -1166,9 +1166,11 @@ void tegra_fuse_reset(DeviceState *dev, ShutdownCause cause)
         if (err) error_report_err(err);
     }
     else if (s->fuse_array_size >= (0x8*2 + 46)<<2) { // For guest-reset, load the (potentially updated by guest) fuse-array data into the cache-regs. Only ODM is handled since prod-hardware normally only allows writing ODM.
-        for (uint32_t odm=0; odm<0x8; odm++) {
-            uint32_t off = odm*2 + 46;
-            s->fuse_reserved_odm[odm] = extract32(s->fuse_array[off], 17, 15) | (extract32(s->fuse_array[off+2], 0, 17)<<15);
+        if (tegra_board == TEGRAX1_BOARD) { // TODO: TX1+
+            for (uint32_t odm=0; odm<0x8; odm++) {
+                uint32_t off = odm*2 + 46;
+                s->fuse_reserved_odm[odm] = extract32(s->fuse_array[off], 17, 15) | (extract32(s->fuse_array[off+2], 0, 17)<<15);
+            }
         }
     }
 }
