@@ -652,6 +652,9 @@ static void __tegrax1_init(MachineState *machine)
                                      DEVICE_LITTLE_ENDIAN);
     tegra_uartd_vendor_dev = sysbus_create_simple("tegra.uart", TEGRA_UARTD_BASE+0x20, NULL);
 
+    /* PWM */
+    tegra_pwm_dev = tegra_init_dummyio(TEGRA_PWFM_BASE, TEGRA_PWFM_SIZE, "tegra.pwm");
+
     /* MIPI_CAL */
     tegra_mipical_dev = sysbus_create_simple("tegra.mipical",
                                              TEGRA_MIPI_CAL_BASE, NULL);

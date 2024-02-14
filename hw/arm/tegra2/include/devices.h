@@ -64,6 +64,7 @@ extern void * tegra_uarta_vendor_dev;
 extern void * tegra_uartb_vendor_dev;
 extern void * tegra_uartc_vendor_dev;
 extern void * tegra_uartd_vendor_dev;
+extern void * tegra_pwm_dev;
 extern void * tegra_dca_dev;
 extern void * tegra_dcb_dev;
 extern void * tegra_dsi_dev;
