@@ -164,17 +164,27 @@ static void tegra_i2c_xfer_packet(TegraI2CState *s, uint32_t value)
         s->state = I2C_HEADER1;
         break;
     case I2C_HEADER1:
-        s->payload_size = (value & 0xff) + 1;
+        s->payload_size = (value & 0xFF) + 1;
+        if (tegra_board >= TEGRAX1_BOARD) s->payload_size = value & 0xFFF;
         s->payload_transfered = 0;
         s->state = I2C_HEADER_SPECIFIC;
         break;
     case I2C_HEADER_SPECIFIC:
         s->header_specific = value;
+        uint32_t addr = (value >> I2C_HEADER_SLAVE_ADDR_SHIFT) & 0x7F;
+        if (addr & I2C_HEADER_10BIT_ADDR) {
+            addr = value & 0x3FF;
+            if (addr > 0xFF) {
+                qemu_log_mask(LOG_UNIMP, "tegra_i2c_xfer_packet: 10-bit addr with value >0xFF is not supported since qemu only supports 8bit addrs.\n");
+                tegra_i2c_update(s, I2C_INT_NO_ACK, 1);
+                break;
+            }
+        }
         ret = i2c_start_transfer(s->bus,
-                                 (value >> I2C_HEADER_SLAVE_ADDR_SHIFT) & 0x7f,
+                                 addr,
                                  value & I2C_HEADER_READ);
         DPRINTF("#### I2C start at 0x%02x => %d\n",
-                (value >> I2C_HEADER_SLAVE_ADDR_SHIFT) & 0x7f, ret);
+                addr, ret);
         if (ret) { /* invalid address */
             tegra_i2c_update(s, I2C_INT_NO_ACK, 1);
         }
@@ -295,7 +305,7 @@ static uint64_t tegra_i2c_read(void *opaque, hwaddr offset, unsigned size)
         if (tegra_board >= TEGRAX1_BOARD) return s->regs[(offset - 0x94)>>2];
         break;
     default:
-        qemu_log_mask(LOG_UNIMP, "tegra_i2c_read: Bad offset 0x%x\n", (uint32_t) offset);
+        qemu_log_mask(LOG_UNIMP, "tegra_i2c_read: Bad offset 0x%lx\n", offset);
         return 0;
     }
 
@@ -423,7 +433,7 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
         if (tegra_board >= TEGRAX1_BOARD) s->regs[(offset - 0x94)>>2] = value;
         break;
     default:
-        qemu_log_mask(LOG_UNIMP, "tegra_i2c_write: Bad offset %x\n", (int)offset);
+        qemu_log_mask(LOG_UNIMP, "tegra_i2c_write: Bad offset 0x%lx\n", offset);
         break;
     }
 }
@@ -515,8 +525,8 @@ static const VMStateDescription tegra_i2c_vmstate = {
         VMSTATE_UINT32_ARRAY(regs, TegraI2CState, 0x10>>2),
         VMSTATE_INT32(rx_len, TegraI2CState),
         VMSTATE_INT32(rx_ptr, TegraI2CState),
-        VMSTATE_UINT8(payload_size, TegraI2CState),
-        VMSTATE_UINT8(payload_transfered, TegraI2CState),
+        VMSTATE_UINT32(payload_size, TegraI2CState),
+        VMSTATE_UINT32(payload_transfered, TegraI2CState),
         VMSTATE_UINT32(header, TegraI2CState),
         VMSTATE_UINT32(header_specific, TegraI2CState),
         /* TODO  VMSTATE_INT32(state, TegraI2CState), */

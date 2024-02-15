@@ -68,8 +68,8 @@ typedef struct TegraI2CState {
     uint32_t regs[0x10>>2];
     int32_t rx_ptr;
     int32_t rx_len;
-    uint8_t payload_size;
-    uint8_t payload_transfered;
+    uint32_t payload_size;
+    uint32_t payload_transfered;
     uint32_t header;
     uint32_t header_specific;
     TegraI2CFSM state;
