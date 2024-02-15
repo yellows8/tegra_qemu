@@ -26,6 +26,8 @@
 #include "qapi/error.h"
 #include "hw/i2c/i2c.h"
 
+#include "qemu/log.h"
+
 #include "i2c.h"
 
 //#define DEBUG_I2C 1
@@ -148,14 +150,13 @@ static void tegra_i2c_fill_rx(TegraI2CState *s)
 static void tegra_i2c_xfer_packet(TegraI2CState *s, uint32_t value)
 {
     int b = 0, ret;
-    Error *err = NULL;
 
     switch (s->state) {
     case I2C_HEADER0:
         /* 23->16 : PKTID 7:4 proto 1=I2c 2:0 PKtType*/
         if (((value & 0xf0) != PACKET_HEADER0_PROTOCOL_I2C) ||
             (value & 0x30000000)) {
-            error_setg(&err, "tegra_i2c: Invalid protocol, we only support I2C");
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra_i2c: Invalid protocol, we only support I2C\n");
         }
         s->header = value;
         s->packet_transfer_status = value &
@@ -198,18 +199,12 @@ static void tegra_i2c_xfer_packet(TegraI2CState *s, uint32_t value)
         }
         break;
     }
-
-    if (err) {
-        error_report_err(err);
-        err = NULL;
-    }
 }
 
 static uint64_t tegra_i2c_read(void *opaque, hwaddr offset, unsigned size)
 {
     TegraI2CState *s = opaque;
     uint32_t value, shift;
-    Error *err = NULL;
     DPRINTF("READ at 0x%x\n", (uint32_t) offset);
 
     if (s->is_dvc) {
@@ -272,17 +267,18 @@ static uint64_t tegra_i2c_read(void *opaque, hwaddr offset, unsigned size)
         return s->int_status;
     case 0x6c /* I2C_CLK_DIVISOR */:
         return s->clk_divisor;
+    case 0x70: /* I2C_I2C_INTERRUPT_SOURCE_REGISTER */
+        if (tegra_board >= TEGRAX1_BOARD) return s->int_status & s->int_mask;
+        break;
     case 0x8c /* I2C_I2C_CONFIG_LOAD */:
         if (tegra_board >= TEGRAX1_BOARD) return s->config_load;
         break;
+    case 0x94 ... 0xa0 /* I2C_I2C_INTERFACE_TIMING_0_0 - I2C_I2C_HS_INTERFACE_TIMING_1_0 */:
+        if (tegra_board >= TEGRAX1_BOARD) return s->regs[(offset - 0x94)>>2];
+        break;
     default:
-        error_setg(&err, "tegra_i2c_read: Bad offset 0x%x", (uint32_t) offset);
+        qemu_log_mask(LOG_UNIMP, "tegra_i2c_read: Bad offset 0x%x\n", (uint32_t) offset);
         return 0;
-    }
-
-    if (err) {
-        error_report_err(err);
-        err = NULL;
     }
 
     return 0;
@@ -293,7 +289,6 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
 {
     TegraI2CState *s = opaque;
     DPRINTF("WRITE at 0x%x <= 0x%x\n", (uint32_t) offset, (uint32_t) value);
-    Error *err = NULL;
 
     if (s->is_dvc) {
         if (offset < 0x40) {
@@ -320,7 +315,7 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
         s->config = value;
         break;
     case 0x1c /* I2C_STATUS */:
-        hw_error("tegra_i2c_write: I2C_STATUS is read only\n");
+        qemu_log_mask(LOG_GUEST_ERROR, "tegra_i2c_write: I2C_STATUS is read only\n");
         break;
     case 0x20 /* I2C_SL_CNFG */:
         s->sl_config = value & 0x7;
@@ -335,14 +330,14 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
         if (s->config & I2C_CNFG_PACKET_MODE_EN) {
             tegra_i2c_xfer_packet(s, value);
         } else if (s->config & (1<<9)) {
-            hw_error("tegra_i2c_write: Normal mode not implemented\n");
+            qemu_log_mask(LOG_UNIMP, "tegra_i2c_write: Normal mode not implemented\n");
         }
         break;
     case 0x54 /* I2C_RX_FIFO */:
-        hw_error("tegra_i2c_write: I2C_RX_FIFO is read only\n");
+        qemu_log_mask(LOG_GUEST_ERROR, "tegra_i2c_write: I2C_RX_FIFO is read only\n");
         break;
     case 0x58 /* I2C_PACKET_TRANSFER_STATUS */:
-        hw_error("tegra_i2c_write: I2C_PACKET_TRANSFER_STATUS is read only\n");
+        qemu_log_mask(LOG_GUEST_ERROR, "tegra_i2c_write: I2C_PACKET_TRANSFER_STATUS is read only\n");
         break;
     case 0x5c /* I2C_FIFO_CONTROL */:
         if (value & I2C_FIFO_CONTROL_TX_FLUSH) {
@@ -357,7 +352,7 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
         s->fifo_control = value & 0xfc;
         break;
     case 0x60 /* I2C_FIFO_STATUS */:
-        hw_error("tegra_i2c_write: I2C_FIFO_STATUS is read only\n");
+        qemu_log_mask(LOG_GUEST_ERROR, "tegra_i2c_write: I2C_FIFO_STATUS is read only\n");
         break;
     case 0x64 /* I2C_INT_MASK */:
         s->int_mask = value & 0x7f;
@@ -370,20 +365,21 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
     case 0x6c /* I2C_CLK_DIVISOR */:
         s->clk_divisor = value;
         break;
+    case 0x74: /* I2C_I2C_INTERRUPT_SET_REGISTER */
+        if (tegra_board >= TEGRAX1_BOARD) s->int_status |= value;
+        break;
     case 0x8c /* I2C_I2C_CONFIG_LOAD */:
         if (tegra_board >= TEGRAX1_BOARD) {
             value &= ~0x7;
             s->config_load = value;
         }
         break;
-    default:
-        error_setg(&err, "tegra_i2c_write: Bad offset %x", (int)offset);
+    case 0x94 ... 0xa0 /* I2C_I2C_INTERFACE_TIMING_0_0 - I2C_I2C_HS_INTERFACE_TIMING_1_0 */:
+        if (tegra_board >= TEGRAX1_BOARD) s->regs[(offset - 0x94)>>2] = value;
         break;
-    }
-
-    if (err) {
-        error_report_err(err);
-        err = NULL;
+    default:
+        qemu_log_mask(LOG_UNIMP, "tegra_i2c_write: Bad offset %x\n", (int)offset);
+        break;
     }
 }
 
@@ -401,7 +397,7 @@ static void tegra_i2c_init(Object *obj)
     s->bus = i2c_init_bus(DEVICE(obj), "i2c");
 
     memory_region_init_io(&s->iomem, obj, &tegra_i2c_ops, s,
-                          "tegra2.i2c", 0x100);
+                          "tegra.i2c", 0x100);
     sysbus_init_mmio(sbd, &s->iomem);
     sysbus_init_irq(sbd, &s->irq);
 }
@@ -424,6 +420,10 @@ static void tegra_i2c_reset(DeviceState *dev)
     s->int_status = 0;
     s->clk_divisor = 0;
     s->config_load = 0;
+    s->regs[0x0>>2] = 0x00000204; // I2C_I2C_INTERFACE_TIMING_0_0
+    s->regs[0x4>>2] = 0x04070404; // I2C_I2C_INTERFACE_TIMING_1_0
+    s->regs[0x8>>2] = 0x00000308; // I2C_I2C_HS_INTERFACE_TIMING_0_0
+    s->regs[0xC>>2] = 0x000B0B0B; // I2C_I2C_HS_INTERFACE_TIMING_1_0
     s->rx_len = 0;
     s->rx_ptr = 0;
     s->state = I2C_HEADER0;
@@ -449,6 +449,7 @@ static const VMStateDescription tegra_i2c_vmstate = {
         VMSTATE_UINT16(clk_divisor, TegraI2CState),
         VMSTATE_UINT8_ARRAY(rx_fifo, TegraI2CState, TEGRA_I2C_FIFO_SIZE),
         VMSTATE_UINT32(config_load, TegraI2CState),
+        VMSTATE_UINT32_ARRAY(regs, TegraI2CState, 0x10>>2),
         VMSTATE_INT32(rx_len, TegraI2CState),
         VMSTATE_INT32(rx_ptr, TegraI2CState),
         VMSTATE_UINT8(payload_size, TegraI2CState),
