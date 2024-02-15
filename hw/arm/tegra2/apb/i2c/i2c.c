@@ -228,6 +228,12 @@ static uint64_t tegra_i2c_read(void *opaque, hwaddr offset, unsigned size)
     switch (offset) {
     case 0x00 /* I2C_CNFG */:
         return s->config;
+    case 0x4 /* I2C_CMD_ADDR0 */:
+        if (tegra_board >= TEGRAX1_BOARD) return s->cmd_addr0;
+        break;
+    case 0x8 /* I2C_CMD_ADDR1 */:
+        if (tegra_board >= TEGRAX1_BOARD) return s->cmd_addr1;
+        break;
     case 0x1c /* I2C_STATUS */:
         return i2c_bus_busy(s->bus) ? (1<<8) : 0;
     case 0x20 /* I2C_SL_CNFG */:
@@ -236,6 +242,12 @@ static uint64_t tegra_i2c_read(void *opaque, hwaddr offset, unsigned size)
         return s->sl_addr1;
     case 0x30 /* I2C_SL_ADDR2 */:
         return s->sl_addr2;
+    case 0x34 /* I2C_I2C_TLOW_SEXT */:
+        if (tegra_board >= TEGRAX1_BOARD) return s->tlow_sext;
+        break;
+    case 0x3c /* I2C_I2C_SL_DELAY_COUNT */:
+        if (tegra_board >= TEGRAX1_BOARD) return s->sl_delay_count;
+        break;
     case 0x50 /* I2C_TX_FIFO */:
         return 0;
     case 0x54 /* I2C_RX_FIFO */:
@@ -269,6 +281,12 @@ static uint64_t tegra_i2c_read(void *opaque, hwaddr offset, unsigned size)
         return s->clk_divisor;
     case 0x70: /* I2C_I2C_INTERRUPT_SOURCE_REGISTER */
         if (tegra_board >= TEGRAX1_BOARD) return s->int_status & s->int_mask;
+        break;
+    case 0x84 /* I2C_I2C_BUS_CLEAR_CONFIG */:
+        if (tegra_board >= TEGRAX1_BOARD) return s->bus_clear_config;
+        break;
+    case 0x88 /* I2C_BUS_CLEAR_STATUS */:
+        if (tegra_board >= TEGRAX1_BOARD) return s->bus_clear_status;
         break;
     case 0x8c /* I2C_I2C_CONFIG_LOAD */:
         if (tegra_board >= TEGRAX1_BOARD) return s->config_load;
@@ -312,13 +330,29 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
 
     switch (offset) {
     case 0x00 /* I2C_CNFG */:
+        if (value & (1<<4)) {
+            qemu_log_mask(LOG_UNIMP, "tegra_i2c_write: I2C_CNFG SLV2=1, two-slave transaction is not implemented.\n");
+        }
+        if (value & (1<<9)) {
+            qemu_log_mask(LOG_UNIMP, "tegra_i2c_write: Normal mode not implemented.\n");
+        }
         s->config = value;
+        break;
+    case 0x4 /* I2C_CMD_ADDR0 */:
+        if (tegra_board >= TEGRAX1_BOARD) s->cmd_addr0 = value;
+        break;
+    case 0x8 /* I2C_CMD_ADDR1 */:
+        if (tegra_board >= TEGRAX1_BOARD) s->cmd_addr1 = value;
         break;
     case 0x1c /* I2C_STATUS */:
         qemu_log_mask(LOG_GUEST_ERROR, "tegra_i2c_write: I2C_STATUS is read only\n");
         break;
     case 0x20 /* I2C_SL_CNFG */:
-        s->sl_config = value & 0x7;
+        if (tegra_board < TEGRAX1_BOARD) value &= 0x7;
+        if (value & (1<<3)) {
+            qemu_log_mask(LOG_UNIMP, "tegra_i2c_write: I2C_SL_CNFG ENABLE_SL=1, slave-mode is not implemented.\n");
+        }
+        s->sl_config = value;
         break;
     case 0x2c /* I2C_SL_ADDR1 */:
         s->sl_addr1 = value;
@@ -326,11 +360,15 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
     case 0x30 /* I2C_SL_ADDR2 */:
         s->sl_addr2 = value;
         break;
+    case 0x34 /* I2C_I2C_TLOW_SEXT */:
+        if (tegra_board >= TEGRAX1_BOARD) s->tlow_sext = value;
+        break;
+    case 0x3c /* I2C_I2C_SL_DELAY_COUNT */:
+        if (tegra_board >= TEGRAX1_BOARD) s->sl_delay_count = value;
+        break;
     case 0x50 /* I2C_TX_FIFO */:
         if (s->config & I2C_CNFG_PACKET_MODE_EN) {
             tegra_i2c_xfer_packet(s, value);
-        } else if (s->config & (1<<9)) {
-            qemu_log_mask(LOG_UNIMP, "tegra_i2c_write: Normal mode not implemented\n");
         }
         break;
     case 0x54 /* I2C_RX_FIFO */:
@@ -349,13 +387,14 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
             s->rx_ptr = 0;
             tegra_i2c_update(s, I2C_INT_RX_FIFO_UNDERFLOW, 0);
         }
-        s->fifo_control = value & 0xfc;
+        s->fifo_control = value & ~0x3;
         break;
     case 0x60 /* I2C_FIFO_STATUS */:
         qemu_log_mask(LOG_GUEST_ERROR, "tegra_i2c_write: I2C_FIFO_STATUS is read only\n");
         break;
     case 0x64 /* I2C_INT_MASK */:
-        s->int_mask = value & 0x7f;
+        if (tegra_board < TEGRAX1_BOARD) value &= 0x7f;
+        s->int_mask = value;
         tegra_i2c_update(s, 0, 0);
         break;
     case 0x68 /* I2C_INT_STATUS */:
@@ -367,6 +406,12 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
         break;
     case 0x74: /* I2C_I2C_INTERRUPT_SET_REGISTER */
         if (tegra_board >= TEGRAX1_BOARD) s->int_status |= value;
+        break;
+    case 0x84 /* I2C_I2C_BUS_CLEAR_CONFIG */:
+        if (tegra_board >= TEGRAX1_BOARD) s->bus_clear_config = value;
+        break;
+    case 0x88 /* I2C_I2C_BUS_CLEAR_STATUS */:
+        qemu_log_mask(LOG_GUEST_ERROR, "tegra_i2c_write: I2C_BUS_CLEAR_STATUS is read only\n");
         break;
     case 0x8c /* I2C_I2C_CONFIG_LOAD */:
         if (tegra_board >= TEGRAX1_BOARD) {
@@ -411,19 +456,31 @@ static void tegra_i2c_reset(DeviceState *dev)
     s->dvc_ctrl[2] = 0;
     s->dvc_status = 0x60000;
     s->config = 0;
+    s->cmd_addr0 = 0;
+    s->cmd_addr1 = 0;
     s->sl_config = 0;
     s->sl_addr1 = 0;
     s->sl_addr2 = 0;
+    s->tlow_sext = 0;
+    s->sl_delay_count = 0x0000001E;
     s->packet_transfer_status = 0;
     s->fifo_control = 0;
     s->int_mask = 0;
     s->int_status = 0;
     s->clk_divisor = 0;
+    s->bus_clear_config = 0x00090004;
+    s->bus_clear_status = 0;
     s->config_load = 0;
     s->regs[0x0>>2] = 0x00000204; // I2C_I2C_INTERFACE_TIMING_0_0
     s->regs[0x4>>2] = 0x04070404; // I2C_I2C_INTERFACE_TIMING_1_0
     s->regs[0x8>>2] = 0x00000308; // I2C_I2C_HS_INTERFACE_TIMING_0_0
     s->regs[0xC>>2] = 0x000B0B0B; // I2C_I2C_HS_INTERFACE_TIMING_1_0
+
+    if (tegra_board >= TEGRAX1_BOARD) {
+        s->sl_config = 0x00000004;
+        s->clk_divisor = 0x00190001;
+    }
+
     s->rx_len = 0;
     s->rx_ptr = 0;
     s->state = I2C_HEADER0;
@@ -438,16 +495,22 @@ static const VMStateDescription tegra_i2c_vmstate = {
         VMSTATE_BOOL(is_dvc, TegraI2CState),
         VMSTATE_UINT32_ARRAY(dvc_ctrl, TegraI2CState, 3),
         VMSTATE_UINT32(dvc_status, TegraI2CState),
-        VMSTATE_UINT16(config, TegraI2CState),
-        VMSTATE_UINT8(sl_config, TegraI2CState),
-        VMSTATE_UINT8(sl_addr1, TegraI2CState),
-        VMSTATE_UINT8(sl_addr2, TegraI2CState),
+        VMSTATE_UINT32(config, TegraI2CState),
+        VMSTATE_UINT32(cmd_addr0, TegraI2CState),
+        VMSTATE_UINT32(cmd_addr1, TegraI2CState),
+        VMSTATE_UINT32(sl_config, TegraI2CState),
+        VMSTATE_UINT32(sl_addr1, TegraI2CState),
+        VMSTATE_UINT32(sl_addr2, TegraI2CState),
+        VMSTATE_UINT32(tlow_sext, TegraI2CState),
+        VMSTATE_UINT32(sl_delay_count, TegraI2CState),
         VMSTATE_UINT32(packet_transfer_status, TegraI2CState),
-        VMSTATE_UINT8(fifo_control, TegraI2CState),
-        VMSTATE_UINT8(int_mask, TegraI2CState),
-        VMSTATE_UINT8(int_status, TegraI2CState),
-        VMSTATE_UINT16(clk_divisor, TegraI2CState),
+        VMSTATE_UINT32(fifo_control, TegraI2CState),
+        VMSTATE_UINT32(int_mask, TegraI2CState),
+        VMSTATE_UINT32(int_status, TegraI2CState),
+        VMSTATE_UINT32(clk_divisor, TegraI2CState),
         VMSTATE_UINT8_ARRAY(rx_fifo, TegraI2CState, TEGRA_I2C_FIFO_SIZE),
+        VMSTATE_UINT32(bus_clear_config, TegraI2CState),
+        VMSTATE_UINT32(bus_clear_status, TegraI2CState),
         VMSTATE_UINT32(config_load, TegraI2CState),
         VMSTATE_UINT32_ARRAY(regs, TegraI2CState, 0x10>>2),
         VMSTATE_INT32(rx_len, TegraI2CState),
