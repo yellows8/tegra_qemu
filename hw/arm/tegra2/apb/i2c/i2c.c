@@ -239,13 +239,16 @@ static uint64_t tegra_i2c_read(void *opaque, hwaddr offset, unsigned size)
     case 0x00 /* I2C_CNFG */:
         return s->config;
     case 0x4 /* I2C_CMD_ADDR0 */:
-        if (tegra_board >= TEGRAX1_BOARD) return s->cmd_addr0;
-        break;
+        return s->cmd_addr0;
     case 0x8 /* I2C_CMD_ADDR1 */:
-        if (tegra_board >= TEGRAX1_BOARD) return s->cmd_addr1;
-        break;
+        return s->cmd_addr1;
+    case 0xc /* I2C_CMD_DATA1 */:
+        return s->cmd_data1;
+    case 0x10 /* I2C_CMD_DATA2 */:
+        return s->cmd_data2;
     case 0x1c /* I2C_STATUS */:
-        return i2c_bus_busy(s->bus) ? (1<<8) : 0;
+        uint32_t tmp = i2c_bus_busy(s->bus) ? (1<<8) : 0;
+        return s->status | tmp;
     case 0x20 /* I2C_SL_CNFG */:
         return s->sl_config;
     case 0x2c /* I2C_SL_ADDR1 */:
@@ -315,6 +318,7 @@ static uint64_t tegra_i2c_read(void *opaque, hwaddr offset, unsigned size)
 static void tegra_i2c_write(void *opaque, hwaddr offset,
                             uint64_t value, unsigned size)
 {
+    int ret=0;
     TegraI2CState *s = opaque;
     DPRINTF("WRITE at 0x%x <= 0x%x\n", (uint32_t) offset, (uint32_t) value);
 
@@ -340,19 +344,71 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
 
     switch (offset) {
     case 0x00 /* I2C_CNFG */:
-        if (value & (1<<4)) {
+        s->config = value;
+
+        if (s->config & (1<<4)) {
             qemu_log_mask(LOG_UNIMP, "tegra_i2c_write: I2C_CNFG SLV2=1, two-slave transaction is not implemented.\n");
         }
-        if (value & (1<<9)) {
-            qemu_log_mask(LOG_UNIMP, "tegra_i2c_write: Normal mode not implemented.\n");
+
+        if (s->config & (1<<9)) { // Normal mode
+            s->status = 0;
+
+            bool is_read = (s->config >> 6) & 0x1;
+            uint32_t addr = (s->cmd_addr0 >> 1) & 0x7F;
+            if (s->config & 0x1) { // A_MOD = 10-bit
+                addr = s->cmd_addr0 & 0x3FF;
+                if (addr>0xFF) {
+                    ret = 1;
+                    qemu_log_mask(LOG_UNIMP, "tegra_i2c_write: 10-bit addr with value >0xFF is not supported since qemu only supports 8bit addrs.\n");
+                }
+            }
+
+            if (!ret) {
+                ret = i2c_start_transfer(s->bus,
+                                         addr,
+                                         is_read);
+                DPRINTF("#### I2C start at 0x%02x => %d\n",
+                        addr, ret);
+            }
+            if (ret) { /* invalid address */
+                s->status |= 1<<0; // CMD1_STAT = SL1_NOACK_FOR_BYTE1
+                tegra_i2c_update(s, I2C_INT_NO_ACK, 1);
+            }
+            else {
+                uint32_t len = ((s->config>>1) & 0x7) + 1;
+
+                if (is_read) s->cmd_data1 = s->cmd_data2 = 0;
+
+                for (uint32_t i=0; i<len; i++) {
+                    uint32_t *data = i < 4 ? &s->cmd_data1 : &s->cmd_data2;
+                    if (!is_read) {
+                        i2c_send(s->bus, (*data >> ((i & 0x3) * 0x8)) & 0xFF);
+                    }
+                    else {
+                        *data |= (i2c_recv(s->bus) << ((i & 0x3) * 0x8)) & 0xFF;
+                    }
+                }
+
+                s->header_specific |= I2C_HEADER_IE_ENABLE;
+                tegra_i2c_xfer_done(s);
+                s->header_specific = 0;
+            }
+
+            s->config &= ~(1<<9);
         }
-        s->config = value;
+
         break;
     case 0x4 /* I2C_CMD_ADDR0 */:
-        if (tegra_board >= TEGRAX1_BOARD) s->cmd_addr0 = value;
+        s->cmd_addr0 = value;
         break;
     case 0x8 /* I2C_CMD_ADDR1 */:
-        if (tegra_board >= TEGRAX1_BOARD) s->cmd_addr1 = value;
+        s->cmd_addr1 = value;
+        break;
+    case 0xc /* I2C_CMD_DATA1 */:
+        s->cmd_data1 = value;
+        break;
+    case 0x10 /* I2C_CMD_DATA2 */:
+        s->cmd_data2 = value;
         break;
     case 0x1c /* I2C_STATUS */:
         qemu_log_mask(LOG_GUEST_ERROR, "tegra_i2c_write: I2C_STATUS is read only\n");
@@ -468,6 +524,9 @@ static void tegra_i2c_reset(DeviceState *dev)
     s->config = 0;
     s->cmd_addr0 = 0;
     s->cmd_addr1 = 0;
+    s->cmd_data1 = 0;
+    s->cmd_data2 = 0;
+    s->status = 0;
     s->sl_config = 0;
     s->sl_addr1 = 0;
     s->sl_addr2 = 0;
@@ -495,6 +554,9 @@ static void tegra_i2c_reset(DeviceState *dev)
     s->rx_ptr = 0;
     s->state = I2C_HEADER0;
     s->payload_size = 0;
+    s->payload_transfered = 0;
+    s->header = 0;
+    s->header_specific = 0;
 }
 
 static const VMStateDescription tegra_i2c_vmstate = {
@@ -508,6 +570,9 @@ static const VMStateDescription tegra_i2c_vmstate = {
         VMSTATE_UINT32(config, TegraI2CState),
         VMSTATE_UINT32(cmd_addr0, TegraI2CState),
         VMSTATE_UINT32(cmd_addr1, TegraI2CState),
+        VMSTATE_UINT32(cmd_data1, TegraI2CState),
+        VMSTATE_UINT32(cmd_data2, TegraI2CState),
+        VMSTATE_UINT32(status, TegraI2CState),
         VMSTATE_UINT32(sl_config, TegraI2CState),
         VMSTATE_UINT32(sl_addr1, TegraI2CState),
         VMSTATE_UINT32(sl_addr2, TegraI2CState),

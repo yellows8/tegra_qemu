@@ -51,6 +51,9 @@ typedef struct TegraI2CState {
     uint32_t config;
     uint32_t cmd_addr0;
     uint32_t cmd_addr1;
+    uint32_t cmd_data1;
+    uint32_t cmd_data2;
+    uint32_t status;
     uint32_t sl_config;
     uint32_t sl_addr1;
     uint32_t sl_addr2;
