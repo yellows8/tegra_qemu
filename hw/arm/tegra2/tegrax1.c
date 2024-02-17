@@ -58,6 +58,7 @@
 #include "ahb/sb/sb.h"
 #include "ppsb/evp/evp.h"
 #include "apb/fuse/fuse.h"
+#include "apb/i2c/i2c.h"
 
 #include "devices.h"
 #include "iomap.h"
@@ -731,6 +732,9 @@ static void __tegrax1_init(MachineState *machine)
                                           TEGRA_I2C5_BASE, DIRQ(INT_I2C5));
     tegra_idc6_dev = sysbus_create_simple("tegra-i2c",
                                           TEGRA_I2C6_BASE, DIRQ(INT_I2C6));
+
+    /* Max77620Rtc */
+    tegra_i2c_rtc_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77x", 0x68);
 
     /* Host1x IO */
     tegra_grhost_dev = sysbus_create_varargs("tegra.grhost",

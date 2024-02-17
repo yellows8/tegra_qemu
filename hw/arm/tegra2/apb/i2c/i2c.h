@@ -79,4 +79,10 @@ typedef struct TegraI2CState {
     qemu_irq irq;
 } TegraI2CState;
 
+static inline I2CBus *tegra_i2c_get_bus(void *opaque)
+{
+    TegraI2CState *s = TEGRA_I2C(opaque);
+    return s->bus;
+}
+
 #endif
