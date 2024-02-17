@@ -11,6 +11,11 @@ config M41T80
 config M48T59
     bool
 
+config MAX77X
+    bool
+    depends on I2C
+    default y if I2C_DEVICES
+
 config PL031
     bool
 
