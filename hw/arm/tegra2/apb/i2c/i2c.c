@@ -385,7 +385,7 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
                         i2c_send(s->bus, (*data >> ((i & 0x3) * 0x8)) & 0xFF);
                     }
                     else {
-                        *data |= (i2c_recv(s->bus) << ((i & 0x3) * 0x8)) & 0xFF;
+                        *data |= i2c_recv(s->bus) << ((i & 0x3) * 0x8);
                     }
                 }
 

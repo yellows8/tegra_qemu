@@ -29,7 +29,10 @@ struct DummyI2CState {
     I2CSlave parent_obj;
     int32_t addr;
 
-    uint8_t regs[0x100];
+    uint32_t reg_size;
+    uint32_t max_regs;
+
+    uint8_t regs[0x200];
 };
 
 static const VMStateDescription vmstate_dummyi2c = {
@@ -39,7 +42,9 @@ static const VMStateDescription vmstate_dummyi2c = {
     .fields = (const VMStateField[]) {
         VMSTATE_I2C_SLAVE(parent_obj, DummyI2CState),
         VMSTATE_INT32(addr, DummyI2CState),
-        VMSTATE_UINT8_ARRAY(regs, DummyI2CState, 0x100),
+        VMSTATE_UINT32(reg_size, DummyI2CState),
+        VMSTATE_UINT32(max_regs, DummyI2CState),
+        VMSTATE_UINT8_ARRAY(regs, DummyI2CState, 0x200),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -50,15 +55,22 @@ static void dummyi2c_realize(DeviceState *dev, Error **errp)
 
     s->addr = -1;
 
+    s->reg_size = sizeof(uint8_t);
+    s->max_regs = 0x100;
+
     memset(s->regs, 0, sizeof(s->regs));
 }
 
-void dummyi2c_set_regs(void *opaque, void* regs, size_t size)
+void dummyi2c_set_regs(void *opaque, void* regs, size_t size, uint32_t reg_size, uint32_t max_regs)
 {
     DummyI2CState *s = DUMMYI2C(opaque);
 
     if (size > sizeof(s->regs)) size = sizeof(s->regs);
     memcpy(s->regs, regs, size);
+
+    s->reg_size = reg_size;
+    if (max_regs * reg_size > sizeof(s->regs)) max_regs = sizeof(s->regs) / reg_size;
+    s->max_regs = max_regs;
 }
 
 static int dummyi2c_send(I2CSlave *i2c, uint8_t data)
@@ -66,17 +78,17 @@ static int dummyi2c_send(I2CSlave *i2c, uint8_t data)
     DummyI2CState *s = DUMMYI2C(i2c);
 
     if (s->addr < 0) {
-        s->addr = data;
+        s->addr = data * s->reg_size;
     } else {
         int32_t addr = s->addr;
-        s->addr = (s->addr + 1) % sizeof(s->regs);
+        s->addr = (s->addr + 1) % (s->max_regs * s->reg_size);
 
-        if (addr < sizeof(s->regs)) {
+        if (addr < s->max_regs * s->reg_size) {
             s->regs[addr] = data;
         }
         else {
             qemu_log_mask(LOG_GUEST_ERROR, "%s: invalid register: 0x%02X\n",
-                          __func__, addr);
+                          __func__, addr / s->reg_size);
         }
     }
     return 0;
@@ -90,12 +102,12 @@ static uint8_t dummyi2c_recv(I2CSlave *i2c)
         s->addr = 0;
     }
     int32_t addr = s->addr;
-    s->addr = (s->addr + 1) % sizeof(s->regs);
+    s->addr = (s->addr + 1) % (s->max_regs * s->reg_size);
 
-    if (addr < sizeof(s->regs)) return s->regs[addr];
+    if (addr < s->max_regs * s->reg_size) return s->regs[addr];
 
     qemu_log_mask(LOG_GUEST_ERROR, "%s: invalid register: 0x%02X\n",
-                  __func__, addr);
+                  __func__, addr / s->reg_size);
     return 0;
 }
 

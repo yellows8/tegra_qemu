@@ -743,7 +743,7 @@ static void __tegrax1_init(MachineState *machine)
     /* Bq24193 */
     tegra_i2c_charger_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc1_dev), "dummyi2c", 0x6B);
 
-    uint8_t charger_regs[0xB]={};
+    uint8_t charger_regs[0xB]={}; // Power-on reset values.
     charger_regs[0x0] = 0x30; // Input Source Control Register
     charger_regs[0x1] = 0x1B; // Power-On Configuration Register
     charger_regs[0x2] = 0x60; // Charge Current Control Register
@@ -756,7 +756,99 @@ static void __tegrax1_init(MachineState *machine)
     charger_regs[0x8] |= BIT(2) | (3<<4) | (2<<6); // PG_STAT = Power Good, CHRG_STAT = Charge Termination Done, VBUS_STAT = Adapter port.
     charger_regs[0x9] = 0x00; // Fault Register
     charger_regs[0xA] = 0x2F; // Vender / Part / Revision Status Register
-    dummyi2c_set_regs(tegra_i2c_charger_dev, charger_regs, sizeof(charger_regs));
+    dummyi2c_set_regs(tegra_i2c_charger_dev, charger_regs, sizeof(charger_regs), sizeof(uint8_t), sizeof(charger_regs));
+
+    /* Fuel Gauge */
+    tegra_i2c_fuel_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc1_dev), "dummyi2c", 0x36);
+
+    uint16_t fuel_regs[0x100]={}; // Power-on reset values.
+    fuel_regs[0x00] = 0x0002; // Status
+    fuel_regs[0x01] = 0xFF00; // VALRT Threshold
+    fuel_regs[0x02] = 0x7F80; // TALRT Threshold
+    fuel_regs[0x03] = 0xFF00; // SALRT Threshold
+    fuel_regs[0x04] = 0x0000; // AtRate
+    fuel_regs[0x05] = 0x03E8; // RemCapREP
+    fuel_regs[0x06] = 0x3200; // SOCREP
+    fuel_regs[0x07] = 0x6400; // Age
+    fuel_regs[0x08] = 0x1600; // Temperature
+    fuel_regs[0x09] = 0xB400; // VCELL
+    fuel_regs[0x0A] = 0x0000; // Current
+    fuel_regs[0x0B] = 0x0000; // AverageCurrent
+    fuel_regs[0x0D] = 0x3200; // SOCMIX
+    fuel_regs[0x0E] = 0x3200; // SOCAV
+    fuel_regs[0x0F] = 0x03E8; // RemCapMIX
+    fuel_regs[0x10] = 0x07D0; // FullCAP
+    fuel_regs[0x11] = 0x0000; // TTE
+    fuel_regs[0x12] = 0x1E2F; // QResidual 00
+    fuel_regs[0x13] = 0x4600; // FullSOCThr
+    fuel_regs[0x16] = 0x1600; // AverageTemperature
+    fuel_regs[0x17] = 0x0000; // Cycles
+    fuel_regs[0x18] = 0x07D0; // DesignCap
+    fuel_regs[0x19] = 0xB400; // AverageVCELL
+    fuel_regs[0x1A] = 0x807F; // MaxMinTemperature
+    fuel_regs[0x1B] = 0x00FF; // MaxMinVCELL
+    fuel_regs[0x1C] = 0x807F; // MaxMinCurrent
+    fuel_regs[0x1D] = 0x2350; // CONFIG
+    fuel_regs[0x1E] = 0x03C0; // ICHGTerm
+    fuel_regs[0x1F] = 0x03E8; // RemCapAV
+    fuel_regs[0x21] = 0x00AC; // Version
+    fuel_regs[0x22] = 0x1E00; // QResidual
+    fuel_regs[0x23] = 0x07D0; // FullCapNom
+    fuel_regs[0x24] = 0x1400; // TempNom
+    fuel_regs[0x25] = 0x2305; // TempLim
+    fuel_regs[0x27] = 0x88D0; // AIN
+    fuel_regs[0x28] = 0x2602; // LearnCFG
+    fuel_regs[0x29] = 0x4EA4; // FilterCFG
+    fuel_regs[0x2A] = 0x203B; // RelaxCFG
+    fuel_regs[0x2B] = 0x0870; // MiscCFG
+    fuel_regs[0x2C] = 0xE3E1; // TGAIN
+    fuel_regs[0x2D] = 0x290E; // TOFF
+    fuel_regs[0x2E] = 0x4000; // CGAIN
+    fuel_regs[0x2F] = 0x0000; // COFF
+    fuel_regs[0x32] = 0x1306; // QResidual 20
+    fuel_regs[0x36] = 0x0780; // Iavg_empty
+    fuel_regs[0x37] = 0x05E0; // FCTC
+    fuel_regs[0x38] = 0x004B; // RCOMP0
+    fuel_regs[0x39] = 0x262B; // TempCo
+    fuel_regs[0x3A] = 0x9C5C; // V_empty
+    fuel_regs[0x3D] = 0x0001; // FSTAT
+    fuel_regs[0x3E] = 0x0000; // TIMER
+    fuel_regs[0x3F] = 0xE000; // SHDNTIMER
+    fuel_regs[0x42] = 0x0C00; // QResidual 30
+    fuel_regs[0x45] = 0x007D; // dQacc
+    fuel_regs[0x46] = 0x0C80; // dPacc
+    fuel_regs[0x4D] = 0x0000; // QH
+    fuel_regs[0xFB] = 0x0000; // VFOCV
+    fuel_regs[0xFF] = 0x0000; // SOCVF
+
+    // Values from hardware.
+    fuel_regs[0x05] = 0x22F3; // RemCapREP
+    fuel_regs[0x06] = 0x63AB; // SOCREP
+    fuel_regs[0x07] = 0x6018; // Age
+    fuel_regs[0x08] = 0x18FF; // Temperature
+    fuel_regs[0x09] = 0xD274; // VCELL
+    fuel_regs[0x0A] = 0x04FB; // Current
+    fuel_regs[0x0B] = 0x0537; // AverageCurrent
+    fuel_regs[0x0E] = 0x63EA; // SOCAV
+    fuel_regs[0x0F] = 0x230A; // RemCapMIX
+    fuel_regs[0x10] = 0x2311; // FullCAP
+    fuel_regs[0x11] = 0xFFFF; // TTE
+    fuel_regs[0x13] = 0x5F00; // FullSOCThr
+    fuel_regs[0x16] = 0x1877; // AverageTemperature
+    fuel_regs[0x17] = 0x00F9; // Cycles
+    fuel_regs[0x18] = 0x2476; // DesignCap
+    fuel_regs[0x19] = 0xD25E; // AverageVCELL
+    fuel_regs[0x1B] = 0xD37F; // MaxMinVCELL
+    fuel_regs[0x1E] = 0x0333; // ICHGTerm
+    fuel_regs[0x1F] = 0x22F3; // RemCapAV
+    fuel_regs[0x27] = 0x8600; // AIN
+    fuel_regs[0x3A] = 0xA05F; // V_empty
+    fuel_regs[0xFB] = 0xD031; // VFOCV
+    fuel_regs[0xFF] = 0x6289; // SOCVF
+
+    fuel_regs[0x3D] &= ~BIT(0); // FSTAT DNR (Data Not Ready) = 0
+
+    dummyi2c_set_regs(tegra_i2c_fuel_dev, fuel_regs, sizeof(fuel_regs), sizeof(uint16_t), sizeof(fuel_regs)/sizeof(uint16_t));
 
     /* Host1x IO */
     tegra_grhost_dev = sysbus_create_varargs("tegra.grhost",

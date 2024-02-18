@@ -21,6 +21,6 @@
 #ifndef TEGRA_DUMMYI2C_H
 #define TEGRA_DUMMYI2C_H
 
-void dummyi2c_set_regs(void *opaque, void* regs, size_t size);
+void dummyi2c_set_regs(void *opaque, void* regs, size_t size, uint32_t reg_size, uint32_t max_regs);
 
 #endif // TEGRA_DUMMYI2C_H
