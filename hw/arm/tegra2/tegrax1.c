@@ -59,6 +59,7 @@
 #include "ppsb/evp/evp.h"
 #include "apb/fuse/fuse.h"
 #include "apb/i2c/i2c.h"
+#include "dummyi2c/dummyi2c.h"
 
 #include "devices.h"
 #include "iomap.h"
@@ -735,6 +736,24 @@ static void __tegrax1_init(MachineState *machine)
 
     /* Max77620Rtc */
     tegra_i2c_rtc_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77x", 0x68);
+
+    /* Bq24193 */
+    tegra_i2c_charger_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc1_dev), "dummyi2c", 0x6B);
+
+    uint8_t charger_regs[0xB]={};
+    charger_regs[0x0] = 0x30; // Input Source Control Register
+    charger_regs[0x1] = 0x1B; // Power-On Configuration Register
+    charger_regs[0x2] = 0x60; // Charge Current Control Register
+    charger_regs[0x3] = 0x3; // Pre-Charge/Termination Current Control Register
+    charger_regs[0x4] = 0xB2; // Charge Voltage Control Register
+    charger_regs[0x5] = 0x9A; // Charge Termination/Timer Control Register
+    charger_regs[0x6] = 0x03; // IR Compensation / Thermal Regulation Control Register
+    charger_regs[0x7] = 0x4B; // Misc Operation Control Register
+    charger_regs[0x8] = 0x00; // System Status Register
+    charger_regs[0x8] |= BIT(2) | (3<<4) | (2<<6); // PG_STAT = Power Good, CHRG_STAT = Charge Termination Done, VBUS_STAT = Adapter port.
+    charger_regs[0x9] = 0x00; // Fault Register
+    charger_regs[0xA] = 0x2F; // Vender / Part / Revision Status Register
+    dummyi2c_set_regs(tegra_i2c_charger_dev, charger_regs, sizeof(charger_regs));
 
     /* Host1x IO */
     tegra_grhost_dev = sysbus_create_varargs("tegra.grhost",

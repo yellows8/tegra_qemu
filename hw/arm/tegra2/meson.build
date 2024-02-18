@@ -69,6 +69,7 @@ arm_ss.add(files(
   'trace.c',
 
   'dummyio/dummyio.c',
+  'dummyi2c/dummyi2c.c',
 
   'ahb/host1x/core/cdma/cdma.c',
   'ahb/host1x/core/cdma/cmd_processor.c',

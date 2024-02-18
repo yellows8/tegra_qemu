@@ -97,6 +97,7 @@ void *tegra_idc5_dev = NULL;
 void *tegra_idc6_dev = NULL;
 void *tegra_dvc_dev = NULL;
 void *tegra_i2c_rtc_dev = NULL;
+void *tegra_i2c_charger_dev = NULL;
 void *tegra_grhost_dev = NULL;
 void *tegra_arb_sema_dev = NULL;
 void *tegra_arb_gnt_ictlr_dev = NULL;
