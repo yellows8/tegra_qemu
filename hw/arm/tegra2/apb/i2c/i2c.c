@@ -165,7 +165,7 @@ static void tegra_i2c_xfer_packet(TegraI2CState *s, uint32_t value)
         break;
     case I2C_HEADER1:
         s->payload_size = (value & 0xFF) + 1;
-        if (tegra_board >= TEGRAX1_BOARD) s->payload_size = value & 0xFFF;
+        if (tegra_board >= TEGRAX1_BOARD) s->payload_size = (value & 0xFFF) + 1;
         s->payload_transfered = 0;
         s->state = I2C_HEADER_SPECIFIC;
         break;
