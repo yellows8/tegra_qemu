@@ -737,6 +737,9 @@ static void __tegrax1_init(MachineState *machine)
     /* Max77620Rtc */
     tegra_i2c_rtc_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77x", 0x68);
 
+    /* Max77620Pmic */
+    tegra_i2c_pmic_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "dummyi2c", 0x3C); // TODO: proper device
+
     /* Bq24193 */
     tegra_i2c_charger_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc1_dev), "dummyi2c", 0x6B);
 
