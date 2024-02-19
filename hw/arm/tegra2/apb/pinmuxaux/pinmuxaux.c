@@ -37,7 +37,7 @@ typedef struct tegra_pinmuxaux_state {
     SysBusDevice parent_obj;
 
     MemoryRegion iomem;
-    uint32_t regs[0x294>>2];
+    uint32_t regs[0x2C8>>2];
 } tegra_pinmuxaux;
 
 static const VMStateDescription vmstate_tegra_pinmuxaux = {
@@ -45,7 +45,7 @@ static const VMStateDescription vmstate_tegra_pinmuxaux = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(regs, tegra_pinmuxaux, 0x294>>2),
+        VMSTATE_UINT32_ARRAY(regs, tegra_pinmuxaux, 0x2C8>>2),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -221,9 +221,7 @@ static uint64_t tegra_pinmuxaux_priv_read(void *opaque, hwaddr offset,
     tegra_pinmuxaux *s = opaque;
     uint64_t ret = 0;
 
-    assert(offset < sizeof(s->regs));
-
-    ret = s->regs[offset/sizeof(uint32_t)] & ((1ULL<<size*8)-1);
+    if (offset + size <= sizeof(s->regs)) ret = s->regs[offset/sizeof(uint32_t)] & ((1ULL<<size*8)-1);
 
     TRACE_READ(s->iomem.addr, offset, ret);
 
@@ -235,11 +233,9 @@ static void tegra_pinmuxaux_priv_write(void *opaque, hwaddr offset,
 {
     tegra_pinmuxaux *s = opaque;
 
-    assert(offset < sizeof(s->regs));
-
     TRACE_WRITE(s->iomem.addr, offset, 0, value);
 
-    s->regs[offset/sizeof(uint32_t)] = (s->regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
+    if (offset + size <= sizeof(s->regs)) s->regs[offset/sizeof(uint32_t)] = (s->regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
 }
 
 static void tegra_pinmuxaux_priv_reset(DeviceState *dev)
