@@ -13,11 +13,8 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
-#include "qemu/timer.h"
-#include "qemu/bcd.h"
 #include "hw/i2c/i2c.h"
 #include "qom/object.h"
-#include "sysemu/rtc.h"
 #include "migration/vmstate.h"
 
 #include "dummyi2c.h"
