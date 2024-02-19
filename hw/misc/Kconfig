@@ -39,6 +39,11 @@ config I2C_ECHO
     default y if TEST_DEVICES
     depends on I2C
 
+config MAX77XPMIC
+    bool
+    depends on I2C
+    default y if I2C_DEVICES
+
 config PL310
     bool
 
