@@ -128,7 +128,7 @@ typedef struct tegra_apb_misc_state {
     DEFINE_REG32(das_dap_ctrl_sel_4);
     DEFINE_REG32(das_dac_input_data_clk_sel_1);
     DEFINE_REG32(das_dac_input_data_clk_sel_2);
-    uint32_t regs[(0xB7C-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2];
+    uint32_t regs[(0x3000-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2];
 } tegra_apb_misc;
 
 static const VMStateDescription vmstate_tegra_apb_misc = {
@@ -230,7 +230,7 @@ static const VMStateDescription vmstate_tegra_apb_misc = {
         VMSTATE_UINT32(das_dap_ctrl_sel_4.reg32, tegra_apb_misc),
         VMSTATE_UINT32(das_dac_input_data_clk_sel_1.reg32, tegra_apb_misc),
         VMSTATE_UINT32(das_dac_input_data_clk_sel_2.reg32, tegra_apb_misc),
-        VMSTATE_UINT32_ARRAY(regs, tegra_apb_misc, (0xB7C-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2),
+        VMSTATE_UINT32_ARRAY(regs, tegra_apb_misc, (0x3000-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -461,7 +461,9 @@ static uint64_t tegra_apb_misc_priv_read(void *opaque, hwaddr offset,
     case GP_UADCFGPADCTRL_OFFSET:
         ret = s->gp_uadcfgpadctrl.reg32;
         break;
-    case GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET ... GP_QSPI_SCK_LPBK_CONTROL_OFFSET:
+    case GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET ... DAS_DAP_CTRL_SEL_OFFSET-0x4:
+    case 0xC14 ... DAS_DAC_INPUT_DATA_CLK_SEL_OFFSET-0x4:
+    case DAS_DAC_INPUT_DATA_CLK_SEL_2_OFFSET+0x4 ... 0x2FFC:
         if (tegra_board >= TEGRAX1_BOARD) ret = s->regs[(offset - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2];
         break;
     case DAS_DAP_CTRL_SEL_OFFSET:
@@ -818,7 +820,9 @@ static void tegra_apb_misc_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->gp_uadcfgpadctrl.reg32, value);
         s->gp_uadcfgpadctrl.reg32 = value;
         break;
-    case GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET ... GP_QSPI_SCK_LPBK_CONTROL_OFFSET:
+    case GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET ... DAS_DAP_CTRL_SEL_OFFSET-0x4:
+    case 0xC14 ... DAS_DAC_INPUT_DATA_CLK_SEL_OFFSET-0x4:
+    case DAS_DAC_INPUT_DATA_CLK_SEL_2_OFFSET+0x4 ... 0x2FFC:
         TRACE_WRITE(s->iomem.addr, offset, s->regs[(offset - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] , value);
         if (tegra_board >= TEGRAX1_BOARD) s->regs[(offset - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = value;
         break;
@@ -1070,7 +1074,7 @@ static void tegra_apb_misc_priv_realize(DeviceState *dev, Error **errp)
     tegra_apb_misc *s = TEGRA_APB_MISC(dev);
 
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_apb_misc_mem_ops, s,
-                          "tegra.apb_misc", TEGRA_APB_MISC_SIZE);
+                          "tegra.apb_misc", TEGRA_APB_MISC_SIZE + 0x2000);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 }
 

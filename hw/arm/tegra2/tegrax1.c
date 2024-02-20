@@ -331,6 +331,12 @@ static void __tegrax1_init(MachineState *machine)
     /*memory_region_add_and_init_ram(sysmem, "tegra.irom",
                                    TEGRA_IROM_BASE, TEGRA_IROM_SIZE, RO);*/
 
+    memory_region_add_and_init_ram(sysmem, "tegra.stm",
+                                   0x71000000, SZ_16M, RW);
+
+    memory_region_add_and_init_ram(sysmem, "tegra.csite",
+                                   0x72000000, SZ_32M, RW);
+
     memory_region_add_and_init_ram(sysmem, "tegra.ahb_a1",
                                    0x78000000, SZ_16M, RW);
 
@@ -342,6 +348,9 @@ static void __tegrax1_init(MachineState *machine)
 
     memory_region_add_and_init_ram(sysmem, "tegra.ahb_a2",
                                    0x7c020000, 0x7d000000-0x7c020000, RW);
+
+    memory_region_add_and_init_ram(sysmem, "tegra.ahb_a2_upper",
+                                   0x7d005800, 0x7e000000-0x7d005800, RW);
 
     /* Create the actual CPUs */
     tegrax1_create_cpus();
@@ -488,9 +497,15 @@ static void __tegrax1_init(MachineState *machine)
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_mc1_dev), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(tegra_mc1_dev), 0, TEGRA_MC1_BASE);
 
+    /* SATA */
+    tegra_sata_dev = tegra_init_dummyio(TEGRA_SATA_BASE, TEGRA_SATA_SIZE, "tegra.sata");
+
     /* Audio*/
     tegra_hda_dev = tegra_init_dummyio(TEGRA_HDA_BASE, TEGRA_HDA_SIZE, "tegra.hda");
     tegra_ape_dev = tegra_init_dummyio(TEGRA_APE_BASE, TEGRA_APE_SIZE, "tegra.ape");
+
+    /* DDS */
+    tegra_dds_dev = tegra_init_dummyio(TEGRA_DDS_BASE, TEGRA_DDS_SIZE, "tegra.dds");
 
     /* AHB DMA controller */
     tegra_ahb_dma_dev = sysbus_create_simple("tegra.ahb_dma",
@@ -501,6 +516,9 @@ static void __tegrax1_init(MachineState *machine)
     tegra_ahb_gizmo_dev = sysbus_create_simple("tegra.ahb_gizmo",
                                                TEGRA_AHB_GIZMO_BASE, NULL);
 
+    /* AHB/APB Debug Bus */
+    tegra_ahbapb_debugbus_dev = tegra_init_dummyio(TEGRA_AHBAPB_DEBUGBUS_BASE, TEGRA_AHBAPB_DEBUGBUS_SIZE, "tegra.ahbapb_debugbus");
+
     /* APB FUSE controller */
     tegra_fuse_dev = sysbus_create_simple("tegra.fuse", TEGRA_FUSE_BASE, NULL);
 
@@ -509,6 +527,9 @@ static void __tegrax1_init(MachineState *machine)
     if (tegra_board == TEGRAX1PLUS_BOARD) {
         tegra_se2_dev = tegra_init_obj(TEGRA_SE2_BASE, DIRQ(INT_SE), "tegra.se", "engine", 2); // NOTE: This IRQ is likely wrong?
     }
+
+    /* TSENSOR */
+    tegra_tsensor_dev = tegra_init_dummyio(TEGRA_TSENSOR_BASE, TEGRA_TSENSOR_SIZE, "tegra.tsensor");
 
     /* CEC */
     tegra_cec_dev = tegra_init_dummyio(TEGRA_CEC_BASE, TEGRA_CEC_SIZE, "tegra.cec");
@@ -562,10 +583,20 @@ static void __tegrax1_init(MachineState *machine)
     tegra_rtc_dev = sysbus_create_simple("tegra.rtc",
                                          TEGRA_RTC_BASE, DIRQ(INT_RTC));
 
+    /* SDMMC */
     tegra_sdmmc1_dev = tegra_init_sdmmc(0, TEGRA_SDMMC1_BASE, DIRQ(INT_SDMMC1), false, 0, &tegra_sdmmc1_vendor_dev);
     tegra_sdmmc2_dev = tegra_init_sdmmc(1, TEGRA_SDMMC2_BASE, DIRQ(INT_SDMMC2), false, 0, &tegra_sdmmc2_vendor_dev);
     tegra_sdmmc3_dev = tegra_init_sdmmc(2, TEGRA_SDMMC3_BASE, DIRQ(INT_SDMMC3), false, 0, &tegra_sdmmc3_vendor_dev);
     tegra_sdmmc4_dev = tegra_init_sdmmc(3, TEGRA_SDMMC4_BASE, DIRQ(INT_SDMMC4), true, 0x400000, &tegra_sdmmc4_vendor_dev);
+
+    /* SPEEDO */
+    tegra_speedo_dev = tegra_init_dummyio(TEGRA_SPEEDO_BASE, TEGRA_SPEEDO_SIZE, "tegra.speedo");
+
+    /* DP2 */
+    tegra_dp2_dev = tegra_init_dummyio(TEGRA_DP2_BASE, TEGRA_DP2_SIZE, "tegra.dp2");
+
+    /* APB2JTAG */
+    tegra_apb2jtag_dev = tegra_init_dummyio(TEGRA_APB2JTAG_BASE, TEGRA_APB2JTAG_SIZE, "tegra.apb2jtag");
 
     /* Timer0 */
     tegra_timer_devs[0] = tegra_init_timer(TEGRA_TMR0_BASE, DIRQ(INT_TMR0), 0);
@@ -661,6 +692,9 @@ static void __tegrax1_init(MachineState *machine)
                                      DEVICE_LITTLE_ENDIAN);
     tegra_uartd_vendor_dev = sysbus_create_simple("tegra.uart", TEGRA_UARTD_BASE+0x20, NULL);
 
+    /* IOBIST */
+    tegra_iobist_dev = tegra_init_dummyio(TEGRA_IOBIST_BASE, TEGRA_IOBIST_SIZE, "tegra.iobist");
+
     /* PWM */
     tegra_pwm_dev = tegra_init_dummyio(TEGRA_PWFM_BASE, TEGRA_PWFM_SIZE, "tegra.pwm");
 
@@ -670,6 +704,9 @@ static void __tegrax1_init(MachineState *machine)
 
     /* DVFS */
     tegra_dvfs_dev = tegra_init_dummyio(TEGRA_CL_DVFS_BASE, TEGRA_CL_DVFS_SIZE, "tegra.dvfs");
+
+    /* CLUSTER_CLOCK */
+    tegra_cluster_clock_dev = tegra_init_dummyio(TEGRA_CLK13_RESET_BASE, SZ_256K, "tegra.cluster_clock");
 
     /* USB2 controllers */
     tegra_ehci1_dev = sysbus_create_simple("tegra.usb",
@@ -742,6 +779,15 @@ static void __tegrax1_init(MachineState *machine)
                                           TEGRA_I2C5_BASE, DIRQ(INT_I2C5));
     tegra_idc6_dev = sysbus_create_simple("tegra-i2c",
                                           TEGRA_I2C6_BASE, DIRQ(INT_I2C6));
+
+    /* SPI controllers */
+    tegra_spi_devs[0] = tegra_init_dummyio(TEGRA_SPI1_BASE, TEGRA_SPI1_SIZE, "tegra.spi");
+    tegra_spi_devs[1] = tegra_init_dummyio(TEGRA_SPI2_BASE, TEGRA_SPI2_SIZE, "tegra.spi");
+    tegra_spi_devs[2] = tegra_init_dummyio(TEGRA_SPI3_BASE, TEGRA_SPI3_SIZE, "tegra.spi");
+    tegra_spi_devs[3] = tegra_init_dummyio(TEGRA_SPI4_BASE, TEGRA_SPI4_SIZE, "tegra.spi");
+
+    /* QSPI */
+    tegra_qspi_dev = tegra_init_dummyio(TEGRA_QSPI_BASE, TEGRA_QSPI_SIZE, "tegra.qspi");
 
     /* Tmp451 (Temperature Sensor) */
     // TODO
