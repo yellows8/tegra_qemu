@@ -912,11 +912,21 @@ static void __tegrax1_init(MachineState *machine)
 
     tegra_sor1_dev = qdev_new("tegra.host1x_dummy_module");
     s = SYS_BUS_DEVICE(tegra_sor1_dev);
-    qdev_prop_set_uint8(DEVICE(tegra_sor1_dev), "class_id", 0x7C); // Is this correct?
+    qdev_prop_set_uint8(DEVICE(tegra_sor1_dev), "class_id", 0x7C); // TODO: Is this correct?
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, TEGRA_SOR1_BASE);
 
-    // TODO: DPAUX*
+    tegra_dpaux_dev = qdev_new("tegra.host1x_dummy_module");
+    s = SYS_BUS_DEVICE(tegra_dpaux_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_dpaux_dev), "class_id", 0x7D);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_DPAUX_BASE);
+
+    tegra_dpaux1_dev = qdev_new("tegra.host1x_dummy_module");
+    s = SYS_BUS_DEVICE(tegra_dpaux1_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_dpaux1_dev), "class_id", 0x7E); // TODO: Is this correct?
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_DPAUX1_BASE);
 
     /* TSEC */
     tegra_tsec_dev = qdev_new("tegra.tsec");

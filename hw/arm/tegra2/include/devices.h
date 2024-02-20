@@ -79,6 +79,8 @@ extern void * tegra_vic_dev;
 extern void * tegra_nvenc_dev;
 extern void * tegra_nvdec_dev;
 extern void * tegra_nvjpg_dev;
+extern void * tegra_dpaux_dev;
+extern void * tegra_dpaux1_dev;
 extern void * tegra_mipical_dev;
 extern void * tegra_dvfs_dev;
 extern void * tegra_ehci1_dev;
