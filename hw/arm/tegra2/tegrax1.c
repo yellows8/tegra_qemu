@@ -510,8 +510,14 @@ static void __tegrax1_init(MachineState *machine)
         tegra_se2_dev = tegra_init_obj(TEGRA_SE2_BASE, DIRQ(INT_SE), "tegra.se", "engine", 2); // NOTE: This IRQ is likely wrong?
     }
 
+    /* CEC */
+    tegra_cec_dev = tegra_init_dummyio(TEGRA_CEC_BASE, TEGRA_CEC_SIZE, "tegra.cec");
+
     /* SYSCTR0 */
     tegra_sysctr0_dev = sysbus_create_simple("tegra.sysctr0", TEGRA_TSC_BASE, NULL);
+
+    /* SOC_THERM */
+    tegra_soctherm_dev = tegra_init_dummyio(TEGRA_SOCTHERM_BASE, TEGRA_SOCTHERM_SIZE, "tegra.soctherm");
 
     /* AVPCACHE */
     tegra_avpcache_dev = sysbus_create_simple("tegra.avpcache", TEGRA_ARM_PERIF_BASE, NULL);
@@ -662,6 +668,9 @@ static void __tegrax1_init(MachineState *machine)
     tegra_mipical_dev = sysbus_create_simple("tegra.mipical",
                                              TEGRA_MIPI_CAL_BASE, NULL);
 
+    /* DVFS */
+    tegra_dvfs_dev = tegra_init_dummyio(TEGRA_CL_DVFS_BASE, TEGRA_CL_DVFS_SIZE, "tegra.dvfs");
+
     /* USB2 controllers */
     tegra_ehci1_dev = sysbus_create_simple("tegra.usb",
                                            TEGRA_USB_BASE, DIRQ(INT_USB));
@@ -733,6 +742,13 @@ static void __tegrax1_init(MachineState *machine)
                                           TEGRA_I2C5_BASE, DIRQ(INT_I2C5));
     tegra_idc6_dev = sysbus_create_simple("tegra-i2c",
                                           TEGRA_I2C6_BASE, DIRQ(INT_I2C6));
+
+    /* Tmp451 (Temperature Sensor) */
+    // TODO
+    /*tegra_i2c_tmpsensor_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc1_dev), "dummyi2c", 0x4C);
+
+    uint8_t tmpsensor_regs[]={}; // Power-on reset values.
+    dummyi2c_set_regs(tegra_i2c_tmpsensor_dev, tmpsensor_regs, sizeof(tmpsensor_regs), sizeof(uint8_t), sizeof(tmpsensor_regs));*/
 
     /* Max77620Rtc */
     tegra_i2c_rtc_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77x", 0x68);
@@ -899,6 +915,8 @@ static void __tegrax1_init(MachineState *machine)
     qdev_prop_set_uint8(DEVICE(tegra_sor1_dev), "class_id", 0x7C); // Is this correct?
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, TEGRA_SOR1_BASE);
+
+    // TODO: DPAUX*
 
     /* TSEC */
     tegra_tsec_dev = qdev_new("tegra.tsec");
