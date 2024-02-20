@@ -1131,8 +1131,19 @@ static void tegra_apb_dma_priv_realize(DeviceState *dev, Error **errp)
 {
     tegra_apb_dma *s = TEGRA_APB_DMA(dev);
 
+    uint32_t channel_size = 0, num_channels = 0;
+
+    if (tegra_board >= TEGRAX1_BOARD) {
+        channel_size = 0x40;
+        num_channels = 32;
+    }
+    else {
+        channel_size = 0x20;
+        num_channels = 16;
+    }
+
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_apb_dma_mem_ops, s,
-                          "tegra.apb_dma", 0x1200);
+                          "tegra.apb_dma", TEGRA_APB_DMA_SIZE + (num_channels * channel_size));
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 }
 
