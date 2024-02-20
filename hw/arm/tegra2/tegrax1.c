@@ -534,8 +534,9 @@ static void __tegrax1_init(MachineState *machine)
     /* CEC */
     tegra_cec_dev = tegra_init_dummyio(TEGRA_CEC_BASE, TEGRA_CEC_SIZE, "tegra.cec");
 
-    /* SYSCTR0 */
-    tegra_sysctr0_dev = sysbus_create_simple("tegra.sysctr0", TEGRA_TSC_BASE, NULL);
+    /* SYSCTR */
+    tegra_sysctr0_dev = sysbus_create_simple("tegra.sysctr", TEGRA_TSC_BASE, NULL);
+    tegra_sysctr1_dev = sysbus_create_simple("tegra.sysctr", TEGRA_TSC_BASE + TEGRA_TSC_SIZE, NULL);
 
     /* SOC_THERM */
     tegra_soctherm_dev = tegra_init_dummyio(TEGRA_SOCTHERM_BASE, TEGRA_SOCTHERM_SIZE, "tegra.soctherm");

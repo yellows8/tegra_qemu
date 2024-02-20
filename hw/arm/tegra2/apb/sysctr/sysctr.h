@@ -17,9 +17,9 @@
  *  with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TEGRA_SYSCTR0_H
-#define TEGRA_SYSCTR0_H
+#ifndef TEGRA_SYSCTR_H
+#define TEGRA_SYSCTR_H
 
-#define SYSCTR0_CNTFID0_OFFSET 0x20
+#define SYSCTR_CNTFID0_OFFSET 0x20
 
-#endif // TEGRA_SYSCTR0_H
+#endif // TEGRA_SYSCTR_H

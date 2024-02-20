@@ -48,6 +48,7 @@ void *tegra_se2_dev = NULL;
 void *tegra_tsensor_dev = NULL;
 void *tegra_cec_dev = NULL;
 void *tegra_sysctr0_dev = NULL;
+void *tegra_sysctr1_dev = NULL;
 void *tegra_soctherm_dev = NULL;
 void *tegra_avpcache_dev = NULL;
 void *tegra_gpios_dev = NULL;

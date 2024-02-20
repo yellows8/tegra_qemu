@@ -42,6 +42,7 @@ extern void * tegra_se2_dev;
 extern void * tegra_tsensor_dev;
 extern void * tegra_cec_dev;
 extern void * tegra_sysctr0_dev;
+extern void * tegra_sysctr1_dev;
 extern void * tegra_soctherm_dev;
 extern void * tegra_avpcache_dev;
 extern void * tegra_gpios_dev;
