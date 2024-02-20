@@ -926,8 +926,12 @@ static void __tegrax1_init(MachineState *machine)
     tegra_host1x_dev = sysbus_create_simple("tegra.host1x", TEGRA_HOST1X_BASE,
                                             NULL);
 
-    /* GPU 2d (VIC) */
-    tegra_gr2d_dev = sysbus_create_simple("tegra.gr2d", TEGRA_VIC_BASE, NULL); // DIRQ(INT_VIC_GENERAL)
+    /* VI */
+    tegra_vi_dev = qdev_new("tegra.host1x_dummy_module");
+    s = SYS_BUS_DEVICE(tegra_vi_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_vi_dev), "class_id", 0x30);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_VI_BASE);
 
     /* Display controllers */
     tegra_dca_dev = sysbus_create_simple("tegra.dc", TEGRA_DISPLAY_BASE,
@@ -939,16 +943,6 @@ static void __tegrax1_init(MachineState *machine)
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, TEGRA_DISPLAY2_BASE);
     sysbus_connect_irq(s, 0, DIRQ(INT_DISPLAY_B_GENERAL));
-
-    /* DSI */
-    tegra_dsi_dev = sysbus_create_simple("tegra.dsi", TEGRA_DSI_BASE,
-                                         NULL);
-
-    tegra_dsib_dev = qdev_new("tegra.dsi");
-    s = SYS_BUS_DEVICE(tegra_dsib_dev);
-    qdev_prop_set_uint8(DEVICE(tegra_dsib_dev), "class_id", 0x7A);
-    sysbus_realize_and_unref(s, &error_fatal);
-    sysbus_mmio_map(s, 0, TEGRA_DSIB_BASE);
 
     /* SOR */
     tegra_sor_dev = qdev_new("tegra.host1x_dummy_module");
@@ -963,6 +957,48 @@ static void __tegrax1_init(MachineState *machine)
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, TEGRA_SOR1_BASE);
 
+    /* DSI */
+    tegra_dsi_dev = sysbus_create_simple("tegra.dsi", TEGRA_DSI_BASE,
+                                         NULL);
+
+    tegra_dsib_dev = qdev_new("tegra.dsi");
+    s = SYS_BUS_DEVICE(tegra_dsib_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_dsib_dev), "class_id", 0x7A);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_DSIB_BASE);
+
+    /* GPU 2d (VIC) */
+    tegra_gr2d_dev = sysbus_create_simple("tegra.gr2d", TEGRA_VIC_BASE, NULL); // DIRQ(INT_VIC_GENERAL)
+
+    /* CSI */
+    tegra_csi_dev = qdev_new("tegra.host1x_dummy_module");
+    s = SYS_BUS_DEVICE(tegra_csi_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_csi_dev), "class_id", 0x31); // TODO: Fix this.
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_CSI_BASE);
+
+    /* ISP */
+    tegra_isp_dev = qdev_new("tegra.host1x_dummy_module");
+    s = SYS_BUS_DEVICE(tegra_isp_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_isp_dev), "class_id", 0x32);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_ISP_BASE);
+
+    /* ISPB */
+    tegra_ispb_dev = qdev_new("tegra.host1x_dummy_module");
+    s = SYS_BUS_DEVICE(tegra_ispb_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_ispb_dev), "class_id", 0x34);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_ISPB_BASE);
+
+    /* VII2C */
+    tegra_vii2c_dev = qdev_new("tegra.host1x_dummy_module");
+    s = SYS_BUS_DEVICE(tegra_vii2c_dev);
+    qdev_prop_set_uint8(DEVICE(tegra_vii2c_dev), "class_id", 0x33); // TODO: Fix this.
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_VII2C_BASE);
+
+    /* DPAUX */
     tegra_dpaux_dev = qdev_new("tegra.host1x_dummy_module");
     s = SYS_BUS_DEVICE(tegra_dpaux_dev);
     qdev_prop_set_uint8(DEVICE(tegra_dpaux_dev), "class_id", 0x7D);

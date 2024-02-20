@@ -102,6 +102,9 @@
 #define TEGRA_VI_BASE			0x54080000
 #define TEGRA_VI_SIZE			SZ_256K
 
+#define TEGRA_CSI_BASE			0x543C0000
+#define TEGRA_CSI_SIZE			SZ_256K
+
 #if defined(CONFIG_ARCH_TEGRA_2x_SOC) || \
 	defined(CONFIG_ARCH_TEGRA_3x_SOC) || \
 	defined(CONFIG_ARCH_TEGRA_11x_SOC)
@@ -113,6 +116,9 @@
 
 #define TEGRA_ISPB_BASE			0x54680000
 #define TEGRA_ISPB_SIZE			SZ_256K
+
+#define TEGRA_VII2C_BASE		0x546C0000
+#define TEGRA_VII2C_SIZE		SZ_256K
 #endif
 
 
