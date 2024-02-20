@@ -791,11 +791,26 @@ static void __tegrax1_init(MachineState *machine)
     tegra_qspi_dev = tegra_init_dummyio(TEGRA_QSPI_BASE, TEGRA_QSPI_SIZE, "tegra.qspi");
 
     /* Tmp451 (Temperature Sensor) */
-    // TODO
-    /*tegra_i2c_tmpsensor_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc1_dev), "dummyi2c", 0x4C);
+    tegra_i2c_tmpsensor_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc1_dev), "dummyi2c", 0x4C);
 
-    uint8_t tmpsensor_regs[]={}; // Power-on reset values.
-    dummyi2c_set_regs(tegra_i2c_tmpsensor_dev, tmpsensor_regs, sizeof(tmpsensor_regs), sizeof(uint8_t), sizeof(tmpsensor_regs));*/
+    uint8_t tmpsensor_regs[0xFF]={}; // Power-on reset values.
+
+    tmpsensor_regs[0x04] = 0x08; // Conversion rate register
+    tmpsensor_regs[0x05] = 0x55; // Local temperature high limit
+    tmpsensor_regs[0x07] = 0x55; // Remote temperature high limit (high byte)
+    tmpsensor_regs[0x19] = 0x6C; // Remote temperature THERM limit
+    tmpsensor_regs[0x20] = 0x55; // Local temperature THERM limit
+    tmpsensor_regs[0x21] = 0x0A; // THERM hysteresis
+    tmpsensor_regs[0x22] = 0x01; // Consecutive ALERT
+    tmpsensor_regs[0xFE] = 0x55; // Manufacturer ID
+
+    // Set temp based on hardware, ignoring low values. local = 32c, remote = 33c.
+    tmpsensor_regs[0x00] = 32; // Local Temperature High Byte Register
+    tmpsensor_regs[0x01] = 33; // Remote Temperature High Byte Register
+    tmpsensor_regs[0x10] = 0x00; // Remote Temperature Low Byte Register
+    tmpsensor_regs[0x15] = 0x00; // Local Temperature Low Byte Register
+
+    dummyi2c_set_regs(tegra_i2c_tmpsensor_dev, tmpsensor_regs, sizeof(tmpsensor_regs), sizeof(uint8_t), sizeof(tmpsensor_regs));
 
     /* Max77620Rtc */
     tegra_i2c_rtc_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77x", 0x68);
