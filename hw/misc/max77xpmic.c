@@ -29,7 +29,7 @@ struct MAX77XPMICState {
     I2CSlave parent_obj;
     int8_t addr;
 
-    uint8_t regs[0x5B];
+    uint8_t regs[0x71];
 };
 
 static const VMStateDescription vmstate_max77xpmic = {
@@ -39,7 +39,7 @@ static const VMStateDescription vmstate_max77xpmic = {
     .fields = (const VMStateField[]) {
         VMSTATE_I2C_SLAVE(parent_obj, MAX77XPMICState),
         VMSTATE_INT8(addr, MAX77XPMICState),
-        VMSTATE_UINT8_ARRAY(regs, MAX77XPMICState, 0x5B),
+        VMSTATE_UINT8_ARRAY(regs, MAX77XPMICState, 0x71),
         VMSTATE_END_OF_LIST()
     }
 };
