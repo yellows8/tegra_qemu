@@ -1406,7 +1406,12 @@ static void gic_dist_writeb(void *opaque, hwaddr offset,
             } else if (irq < GIC_INTERNAL) {
                 value = ALL_CPU_MASK;
             }
-            s->irq_target[irq] = value & ALL_CPU_MASK;
+
+            /* Ignore Non-secure access of Group0 IRQ */
+            if (!(s->security_extn && !attrs.secure &&
+                !GIC_DIST_TEST_GROUP(irq, 1 << cpu))) {
+                s->irq_target[irq] = value & ALL_CPU_MASK;
+            }
         }
     } else if (offset < 0xf00) {
         /* Interrupt Configuration.  */
