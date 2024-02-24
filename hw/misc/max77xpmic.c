@@ -84,11 +84,18 @@ static int max77xpmic_send(I2CSlave *i2c, uint8_t data)
     } else {
         int8_t addr = s->addr;
         s->addr = -1;
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: addr = 0x%X, data = 0x%X\n",
+                      __func__, addr, data);
 
         if (addr < sizeof(s->regs)) {
             s->regs[addr] = data;
 
-            if (addr == 0x41) { // ONOFFCNFG1
+            if ((addr >= 0x23 && addr <= 0x31) && (addr & 0x1) == 0x1) { // CNFG1_Lx
+                if ((data >> 6) == 0x3) { // PWR_MD_Lx = normal mode
+                    s->regs[addr+1] |= BIT(3); // CNFG2_Lx POK_Lxx = voltage above POK threshold
+                }
+            }
+            else if (addr == 0x41) { // ONOFFCNFG1
                 if (data & BIT(7)) { // SFT_RST
                     qemu_log_mask(LOG_GUEST_ERROR, "%s: Requesting a system reset.\n",
                                   __func__);
@@ -122,6 +129,8 @@ static uint8_t max77xpmic_recv(I2CSlave *i2c)
     if (addr < sizeof(s->regs)) {
         uint8_t tmp = s->regs[addr];
         if (addr == 0x0B || addr == 0x0C) s->regs[addr] = 0; // ONOFFIRQ, NVERC
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: addr = 0x%X, data = 0x%X\n",
+                      __func__, addr, tmp);
         return tmp;
     }
 
