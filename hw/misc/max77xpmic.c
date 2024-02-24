@@ -71,6 +71,8 @@ static void max77xpmic_realize(DeviceState *dev, Error **errp)
     s->regs[0x24] = s->regs[0x26] = s->regs[0x28] = s->regs[0x2A] = s->regs[0x2C] = s->regs[0x2E] = s->regs[0x30] = s->regs[0x32] = s->regs[0x34] = 0x40; // CNFG2_Lx
     // CNFG1_GPIOx reset value should be non-zero in some cases but whatever.
     s->regs[0x42] = 0x07; // ONOFFCNFG2
+
+    s->regs[0x5C] = 0x35;// REG_CID4
 }
 
 static int max77xpmic_send(I2CSlave *i2c, uint8_t data)
