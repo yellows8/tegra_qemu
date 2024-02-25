@@ -704,7 +704,8 @@ static void __tegrax1_init(MachineState *machine)
                                              TEGRA_MIPI_CAL_BASE, NULL);
 
     /* DVFS */
-    tegra_dvfs_dev = tegra_init_dummyio(TEGRA_CL_DVFS_BASE, TEGRA_CL_DVFS_SIZE, "tegra.dvfs");
+    tegra_dvfs_dev = sysbus_create_simple("tegra.dvfs",
+                                           TEGRA_CL_DVFS_BASE, NULL);
 
     /* CLUSTER_CLOCK */
     tegra_cluster_clock_dev = tegra_init_dummyio(TEGRA_CLK13_RESET_BASE, SZ_256K, "tegra.cluster_clock");
