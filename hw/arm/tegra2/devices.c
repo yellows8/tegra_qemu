@@ -116,6 +116,7 @@ void *tegra_qspi_dev = NULL;
 void *tegra_i2c_tmpsensor_dev = NULL;
 void *tegra_i2c_rtc_dev = NULL;
 void *tegra_i2c_pmic_dev = NULL;
+void *tegra_i2c_subpmic_devs[4] = {};
 void *tegra_i2c_charger_dev = NULL;
 void *tegra_i2c_fuel_dev = NULL;
 void *tegra_grhost_dev = NULL;

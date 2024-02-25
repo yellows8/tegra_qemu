@@ -818,6 +818,16 @@ static void __tegrax1_init(MachineState *machine)
     /* Max77620Pmic */
     tegra_i2c_pmic_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77xpmic", 0x3C);
 
+    /* Max77621Cpu */
+    tegra_i2c_subpmic_devs[0] = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77xpmic", 0x1B);
+
+    /* Max77621Gpu */
+    tegra_i2c_subpmic_devs[1] = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77xpmic", 0x1C);
+
+    /* Max77812Pmic */
+    tegra_i2c_subpmic_devs[2] = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77xpmic", 0x31);
+    tegra_i2c_subpmic_devs[3] = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77xpmic", 0x33);
+
     /* Bq24193 */
     tegra_i2c_charger_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc1_dev), "dummyi2c", 0x6B);
 
