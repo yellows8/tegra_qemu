@@ -1803,4 +1803,8 @@ typedef union client_activity_monitor_emem_1_u {
     uint32_t reg32;
 } client_activity_monitor_emem_1_t;
 
+#define CLIENT_HOTRESET_CTRL_1_OFFSET 0x970
+
+#define CLIENT_HOTRESET_STATUS_1_OFFSET 0x974
+
 #endif // TEGRA_MC_H

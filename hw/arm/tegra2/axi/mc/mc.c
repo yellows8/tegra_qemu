@@ -355,7 +355,7 @@ static uint32_t tegra_mc_regdef_tegrax1_reset_table[] = {
     TEGRA_REGDEF_TABLE_RESET(MC_CLKEN_OVERRIDE_0, 0xF4, 0x00008000)
     TEGRA_REGDEF_TABLE_RESET(MC_TIMING_CONTROL_0, 0xFC, 0x00000000)
     TEGRA_REGDEF_TABLE_RESET(MC_STAT_CONTROL_0, 0x100, 0x00000000)
-    TEGRA_REGDEF_TABLE_RESET(MC_PM_STOP_TRIGGER:, 0x200, 0x00000000)
+    TEGRA_REGDEF_TABLE_RESET(MC_CLIENT_HOTRESET_CTRL_0, 0x200, 0x00000000)
     TEGRA_REGDEF_TABLE_RESET(MC_CLIENT_HOTRESET_STATUS_0, 0x204, 0x00000000)
     TEGRA_REGDEF_TABLE_RESET(MC_EMEM_ARB_ISOCHRONOUS_0_0, 0x208, 0x0023007E)
     TEGRA_REGDEF_TABLE_RESET(MC_EMEM_ARB_ISOCHRONOUS_1_0, 0x20C, 0x00000000)
@@ -1204,6 +1204,16 @@ static void tegra_mc_priv_write(void *opaque, hwaddr offset,
     case TIMEOUT_RCOAL_DCB_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->timeout_rcoal_dcb.reg32, value);
         s->timeout_rcoal_dcb.reg32 = value;
+
+        if (tegra_board >= TEGRAX1_BOARD) {
+            // MC_CLIENT_HOTRESET_STATUS_0 = MC_CLIENT_HOTRESET_CTRL_0
+            s->timeout1_rcoal_dcb.reg32 = value;
+
+            tegra_mc *mc_chan = tegra_mc0_dev;
+            mc_chan->timeout1_rcoal_dcb.reg32 = value;
+            mc_chan = tegra_mc1_dev;
+            mc_chan->timeout1_rcoal_dcb.reg32 = value;
+        }
         break;
     case TIMEOUT1_RCOAL_DCB_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->timeout1_rcoal_dcb.reg32, value);
@@ -1451,6 +1461,15 @@ static void tegra_mc_priv_write(void *opaque, hwaddr offset,
                 mc_chan->regs[offset>>2] = value;
                 mc_chan = tegra_mc1_dev;
                 mc_chan->regs[offset>>2] = value;
+
+                if (offset == CLIENT_HOTRESET_CTRL_1_OFFSET) {
+                    s->regs[CLIENT_HOTRESET_STATUS_1_OFFSET>>2] = value;
+
+                    mc_chan = tegra_mc0_dev;
+                    mc_chan->regs[CLIENT_HOTRESET_STATUS_1_OFFSET>>2] = value;
+                    mc_chan = tegra_mc1_dev;
+                    mc_chan->regs[CLIENT_HOTRESET_STATUS_1_OFFSET>>2] = value;
+                }
             }
             else
                 TRACE_WRITE(s->iomem.addr, offset, 0, value);
