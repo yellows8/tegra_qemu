@@ -30,11 +30,11 @@
 
 #include "i2c.h"
 
-//#define DEBUG_I2C 1
+#define DEBUG_I2C 1
 
 #ifdef DEBUG_I2C
 #define DPRINTF(fmt, ...) \
-do { fprintf(stderr, "tegra_i2c: " fmt , ## __VA_ARGS__); } while (0)
+do { qemu_log_mask(LOG_GUEST_ERROR, "tegra_i2c: " fmt , ## __VA_ARGS__); } while (0)
 #else
 #define DPRINTF(fmt, ...) do {} while (0)
 #endif
