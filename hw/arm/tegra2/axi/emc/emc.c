@@ -361,6 +361,7 @@ static uint64_t tegra_emc_priv_read(void *opaque, hwaddr offset,
 {
     tegra_emc *s = opaque;
     uint64_t ret = 0;
+    tegra_emc *emc_chan = NULL;
 
     switch (offset) {
     case INTSTATUS_OFFSET:
@@ -521,6 +522,16 @@ static uint64_t tegra_emc_priv_read(void *opaque, hwaddr offset,
         break;
     case MRR_OFFSET:
         ret = s->mrr.reg32;
+        if (tegra_board >= TEGRAX1_BOARD) {
+            s->emc_status.reg32 &= ~0x100000; // MRR_DIVLD
+            s->emc_status.reg32 |= 0xF << 16; // MRR_FIFO_SPACE
+            emc_chan = tegra_emc0_dev;
+            emc_chan->emc_status.reg32 &= ~0x100000;
+            emc_chan->emc_status.reg32 |= 0xF << 16;
+            emc_chan = tegra_emc1_dev;
+            emc_chan->emc_status.reg32 &= ~0x100000;
+            emc_chan->emc_status.reg32 |= 0xF << 16;
+        }
         break;
     case FBIO_CFG1_OFFSET:
         ret = s->fbio_cfg1.reg32;
