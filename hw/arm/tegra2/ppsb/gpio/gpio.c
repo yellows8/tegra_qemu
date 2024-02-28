@@ -147,6 +147,10 @@ static uint64_t tegra_gpio_priv_read(void *opaque, hwaddr offset,
             ret |= (1 << 4);
             ret |= (1 << 5);
         }
+
+        if (tegra_board >= TEGRAX1_BOARD) {
+            if (bank == 5 && port == 3) ret |= BIT(6) | BIT(7); // ButtonVolUp/ButtonVolDn (TODO: allow user-control?)
+        }
         break;
     case GPIO_INT_STA_OFFSET:
         ret = p->gpio_int_sta.reg32;
