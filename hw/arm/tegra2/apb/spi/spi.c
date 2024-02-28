@@ -61,6 +61,25 @@ static const VMStateDescription vmstate_tegra_spi = {
     }
 };
 
+static void tegra_spi_update_irq(tegra_spi *s)
+{
+    uint32_t mask = ~s->regs[SPI_INTR_MASK_OFFSET>>2];
+    uint32_t val = s->regs[SPI_FIFO_STATUS_OFFSET>>2];
+
+    // Convert val to SPI_INTR_MASK format.
+    val = (val & 0xC0000000) | ((val & 0xF0) << 21);
+    if (s->regs[SPI_TRANSFER_STATUS_OFFSET>>2] & BIT(30)) val |= BIT(29); // RDY
+
+    if (val & mask) {
+        TRACE_IRQ_RAISE(s->iomem.addr, s->irq);
+        qemu_log_mask(LOG_GUEST_ERROR, "tegra.spi: Raised IRQ.\n");
+    }
+    else {
+        TRACE_IRQ_LOWER(s->iomem.addr, s->irq);
+        qemu_log_mask(LOG_GUEST_ERROR, "tegra.spi: Lowered IRQ.\n");
+    }
+}
+
 static uint64_t tegra_spi_priv_read(void *opaque, hwaddr offset,
                                     unsigned size)
 {
@@ -81,14 +100,13 @@ static void tegra_spi_priv_write(void *opaque, hwaddr offset,
 
     TRACE_WRITE(s->iomem.addr, offset, 0, value);
 
-    // TODO: IRQ
-
     if (offset+size <= sizeof(s->regs)) {
         if (offset == SPI_COMMAND_OFFSET) {
             if (value & BIT(31)) { // PIO = GO
                 value &= ~BIT(31);
                 s->regs[SPI_TRANSFER_STATUS_OFFSET>>2] |= BIT(30); //RDY
                 s->regs[SPI_TRANSFER_STATUS_OFFSET>>2] = (s->regs[SPI_TRANSFER_STATUS_OFFSET>>2] & ~0xFFFF) | (s->regs[SPI_DMA_BLK_SIZE_OFFSET>>2] & 0xFFFF);
+                tegra_spi_update_irq(s);
             }
         }
         else if (offset == SPI_TRANSFER_STATUS_OFFSET) {
@@ -97,16 +115,20 @@ static void tegra_spi_priv_write(void *opaque, hwaddr offset,
         else if (offset == SPI_FIFO_STATUS_OFFSET) {
             value &= ~0x3FFF000F;
             value |= s->regs[SPI_FIFO_STATUS_OFFSET>>2] & 0x3FFF000F;
+            value &= ~(s->regs[SPI_FIFO_STATUS_OFFSET>>2] & 0xF0);
         }
         else if (offset == SPI_DMA_CTL_OFFSET) {
             if (value & BIT(31)) { // DMA = enable
                 value &= ~BIT(31);
                 s->regs[SPI_TRANSFER_STATUS_OFFSET>>2] |= BIT(30); //RDY
                 s->regs[SPI_TRANSFER_STATUS_OFFSET>>2] = (s->regs[SPI_TRANSFER_STATUS_OFFSET>>2] & ~0xFFFF) | (s->regs[SPI_DMA_BLK_SIZE_OFFSET>>2] & 0xFFFF);
+                tegra_spi_update_irq(s);
             }
         }
 
         s->regs[offset/sizeof(uint32_t)] = (s->regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
+
+        if (offset == SPI_TRANSFER_STATUS_OFFSET || offset == SPI_FIFO_STATUS_OFFSET || offset == SPI_INTR_MASK_OFFSET) tegra_spi_update_irq(s);
     }
 }
 
