@@ -783,10 +783,14 @@ static void __tegrax1_init(MachineState *machine)
                                           TEGRA_I2C6_BASE, DIRQ(INT_I2C6));
 
     /* SPI controllers */
-    tegra_spi_devs[0] = tegra_init_dummyio(TEGRA_SPI1_BASE, TEGRA_SPI1_SIZE, "tegra.spi");
-    tegra_spi_devs[1] = tegra_init_dummyio(TEGRA_SPI2_BASE, TEGRA_SPI2_SIZE, "tegra.spi");
-    tegra_spi_devs[2] = tegra_init_dummyio(TEGRA_SPI3_BASE, TEGRA_SPI3_SIZE, "tegra.spi");
-    tegra_spi_devs[3] = tegra_init_dummyio(TEGRA_SPI4_BASE, TEGRA_SPI4_SIZE, "tegra.spi");
+    tegra_spi_devs[0] = sysbus_create_simple("tegra.spi",
+                                          TEGRA_SPI1_BASE, DIRQ(INT_SPI_1));
+    tegra_spi_devs[1] = sysbus_create_simple("tegra.spi",
+                                          TEGRA_SPI2_BASE, DIRQ(INT_SPI_2));
+    tegra_spi_devs[2] = sysbus_create_simple("tegra.spi",
+                                          TEGRA_SPI3_BASE, DIRQ(INT_SPI_3));
+    tegra_spi_devs[3] = sysbus_create_simple("tegra.spi",
+                                          TEGRA_SPI4_BASE, DIRQ(INT_SPI_4));
 
     /* QSPI */
     tegra_qspi_dev = tegra_init_dummyio(TEGRA_QSPI_BASE, TEGRA_QSPI_SIZE, "tegra.qspi");

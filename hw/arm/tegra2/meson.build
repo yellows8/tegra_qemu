@@ -53,6 +53,7 @@ arm_ss.add(files(
   'apb/mipical/mipical.c',
   'apb/sysctr/sysctr.c',
   'apb/dvfs/dvfs.c',
+  'apb/spi/spi.c',
 
   'cpu/arm_op.c',
   'cpu/cop_mmu.c',
