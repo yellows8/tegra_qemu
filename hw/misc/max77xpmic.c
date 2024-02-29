@@ -78,6 +78,7 @@ static void max77xpmic_realize(DeviceState *dev, Error **errp)
 static int max77xpmic_send(I2CSlave *i2c, uint8_t data)
 {
     MAX77XPMICState *s = MAX77XPMIC(i2c);
+    int pwr_action = -1;
 
     if (s->addr < 0) {
         s->addr = data;
@@ -97,14 +98,13 @@ static int max77xpmic_send(I2CSlave *i2c, uint8_t data)
             }
             else if (addr == 0x41) { // ONOFFCNFG1
                 if (data & BIT(7)) { // SFT_RST
-                    qemu_log_mask(LOG_GUEST_ERROR, "%s: Requesting a system reset.\n",
-                                  __func__);
-                    qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
+                    if (s->regs[0x42] & BIT(7)) // ONOFFCNFG2 SFT_RST_WK
+                        pwr_action = 0;
+                    else
+                        pwr_action = 1;
                 }
                 else if (data & BIT(1)) { // PWR_OFF
-                    qemu_log_mask(LOG_GUEST_ERROR, "%s: Requesting a system shutdown.\n",
-                                  __func__);
-                    qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
+                    pwr_action = 1;
                 }
             }
         }
@@ -113,6 +113,18 @@ static int max77xpmic_send(I2CSlave *i2c, uint8_t data)
                           __func__, addr);
         }
     }
+
+    if (pwr_action==0) {
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: Requesting a system reset.\n",
+                      __func__);
+        qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
+    }
+    else if (pwr_action==1) {
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: Requesting a system shutdown.\n",
+                      __func__);
+        qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
+    }
+
     return 0;
 }
 
