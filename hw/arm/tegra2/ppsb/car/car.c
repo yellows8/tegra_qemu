@@ -1898,7 +1898,7 @@ static void tegra_car_priv_reset(DeviceState *dev)
             else if (offset == PLLU_BASE_OFFSET)
                 s->pllu_base.reg32 = value | PLL_LOCKED;
             else if (offset == PLLE_MISC_OFFSET)
-                s->plle_misc.reg32 = value;
+                s->plle_misc.reg32 = value | BIT(11); // PLLE_LOCK
             else if (offset == RST_CPU_CMPLX_SET_OFFSET || offset == RST_CPUG_CMPLX_SET_OFFSET)
                 s->rst_cpu_cmplx_set.reg32 = value;
             else if (offset == s->rst_cpu_cmplx_clr_offset)
