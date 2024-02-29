@@ -1669,6 +1669,34 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->clk_source_la.reg32, value);
         s->clk_source_la.reg32 = value;
         break;
+    case RST_CONTROLLER_PLLD2_BASE_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
+        WR_MASKED(s->regs[offset>>2], value, RST_CONTROLLER_PLLD2_BASE);
+        break;
+    case RST_CONTROLLER_PLLREFE_MISC_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
+        WR_MASKED(s->regs[offset>>2], value, RST_CONTROLLER_PLLREFE_MISC);
+        break;
+    case RST_CONTROLLER_PLLC2_BASE_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
+        WR_MASKED(s->regs[offset>>2], value, RST_CONTROLLER_PLLC2_BASE);
+        break;
+    case RST_CONTROLLER_PLLC3_BASE_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
+        WR_MASKED(s->regs[offset>>2], value, RST_CONTROLLER_PLLC3_BASE);
+        break;
+    case RST_CONTROLLER_UTMIPLL_HW_PWRDN_CFG0_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
+        WR_MASKED(s->regs[offset>>2], value, RST_CONTROLLER_UTMIPLL_HW_PWRDN_CFG0);
+        break;
+    case RST_CONTROLLER_PLLDP_BASE_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
+        WR_MASKED(s->regs[offset>>2], value, RST_CONTROLLER_PLLDP_BASE);
+        break;
+    case RST_CONTROLLER_PLLA1_BASE_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
+        WR_MASKED(s->regs[offset>>2], value, RST_CONTROLLER_PLLA1_BASE);
+        break;
     default:
         if (offset != s->rst_cpu_cmplx_clr_offset && offset <= sizeof(s->regs)-4) {
             TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
@@ -1882,7 +1910,21 @@ static void tegra_car_priv_reset(DeviceState *dev)
             else if (offset >= RST_DEV_V_SET_OFFSET && offset <= CLK_ENB_W_CLR_OFFSET)
                 s->regs[offset>>2] = value;
             else {
-                tegra_car_priv_write(s, offset, value, 4);
+                if (offset == RST_CONTROLLER_PLLD2_BASE_OFFSET || offset == RST_CONTROLLER_PLLREFE_MISC_OFFSET || offset == RST_CONTROLLER_PLLC2_BASE_OFFSET ||
+                    offset == RST_CONTROLLER_PLLC3_BASE_OFFSET || offset == RST_CONTROLLER_UTMIPLL_HW_PWRDN_CFG0_OFFSET ||
+                    offset == RST_CONTROLLER_PLLDP_BASE_OFFSET || offset == RST_CONTROLLER_PLLA1_BASE_OFFSET) {
+
+                    if (offset == RST_CONTROLLER_PLLC2_BASE_OFFSET || offset == RST_CONTROLLER_PLLC3_BASE_OFFSET || offset == RST_CONTROLLER_PLLA1_BASE_OFFSET)
+                        value |= BIT(26); // LOCK
+                    else if (offset == RST_CONTROLLER_PLLREFE_MISC_OFFSET || offset == RST_CONTROLLER_PLLDP_BASE_OFFSET || offset == RST_CONTROLLER_PLLD2_BASE_OFFSET)
+                        value |= PLL_LOCKED;
+                    else if (offset == RST_CONTROLLER_UTMIPLL_HW_PWRDN_CFG0_OFFSET)
+                        value |= BIT(31); // LOCK
+
+                    s->regs[offset>>2] = value;
+                }
+                else
+                    tegra_car_priv_write(s, offset, value, 4);
             }
         }
 
