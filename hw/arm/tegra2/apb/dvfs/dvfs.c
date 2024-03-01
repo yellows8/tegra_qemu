@@ -71,7 +71,30 @@ static uint64_t tegra_dvfs_priv_read(void *opaque, hwaddr offset,
     tegra_dvfs *s = opaque;
     uint64_t ret = 0;
 
-    if (offset + size <= sizeof(s->regs)) ret = s->regs[offset/sizeof(uint32_t)] & ((1ULL<<size*8)-1);
+    if (offset + size <= sizeof(s->regs)) {
+        if (offset == 0x2C) { // CL_DVFS_MONITOR_DATA_0
+            if (s->regs[offset>>2] & BIT(16)) {
+                uint16_t val=0;
+
+                if (s->regs[0x24>>2] & BIT(6)) // CL_DVFS_OUTPUT_FORCE_0
+                    val = s->regs[0x24>>2] & 0x3F;
+                else
+                    val = (s->regs[offset>>2] & 0xFFFF) + 0x1;
+
+                s->regs[offset>>2] = val | (s->regs[offset>>2] & 0xFFFF0000);
+            }
+        }
+        else if (offset == 0x48) { // CL_DVFS_I2C_STS_0
+            uint32_t val=0;
+
+            if (s->regs[0x24>>2] & BIT(6)) // CL_DVFS_OUTPUT_FORCE_0
+                val = (s->regs[0x24>>2] & 0x3F) << 1;
+
+            s->regs[offset>>2] = val;
+        }
+
+        ret = s->regs[offset/sizeof(uint32_t)] & ((1ULL<<size*8)-1);
+    }
 
     TRACE_READ(s->iomem.addr, offset, ret);
 
