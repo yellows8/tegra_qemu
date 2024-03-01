@@ -1604,6 +1604,12 @@ typedef union clk_source_osc_u {
 
 #define CLK_OUT_ENB_X_OFFSET 0x280
 
+#define RST_DEVICES_X_OFFSET 0x28C
+
+#define CLK_OUT_ENB_Y_OFFSET 0x298
+
+#define RST_DEVICES_Y_OFFSET 0x2A4
+
 #define RST_DEV_L_SET_OFFSET 0x300
 #define RST_DEV_L_SET_RESET  0x3FFFFEC9
 typedef union rst_dev_l_set_u {

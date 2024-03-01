@@ -365,17 +365,17 @@ static uint32_t tegra_car_regdef_tegrax1_reset_table[] = {
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_SOURCE_TSEC_0, 0x1F4, 0xC0000000)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_SPARE2_0, 0x1FC, 0x00000000)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_OUT_ENB_X_0, 0x280, 0x23004780)
-    TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_ENB_X_SET_0, 0x284, 0x23000780)
-    TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_ENB_X_CLR_0, 0x288, 0x23000780)
+    //TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_ENB_X_SET_0, 0x284, 0x23000780)
+    //TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_ENB_X_CLR_0, 0x288, 0x23000780)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEVICES_X_0, 0x28C, 0x01E42049)
-    TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEV_X_SET_0, 0x290, 0x01E42049)
-    TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEV_X_CLR_0, 0x294, 0x01E42049)
+    //TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEV_X_SET_0, 0x290, 0x01E42049)
+    //TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEV_X_CLR_0, 0x294, 0x01E42049)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_OUT_ENB_Y_0, 0x298, 0x00000300)
-    TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_ENB_Y_SET_0, 0x29C, 0x00000300)
-    TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_ENB_Y_CLR_0, 0x2A0, 0x00000300)
+    //TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_ENB_Y_SET_0, 0x29C, 0x00000300)
+    //TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_ENB_Y_CLR_0, 0x2A0, 0x00000300)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEVICES_Y_0, 0x2A4, 0x0FE9F0DD)
-    TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEV_Y_SET_0, 0x2A8, 0x0FE9F0DD)
-    TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEV_Y_CLR_0, 0x2AC, 0x0FE9F0DD)
+    //TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEV_Y_SET_0, 0x2A8, 0x0FE9F0DD)
+    //TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEV_Y_CLR_0, 0x2AC, 0x0FE9F0DD)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_DFLL_BASE_0, 0x2F4, 0x00000001)
     //TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEV_L_SET_0, 0x300, 0x1CD3D2C8)
     //TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEV_L_CLR_0, 0x304, 0x1CD3D2C8)
@@ -422,14 +422,14 @@ static uint32_t tegra_car_regdef_tegrax1_reset_table[] = {
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_SOURCE_SATA_OOB_0, 0x420, 0xC0000000)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_SOURCE_SATA_0, 0x424, 0xC1000000)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_SOURCE_HDA_0, 0x428, 0xC0000000)
-    TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEV_V_SET_0, 0x430, 0xFF818080)
+    /*TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEV_V_SET_0, 0x430, 0xFF818080)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEV_V_CLR_0, 0x434, 0xFF818080)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEV_W_SET_0, 0x438, 0x190077FF)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_DEV_W_CLR_0, 0x43C, 0x190077FF)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_ENB_V_SET_0, 0x440, 0x00400008)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_ENB_V_CLR_0, 0x444, 0x00400008)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_ENB_W_SET_0, 0x448, 0x402000FC)
-    TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_ENB_W_CLR_0, 0x44C, 0x402000FC)
+    TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_ENB_W_CLR_0, 0x44C, 0x402000FC)*/
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_CPUG_CMPLX_SET_0, 0x450, 0x2000FEEF)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_RST_CPUG_CMPLX_CLR_0, 0x454, 0x2000FEEF)
     TEGRA_REGDEF_TABLE_RESET(CLK_RST_CONTROLLER_CLK_CPUG_CMPLX_SET_0, 0x460, 0x00000000)
@@ -1099,7 +1099,31 @@ static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
         break;
     default:
         if (offset == s->rst_cpu_cmplx_clr_offset) ret = s->rst_cpu_cmplx_clr.reg32;
-        else if (tegra_board >= TEGRAX1_BOARD && offset <= sizeof(s->regs)-4) ret = s->regs[offset>>2];
+        else if (tegra_board >= TEGRAX1_BOARD && offset <= sizeof(s->regs)-4) {
+            uint32_t off=0;
+            if (offset >= CLK_OUT_ENB_X_OFFSET && offset < RST_DEVICES_Y_OFFSET+0xC) {
+                if (offset >= CLK_OUT_ENB_X_OFFSET && offset < CLK_OUT_ENB_X_OFFSET+0xC) {
+                    offset = CLK_OUT_ENB_X_OFFSET;
+                }
+                else if (offset >= RST_DEVICES_X_OFFSET && offset < RST_DEVICES_X_OFFSET+0xC) {
+                    offset = RST_DEVICES_X_OFFSET;
+                }
+                else if (offset >= CLK_OUT_ENB_Y_OFFSET && offset < CLK_OUT_ENB_Y_OFFSET+0xC) {
+                    offset = CLK_OUT_ENB_Y_OFFSET;
+                }
+                else if (offset >= RST_DEVICES_Y_OFFSET && offset < RST_DEVICES_Y_OFFSET+0xC) {
+                    offset = RST_DEVICES_Y_OFFSET;
+                }
+
+                ret = s->regs[offset>>2];
+            }
+            else if (offset >= RST_DEV_V_SET_OFFSET && offset <= CLK_ENB_W_CLR_OFFSET) {
+                off = (((offset - RST_DEV_V_SET_OFFSET)>>3)<<2) + RST_DEVICES_V_OFFSET;
+                ret = s->regs[off>>2];
+            }
+            else
+                ret = s->regs[offset>>2];
+        }
         break;
     }
 
@@ -1700,15 +1724,40 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
     default:
         if (offset != s->rst_cpu_cmplx_clr_offset && offset <= sizeof(s->regs)-4) {
             TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
-            if (offset == CLK_OUT_ENB_X_OFFSET) {
-                value |= s->regs[offset>>2] & 0x4000;
+            uint32_t off=0;
+            if (offset >= CLK_OUT_ENB_X_OFFSET && offset < RST_DEVICES_Y_OFFSET+0xC) {
+                if (offset >= CLK_OUT_ENB_X_OFFSET && offset < CLK_OUT_ENB_X_OFFSET+0xC) {
+                    off = offset - CLK_OUT_ENB_X_OFFSET;
+                    /*if (offset == CLK_OUT_ENB_X_OFFSET)
+                        value |= s->regs[offset>>2] & 0x4000;*/
+                    offset = CLK_OUT_ENB_X_OFFSET;
+                }
+                else if (offset >= RST_DEVICES_X_OFFSET && offset < RST_DEVICES_X_OFFSET+0xC) {
+                    off = offset - RST_DEVICES_X_OFFSET;
+                    offset = RST_DEVICES_X_OFFSET;
+                }
+                else if (offset >= CLK_OUT_ENB_Y_OFFSET && offset < CLK_OUT_ENB_Y_OFFSET+0xC) {
+                    off = offset - CLK_OUT_ENB_Y_OFFSET;
+                    offset = CLK_OUT_ENB_Y_OFFSET;
+                }
+                else if (offset >= RST_DEVICES_Y_OFFSET && offset < RST_DEVICES_Y_OFFSET+0xC) {
+                    off = offset - RST_DEVICES_Y_OFFSET;
+                    offset = RST_DEVICES_Y_OFFSET;
+                }
+
+                if ((off & 0x4) != 0)
+                    s->regs[offset>>2] |= value;
+                else
+                    s->regs[offset>>2] &= ~value;
+                break;
             }
             else if (offset >= RST_DEV_V_SET_OFFSET && offset <= CLK_ENB_W_CLR_OFFSET) {
-                uint32_t off = (((offset - RST_DEV_V_SET_OFFSET)>>3)<<2) + RST_DEVICES_V_OFFSET;
+                off = (((offset - RST_DEV_V_SET_OFFSET)>>3)<<2) + RST_DEVICES_V_OFFSET;
                 if ((offset & 0x4) == 0)
                     s->regs[off>>2] |= value;
                 else
                     s->regs[off>>2] &= ~value;
+                break;
             }
             s->regs[offset>>2] = value;
         }
@@ -1907,8 +1956,8 @@ static void tegra_car_priv_reset(DeviceState *dev)
                 s->cpu_cmplx_status.reg32 = value;
             else if (offset == RST_CONTROLLER_PLLMB_BASE_OFFSET)
                 s->rst_controller_pllmb_base.reg32 = value;
-            else if (offset >= RST_DEV_V_SET_OFFSET && offset <= CLK_ENB_W_CLR_OFFSET)
-                s->regs[offset>>2] = value;
+            /*else if (offset >= RST_DEV_V_SET_OFFSET && offset <= CLK_ENB_W_CLR_OFFSET)
+                s->regs[offset>>2] = value;*/
             else {
                 if (offset == RST_CONTROLLER_PLLD2_BASE_OFFSET || offset == RST_CONTROLLER_PLLREFE_MISC_OFFSET || offset == RST_CONTROLLER_PLLC2_BASE_OFFSET ||
                     offset == RST_CONTROLLER_PLLC3_BASE_OFFSET || offset == RST_CONTROLLER_UTMIPLL_HW_PWRDN_CFG0_OFFSET ||
