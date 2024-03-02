@@ -1017,9 +1017,9 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
         s->gp_uadcfgpadctrl.reg32 = GP_UADCFGPADCTRL_TEGRAX1_RESET;
 
         s->gp_hidrev.chipid = 0x21;
-        s->gp_hidrev.hidfam = 0x0;
-        s->gp_hidrev.majorrev = 0x0;
-        s->gp_hidrev.minorrev = 0x0;
+        s->gp_hidrev.hidfam = 0x7;
+        s->gp_hidrev.majorrev = tegra_board >= TEGRAX1PLUS_BOARD ? 0x2 : 0x1;
+        s->gp_hidrev.minorrev = 0x2;
     }
     else {
         s->pp_config_ctl.reg32 = PP_CONFIG_CTL_TEGRA2_RESET;
