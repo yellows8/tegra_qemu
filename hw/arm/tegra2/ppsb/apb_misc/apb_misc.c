@@ -1015,6 +1015,11 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
         s->gp_gmecfgpadctrl.reg32 = GP_GMECFGPADCTRL_TEGRAX1_RESET;
         s->gp_owrcfgpadctrl.reg32 = GP_OWRCFGPADCTRL_TEGRAX1_RESET;
         s->gp_uadcfgpadctrl.reg32 = GP_UADCFGPADCTRL_TEGRAX1_RESET;
+
+        s->gp_hidrev.chipid = 0x21;
+        s->gp_hidrev.hidfam = 0x0;
+        s->gp_hidrev.majorrev = 0x0;
+        s->gp_hidrev.minorrev = 0x0;
     }
     else {
         s->pp_config_ctl.reg32 = PP_CONFIG_CTL_TEGRA2_RESET;
@@ -1040,6 +1045,11 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
         s->gp_gmecfgpadctrl.reg32 = GP_GMECFGPADCTRL_TEGRA2_RESET;
         s->gp_owrcfgpadctrl.reg32 = GP_OWRCFGPADCTRL_TEGRA2_RESET;
         s->gp_uadcfgpadctrl.reg32 = GP_UADCFGPADCTRL_TEGRA2_RESET;
+
+        s->gp_hidrev.chipid = 0x20;
+        s->gp_hidrev.hidfam = 0x7;
+        s->gp_hidrev.majorrev = 0x1;
+        s->gp_hidrev.minorrev = 0x4;
     }
 
     memset(s->regs, 0, sizeof(s->regs));
@@ -1056,11 +1066,6 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
     s->regs[(GP_QSPI_COMP_CONTROL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_QSPI_COMP_CONTROL_RESET;
     s->regs[(GP_VGPIO_GPIO_MUX_SEL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_VGPIO_GPIO_MUX_SEL_RESET;
     s->regs[(GP_QSPI_SCK_LPBK_CONTROL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_QSPI_SCK_LPBK_CONTROL_RESET;
-
-    s->gp_hidrev.chipid = 0x20;
-    s->gp_hidrev.hidfam = 0x7;
-    s->gp_hidrev.majorrev = 0x1;
-    s->gp_hidrev.minorrev = 0x4;
 }
 
 static const MemoryRegionOps tegra_apb_misc_mem_ops = {
