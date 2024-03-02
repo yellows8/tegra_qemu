@@ -60,6 +60,7 @@
 #include "apb/fuse/fuse.h"
 #include "apb/i2c/i2c.h"
 #include "dummyi2c/dummyi2c.h"
+#include "dummyio/dummyio.h"
 
 #include "devices.h"
 #include "iomap.h"
@@ -1082,6 +1083,10 @@ static void __tegrax1_init(MachineState *machine)
     sysbus_mmio_map(s, 0, TEGRA_NVJPG_BASE);
     sysbus_connect_irq(s, 0, DIRQ(INT_NVJPG));
 
+    /* GPU */
+    // NOTE: Not really correct, this region is *much* larger than dummyio handles.
+    tegra_gpu_dev = tegra_init_dummyio(TEGRA_GK20A_BAR0_BASE, SZ_256K, "tegra.gpu");
+
     /* Process generator tag */
     sysbus_create_simple("tegra.pg", 0x60000000, NULL);
 
@@ -1221,6 +1226,9 @@ static void tegrax1_reset(MachineState *state, ShutdownCause cause)
     tegra_evp_reset(tegra_evp_dev, cause);
 
     tegra_fuse_reset(tegra_fuse_dev, cause);
+
+    dummyio_set_reg(tegra_gpu_dev, 0x0,
+                                   0x12B000A1, sizeof(uint32_t));
 
     int cpu_id = state->firmware != NULL || state->bootloader != NULL ? TEGRA_BPMP : TEGRA_CCPLEX_CORE0;
     tegra_cpu_unpowergate(cpu_id);

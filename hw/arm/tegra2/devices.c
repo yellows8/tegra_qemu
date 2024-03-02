@@ -135,6 +135,7 @@ void *tegra_csi_dev = NULL;
 void *tegra_isp_dev = NULL;
 void *tegra_ispb_dev = NULL;
 void *tegra_vii2c_dev = NULL;
+void *tegra_gpu_dev = NULL;
 void *tegra_cop_mmu_dev = NULL;
 void *tegra_res_sema_dev = NULL;
 void *tegra_ucq_dev = NULL;

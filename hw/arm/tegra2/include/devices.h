@@ -129,6 +129,7 @@ extern void * tegra_csi_dev;
 extern void * tegra_isp_dev;
 extern void * tegra_ispb_dev;
 extern void * tegra_vii2c_dev;
+extern void * tegra_gpu_dev;
 extern void * tegra_cop_mmu_dev;
 extern void * tegra_res_sema_dev;
 extern void * tegra_ucq_dev;

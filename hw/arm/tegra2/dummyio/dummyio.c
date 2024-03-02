@@ -26,6 +26,8 @@
 #include "iomap.h"
 #include "tegra_trace.h"
 
+#include "dummyio.h"
+
 #define TYPE_TEGRA_DUMMYIO "tegra.dummyio"
 #define TEGRA_DUMMYIO(obj) OBJECT_CHECK(tegra_dummyio, (obj), TYPE_TEGRA_DUMMYIO)
 #define DEFINE_REG32(reg) reg##_t reg
@@ -50,15 +52,22 @@ static const VMStateDescription vmstate_tegra_dummyio = {
     }
 };
 
+void dummyio_set_reg(void *opaque, hwaddr offset,
+                                   uint64_t value, unsigned size)
+{
+    tegra_dummyio *s = opaque;
+
+    if (offset+size <= s->size)
+        s->regs[offset/sizeof(uint32_t)] = (s->regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
+}
+
 static uint64_t tegra_dummyio_priv_read(void *opaque, hwaddr offset,
                                         unsigned size)
 {
     tegra_dummyio *s = opaque;
     uint64_t ret = 0;
 
-    assert(offset+size <= s->size);
-
-    ret = s->regs[offset/sizeof(uint32_t)] & ((1ULL<<size*8)-1);
+    if (offset+size <= s->size) ret = s->regs[offset/sizeof(uint32_t)] & ((1ULL<<size*8)-1);
 
     TRACE_READ(s->iomem.addr, offset, ret);
 
@@ -70,11 +79,9 @@ static void tegra_dummyio_priv_write(void *opaque, hwaddr offset,
 {
     tegra_dummyio *s = opaque;
 
-    assert(offset+size <= s->size);
-
     TRACE_WRITE(s->iomem.addr, offset, 0, value);
 
-    s->regs[offset/sizeof(uint32_t)] = (s->regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
+    dummyio_set_reg(s, offset, value, size);
 }
 
 static void tegra_dummyio_priv_reset(DeviceState *dev)
