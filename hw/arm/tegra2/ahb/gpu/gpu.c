@@ -75,10 +75,15 @@ static void tegra_gpu_priv_write(void *opaque, hwaddr offset,
         if (offset < 4) return; // Ignore id reg.
         s->regs[offset/sizeof(uint32_t)] = (s->regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
 
-        if (offset == 0x137014 && (value & BIT(30)))
+        if (offset == 0x70000 && (value & BIT(0)))
+            s->regs[offset>>2] &= ~BIT(0);
+        else if (offset == 0x100C80 && (value & BIT(12)))
+            s->regs[offset>>2] |= 0x1<<16;
+        else if (offset == 0x100C80+0x3C && (value & BIT(31)))
+            s->regs[0x100C80>>2] |= BIT(15);
+        else if (offset == 0x137014 && (value & BIT(30)))
             s->regs[offset>>2] |= BIT(31);
-
-        if (offset == 0x13701C && (value & BIT(31)))
+        else if (offset == 0x13701C && (value & BIT(31)))
             s->regs[0x1328A0>>2] |= BIT(24);
     }
 }
