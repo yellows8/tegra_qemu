@@ -81,10 +81,20 @@ static void tegra_gpu_priv_write(void *opaque, hwaddr offset,
             s->regs[offset>>2] |= 0x1<<16;
         else if (offset == 0x100C80+0x3C && (value & BIT(31)))
             s->regs[0x100C80>>2] |= BIT(15);
+        else if (offset == 0x10A004 && (value & BIT(4)))
+            s->regs[0x10A008>>2] &= ~BIT(4);
+        else if (offset == 0x10A100 && (value & BIT(1))) {
+            s->regs[offset>>2] |= BIT(4);
+            s->regs[0x10A040>>2] = 0;
+        }
         else if (offset == 0x137014 && (value & BIT(30)))
             s->regs[offset>>2] |= BIT(31);
         else if (offset == 0x13701C && (value & BIT(31)))
             s->regs[0x1328A0>>2] |= BIT(24);
+        else if (offset == 0x409400 && (value & BIT(12)))
+            s->regs[offset>>2] &= ~BIT(12);
+        else if ((offset == 0x409A10 || offset == 0x409B00) && (value & 0x1F))
+            s->regs[offset>>2] &= ~0x1F;
     }
 }
 
@@ -95,6 +105,8 @@ static void tegra_gpu_priv_reset(DeviceState *dev)
     memset(s->regs, 0, sizeof(s->regs));
 
     s->regs[0x0] = tegra_board >= TEGRAX1PLUS_BOARD ? 0x12E000A1 : 0x12B000A1;
+
+    s->regs[0x1010000>>2] = 0x33;
 }
 
 static const MemoryRegionOps tegra_gpu_mem_ops = {
