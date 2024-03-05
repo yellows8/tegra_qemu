@@ -411,7 +411,7 @@ static void __tegrax1_init(MachineState *machine)
                                     qdev_get_gpio_in(&gic, intidbase
                                                      + VIRTUAL_PMU_IRQ));*/
 
-        sysbus_connect_irq(gicbusdev, i, qdev_get_gpio_in(cpudev, ARM_CPU_IRQ));
+        //sysbus_connect_irq(gicbusdev, i, qdev_get_gpio_in(cpudev, ARM_CPU_IRQ));
         sysbus_connect_irq(gicbusdev, i + TEGRAX1_CCPLEX_NCORES,
                            qdev_get_gpio_in(cpudev, ARM_CPU_FIQ));
         sysbus_connect_irq(gicbusdev, i + 2 * TEGRAX1_CCPLEX_NCORES,
