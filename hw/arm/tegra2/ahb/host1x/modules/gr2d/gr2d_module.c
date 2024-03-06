@@ -34,8 +34,10 @@
 // TODO: Is this correct? How to handle TSEC_FALCON_ADDR_MSB?
 // TODO: Is this supposed to map to Methods somehow?
 static hwaddr tegra_gr2d_get_priv_offset(gr2d_regs *s, hwaddr offset, unsigned size) {
+    uint32_t falcon_addr = s->falcon_regs[(TSEC_FALCON_ADDR_OFFSET - 0x1000)>>2];
+
     offset = (offset - 0x1000) << 6;
-    offset |= (s->falcon_addr & 0x3F) << 2;
+    offset |= (falcon_addr & 0x3F) << 2;
     assert(offset+size <= sizeof(s->priv));
 
     return offset;
@@ -139,6 +141,10 @@ void gr2d_write(struct host1x_module *module, uint32_t offset, uint32_t data)
             ctx->g2sb_g2controlmain.srccd = 1;
             ctx->g2sb_g2ropfade.rop = 0xcc; // GXcopy
         }
+        return;
+    }
+    else if (offset<<2 >= 0x1000) {
+        regs->falcon_regs[offset - (0x1000>>2)] = data;
         return;
     }
 
@@ -360,9 +366,6 @@ void gr2d_write(struct host1x_module *module, uint32_t offset, uint32_t data)
     case G2SB_G2UBA_A_SB_SURFBASE_OFFSET:
         ctx->g2sb_g2uba_a_sb_surfbase.reg32 = data;
         break;
-    case TSEC_FALCON_ADDR_OFFSET>>2:
-        if (tegra_board >= TEGRAX1_BOARD) regs->falcon_addr = data;
-        break;
     default:
         //g_assert_not_reached();
         break;
@@ -440,6 +443,15 @@ uint32_t gr2d_read(struct host1x_module *module, uint32_t offset)
     else if (offset<<2 >= 0x1400) {
         offset = tegra_gr2d_get_priv_offset(regs, offset<<2, 4);
         ret = regs->priv[offset>>2];
+        return ret;
+    }
+    else if (offset<<2 >= 0x1000) {
+        ret = regs->falcon_regs[offset - (0x1000>>2)];
+
+        if (offset<<2 == TSEC_FALCON_DMATRFCMD_OFFSET) {
+            ret |= 1<<1; // BUSY = IDLE
+        }
+
         return ret;
     }
 
@@ -653,9 +665,6 @@ uint32_t gr2d_read(struct host1x_module *module, uint32_t offset)
         break;
     case G2SB_G2UBA_A_SB_SURFBASE_OFFSET:
         ret = ctx->g2sb_g2uba_a_sb_surfbase.reg32;
-        break;
-    case TSEC_FALCON_ADDR_OFFSET>>2:
-        if (tegra_board >= TEGRAX1_BOARD) ret = regs->falcon_addr;
         break;
     default:
         //g_assert_not_reached();

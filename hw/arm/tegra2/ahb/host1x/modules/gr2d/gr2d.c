@@ -126,7 +126,7 @@ static const VMStateDescription vmstate_tegra_gr2d = {
         VMSTATE_UINT32(regs.g2sb_switch_clken_overide.reg32, tegra_gr2d),
         VMSTATE_UINT32(regs.g2sb_switch_g2_mccif_fifoctrl.reg32, tegra_gr2d),
         VMSTATE_UINT32(regs.g2sb_switch_timeout_wcoal_g2.reg32, tegra_gr2d),
-        VMSTATE_UINT32(regs.falcon_addr, tegra_gr2d),
+        VMSTATE_UINT32_ARRAY(regs.falcon_regs, tegra_gr2d, 0x400>>2),
         VMSTATE_UINT32_ARRAY(regs.priv, tegra_gr2d, 0x22C18>>2),
         VMSTATE_END_OF_LIST()
     }
@@ -239,7 +239,7 @@ static void tegra_gr2d_priv_reset(DeviceState *dev)
     regs->g2sb_switch_clken_overide.reg32 = G2SB_SWITCH_CLKEN_OVERIDE_RESET;
     regs->g2sb_switch_g2_mccif_fifoctrl.reg32 = G2SB_SWITCH_G2_MCCIF_FIFOCTRL_RESET;
     regs->g2sb_switch_timeout_wcoal_g2.reg32 = G2SB_SWITCH_TIMEOUT_WCOAL_G2_RESET;
-    regs->falcon_addr = 0;
+    memset(regs->falcon_regs, 0, sizeof(regs->falcon_regs));
     memset(regs->priv, 0, sizeof(regs->priv));
 }
 

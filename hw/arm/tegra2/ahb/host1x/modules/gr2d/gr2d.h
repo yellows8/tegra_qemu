@@ -1353,7 +1353,7 @@ typedef struct gr2d_regs_state {
     DEFINE_REG32(g2sb_switch_clken_overide);
     DEFINE_REG32(g2sb_switch_g2_mccif_fifoctrl);
     DEFINE_REG32(g2sb_switch_timeout_wcoal_g2);
-    uint32_t falcon_addr;
+    uint32_t falcon_regs[0x400>>2];
     uint32_t priv[0x22C18>>2];
 } gr2d_regs;
 
