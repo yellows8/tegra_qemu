@@ -720,12 +720,10 @@ static void __tegrax1_init(MachineState *machine)
     sysbus_mmio_map(SYS_BUS_DEVICE(tegra_ehci2_dev), 1, TEGRA_USB2_BASE+0x1000);
 
     /* XUSB controllers */
-    /*tegra_ehci3_dev = sysbus_create_simple("tegra.usb",
-                                           TEGRA_USB3_BASE, DIRQ(INT_USB3));*/
-
-    tegra_xusb_padctl_dev = tegra_init_dummyio(TEGRA_XUSB_PADCTL_BASE, TEGRA_XUSB_PADCTL_SIZE, "tegra.xusb_padctl");
-    tegra_xusb_host_dev = tegra_init_dummyio(TEGRA_XUSB_HOST_BASE, SZ_32K + SZ_8K, "tegra.xusb_host"); // TODO: actual device
-    tegra_xusb_device_dev = tegra_init_dummyio(TEGRA_XUSB_DEV_BASE, SZ_32K + SZ_8K, "tegra.xusb_dev");
+    tegra_xusb_dev = sysbus_create_simple("tegra.xusb",
+                                           TEGRA_XUSB_PADCTL_BASE, DIRQ(INT_USB3_HOST_INT));
+    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_xusb_dev), 1, TEGRA_XUSB_DEV_BASE);
+    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_xusb_dev), 2, TEGRA_XUSB_HOST_BASE);
 
     /* Unified Command Queue */
     //tegra_ucq_dev = sysbus_create_simple("tegra.dummy256", 0x60010000, NULL);
@@ -1231,9 +1229,6 @@ static void tegrax1_reset(MachineState *state, ShutdownCause cause)
     tegra_evp_reset(tegra_evp_dev, cause);
 
     tegra_fuse_reset(tegra_fuse_dev, cause);
-
-    // _T_XUSB_DEV_CFG_0, id reg
-    dummyio_set_reg(tegra_xusb_device_dev, 0x8000, 0x10DE | (0xFAD<<16), 4);
 
     int cpu_id = state->firmware != NULL || state->bootloader != NULL ? TEGRA_BPMP : TEGRA_CCPLEX_CORE0;
     tegra_cpu_unpowergate(cpu_id);
