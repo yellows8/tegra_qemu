@@ -120,6 +120,7 @@ void *tegra_i2c_pmic_dev = NULL;
 void *tegra_i2c_subpmic_devs[4] = {};
 void *tegra_i2c_charger_dev = NULL;
 void *tegra_i2c_fuel_dev = NULL;
+void *tegra_i2c_usbpd_dev = NULL;
 void *tegra_grhost_dev = NULL;
 void *tegra_arb_sema_dev = NULL;
 void *tegra_arb_gnt_ictlr_dev = NULL;

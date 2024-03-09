@@ -948,6 +948,9 @@ static void __tegrax1_init(MachineState *machine)
 
     dummyi2c_set_regs(tegra_i2c_fuel_dev, fuel_regs, sizeof(fuel_regs), sizeof(uint16_t), sizeof(fuel_regs)/sizeof(uint16_t));
 
+    /* USB-PD controller */
+    tegra_i2c_usbpd_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc1_dev), "dummyi2c", 0x18);
+
     /* Host1x IO */
     tegra_grhost_dev = sysbus_create_varargs("tegra.grhost",
                                              TEGRA_GRHOST_BASE,

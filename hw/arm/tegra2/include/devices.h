@@ -114,6 +114,7 @@ extern void * tegra_i2c_pmic_dev;
 extern void * tegra_i2c_subpmic_devs[4];
 extern void * tegra_i2c_charger_dev;
 extern void * tegra_i2c_fuel_dev;
+extern void * tegra_i2c_usbpd_dev;
 extern void * tegra_grhost_dev;
 extern void * tegra_arb_sema_dev;
 extern void * tegra_arb_gnt_ictlr_dev;
