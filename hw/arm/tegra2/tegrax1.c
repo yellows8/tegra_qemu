@@ -951,6 +951,12 @@ static void __tegrax1_init(MachineState *machine)
     /* USB-PD controller */
     tegra_i2c_usbpd_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc1_dev), "dummyi2c", 0x18);
 
+    uint16_t usbpd_regs[0x100]={};
+
+    usbpd_regs[0x4E] = 0x0001;
+
+    dummyi2c_set_regs(tegra_i2c_usbpd_dev, usbpd_regs, sizeof(usbpd_regs), sizeof(uint16_t), sizeof(usbpd_regs)/sizeof(uint16_t));
+
     /* Host1x IO */
     tegra_grhost_dev = sysbus_create_varargs("tegra.grhost",
                                              TEGRA_GRHOST_BASE,
