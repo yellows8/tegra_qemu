@@ -79,7 +79,22 @@ static void tegra_xusb_padctl_priv_write(void *opaque, hwaddr offset,
 
     TRACE_WRITE(s->iomem_padctl.addr, offset, 0, value);
 
-    if (offset+size <= sizeof(s->regs_padctl)) s->regs_padctl[offset/sizeof(uint32_t)] = (s->regs_padctl[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
+    if (offset+size <= sizeof(s->regs_padctl)) {
+        if (offset == 0x84) { // When writing XUSB_PADCTL_USB2_BATTERY_CHRG_OTGPAD0_CTL1_0, update XUSB_PADCTL_USB2_BATTERY_CHRG_OTGPAD0_CTL0_0.
+            s->regs_padctl[0x80>>2] |= BIT(18) | BIT(22); // Not sure which bits need updated here.
+        }
+        else if (offset == 0x360 && (value & BIT(3))) value |= BIT(15); // XUSB_PADCTL_UPHY_PLL_P0_CTL_1_0: Set PLL0_LOCKDET_STATUS if PLL0_ENABLE set.
+        else if (offset == 0x364) { // XUSB_PADCTL_UPHY_PLL_P0_CTL_2_0
+            if (value & BIT(0)) value |= BIT(1); // Set PLL0_CAL_DONE if PLL0_CAL_EN set, otherwise clear it.
+            else value &= ~BIT(1);
+        }
+        else if (offset == 0x37C) { // XUSB_PADCTL_UPHY_PLL_P0_CTL_8_0
+            if (value & BIT(12)) value |= BIT(31); // Set PLL0_RCAL_DONE if PLL0_RCAL_EN set, otherwise clear it.
+            else value &= ~BIT(31);
+        }
+
+        s->regs_padctl[offset/sizeof(uint32_t)] = (s->regs_padctl[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
+    }
 }
 
 static uint64_t tegra_xusb_device_priv_read(void *opaque, hwaddr offset,
@@ -104,6 +119,9 @@ static void tegra_xusb_device_priv_write(void *opaque, hwaddr offset,
 
     if (offset+size <= sizeof(s->regs_device)) {
         if (offset == 0x8000) return; // Ignore read-only reg.
+
+        if (offset == 0x58 && (value & BIT(0))) value &= ~BIT(0); // T_ XUSB_DEV_XHCI_EP_RELOAD DCI
+
         s->regs_device[offset/sizeof(uint32_t)] = (s->regs_device[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
     }
 }
