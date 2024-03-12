@@ -23,7 +23,13 @@
 #include "sysemu/runstate.h"
 #include "sysemu/sysemu.h"
 #include "hw/boards.h"
+#include "qapi/qmp/qdict.h"
+#include "qapi/qmp/qnum.h"
+#include "qapi/visitor.h"
+#include "qapi/error.h"
+#include "qemu/error-report.h"
 #include "qemu/log.h"
+#include "qemu/cutils.h"
 
 #include "pmc.h"
 #include "iomap.h"
@@ -223,6 +229,8 @@ typedef struct tegra_pmc_state {
     DEFINE_REG32(gate);
 
     uint32_t regs[(0xC00-0x160)>>2];
+
+    QDict cold_reset_regs;
 
 } tegra_pmc;
 
@@ -1038,6 +1046,42 @@ static void tegra_pmc_priv_write(void *opaque, hwaddr offset,
     }
 }
 
+static void tegra_pmc_set_cold_reset_regs(Object *obj, Visitor *v, const char *name,
+                                          void *opaque, Error **errp)
+{
+    tegra_pmc *s = TEGRA_PMC(obj);
+    uint64_t value=0;
+    char *keyname = NULL;
+    char *strvalue = NULL;
+    char *strptr = NULL;
+    char tmpstr[256]={};
+
+    if (!visit_type_str(v, name, &strvalue, errp)) {
+        return;
+    }
+
+    strptr = tmpstr;
+    keyname = tmpstr;
+    pstrcpy(tmpstr, sizeof(tmpstr), strvalue);
+    qemu_strsep(&strptr, ":");
+    strvalue = strptr;
+
+    if (strvalue == NULL) {
+        error_setg(errp, "error reading %s '%s'", name, tmpstr);
+        return;
+    }
+
+    if (qemu_strtoul(strvalue, NULL, 16, &value)) {
+        error_setg(errp, "error reading %s '%s'", name, strvalue);
+        return;
+    }
+
+    QNum *num = qnum_from_uint(value);
+    if (num) {
+        qdict_put(&s->cold_reset_regs, keyname, num);
+    }
+}
+
 static void pmc_notify_wakeup(Notifier *notifier, void *data)
 {
     tegra_pmc *s = container_of(notifier, tegra_pmc, wakeup);
@@ -1236,6 +1280,25 @@ void tegra_pmc_reset(DeviceState *dev, ShutdownCause cause)
         s->usb_ao.reg32 = USB_AO_TEGRA2_RESET;
         s->pllp_wb0_override.reg32 = PLLP_WB0_OVERRIDE_TEGRA2_RESET;
     }
+
+    // Write the input prop reg values if needed.
+    if (cause != SHUTDOWN_CAUSE_GUEST_RESET) {
+        for (const QDictEntry *ent = qdict_first(&s->cold_reset_regs); ent; ent = qdict_next(&s->cold_reset_regs, ent)) {
+            const char *keyname = qdict_entry_key(ent);
+            QObject *keyobj = qdict_entry_value(ent);
+
+            if (keyname && keyobj) {
+                QNum *num = qobject_to(QNum, keyobj);
+
+                if (num) {
+                    uint64_t regoff=0;
+                    if (!qemu_strtoul(keyname, NULL, 16, &regoff)) {
+                        tegra_pmc_priv_write(s, regoff, qnum_get_uint(num), 4);
+                    }
+                }
+            }
+        }
+    }
 }
 
 static const MemoryRegionOps tegra_pmc_mem_ops = {
@@ -1264,6 +1327,10 @@ static void tegra_pmc_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_pmc_priv_realize;
     dc->vmsd = &vmstate_tegra_pmc;
+
+    object_class_property_add(klass, "cold-reset-regs", "uint",
+                              NULL,
+                              tegra_pmc_set_cold_reset_regs, NULL, NULL);
 }
 
 static const TypeInfo tegra_pmc_info = {
