@@ -312,7 +312,8 @@ static void* tegra_init_timer(hwaddr base, qemu_irq irq, uint32_t id)
     return tegra_init_obj(base, irq, "tegra.timer", "id", id);
 }
 
-static hwaddr tegra_ape_translate(hwaddr addr, int access_type)
+// TODO: Doesn't work with CPU MMU, use memregions for now.
+/*static hwaddr tegra_ape_translate(hwaddr addr, int access_type)
 {
     if ((addr >= 0x01000000 && addr < 0x702C0000) || addr >= 0x70300000) {
         // TODO
@@ -324,7 +325,7 @@ static hwaddr tegra_ape_translate(hwaddr addr, int access_type)
     }
 
     return addr;
-}
+}*/
 
 static void __tegrax1_init(MachineState *machine)
 {
@@ -335,7 +336,7 @@ static void __tegrax1_init(MachineState *machine)
     MemoryRegion *sysmem = get_system_memory();
     SysBusDevice *irq_dispatcher, *lic;
     DeviceState *cpudev;
-    CPUState *cs;
+    //CPUState *cs;
     int i, j;
 
     memory_region_init(cop_sysmem, NULL, "tegra.cop-memory", UINT64_MAX);
@@ -542,7 +543,7 @@ static void __tegrax1_init(MachineState *machine)
 
     /* Audio*/
     tegra_hda_dev = tegra_init_dummyio(TEGRA_HDA_BASE, TEGRA_HDA_SIZE, "tegra.hda");
-    tegra_ape_dev = tegra_init_dummyio(TEGRA_APE_BASE, TEGRA_APE_SIZE, "tegra.ape");
+    tegra_ape_dev = tegra_init_dummyio(TEGRA_APE_BASE, (0x702F8000+0x1000)-TEGRA_APE_BASE, "tegra.ape");
 
     /* DDS */
     tegra_dds_dev = tegra_init_dummyio(TEGRA_DDS_BASE, TEGRA_DDS_SIZE, "tegra.dds");
@@ -1229,7 +1230,7 @@ static void __tegrax1_init(MachineState *machine)
 //                                 0x2F600000,
 //                                 0x2F600000, 0x10000000);
 
-    cs = qemu_get_cpu(TEGRA_BPMP);
+    //cs = qemu_get_cpu(TEGRA_BPMP);
     //cs->as = cop_as;
 
     /* Override default AS.  */
@@ -1248,27 +1249,30 @@ static void __tegrax1_init(MachineState *machine)
                                    0x00400000, SZ_8M, RW);
 
     /* Cache controller */
-    sysbus_create_simple("l2x0", 0x00C02000, NULL);
+    void *cache_dev = qdev_new("l2x0");
+    s = SYS_BUS_DEVICE(cache_dev);
+    sysbus_realize_and_unref(s, &error_fatal);
+    memory_region_add_subregion(ape_sysmem, 0x00C02000, sysbus_mmio_get_region(s, 0));
 
-    tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-dram1", sysmem,
+    /*tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-dram1", sysmem,
                                 0x01000000,
-                                0x80000000, 0x6F2C0000);
+                                0x80000000, 0x6F2C0000);*/
 
     tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-mirror", sysmem,
                                 TEGRA_APE_BASE,
-                                TEGRA_APE_BASE, TEGRA_APE_SIZE);
+                                TEGRA_APE_BASE, (0x702F8000+0x1000)-TEGRA_APE_BASE);
 
-    tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-dram2", sysmem,
+    /*tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-dram2", sysmem,
                                 0x70300000,
-                                0x80000000 + 0x6F2C0000, 0x8FD00000);
+                                0x80000000 + 0x6F2C0000, 0x8FD00000);*/
 
     /* A9 (SCU) private memory region */
     tegra_a9mpcore_dev = qdev_new("a9mpcore_priv");
-    qdev_prop_set_uint32(tegra_a9mpcore_dev, "num-cpu", 2); // main-CPUs + ADSP
-    qdev_prop_set_uint32(tegra_a9mpcore_dev, "num-irq", 64 + 32);
+    qdev_prop_set_uint32(tegra_a9mpcore_dev, "num-cpu", 6); // Must be 6 since APE is cpu5.
+    qdev_prop_set_uint32(tegra_a9mpcore_dev, "num-irq", 32);
     s = SYS_BUS_DEVICE(tegra_a9mpcore_dev);
     sysbus_realize_and_unref(s, &error_fatal);
-    sysbus_mmio_map(s, 0, 0x00C00000);
+    memory_region_add_subregion(ape_sysmem, 0x00C00000, sysbus_mmio_get_region(s, 0));
 
     A9MPPrivState *a9mpcore = A9MPCORE_PRIV(tegra_a9mpcore_dev);
     SysBusDevice *gicbusdev_ape = SYS_BUS_DEVICE(&a9mpcore->gic);
@@ -1293,11 +1297,17 @@ static void __tegrax1_init(MachineState *machine)
     }
 
     // Mirror AGIC into the above device.
-    tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-agic-gicd", sysmem,
+    tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-agic-gicd", ape_sysmem,
+                                0x702F8000+0x1000,
+                                0x00C00000+0x1000, 0x1000);
+    tegra_memory_region_add_alias(sysmem, "tegra.ape-agic-gicd", ape_sysmem,
                                 0x702F8000+0x1000,
                                 0x00C00000+0x1000, 0x1000);
 
-    tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-agic-gicc", sysmem,
+    tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-agic-gicc", ape_sysmem,
+                                0x702F8000+0x2000,
+                                0x00C00000+0x100, 0x100);
+    tegra_memory_region_add_alias(sysmem, "tegra.ape-agic-gicc", ape_sysmem,
                                 0x702F8000+0x2000,
                                 0x00C00000+0x100, 0x100);
 
@@ -1306,7 +1316,7 @@ static void __tegrax1_init(MachineState *machine)
                                 0x00000000,
                                 0x702EF000+0x700, 0x40);
 
-    cs = qemu_get_cpu(TEGRA_APE);
+    //cs = qemu_get_cpu(TEGRA_APE);
     //cs->as = ape_as;
 
     /* Override default AS.  */
@@ -1316,7 +1326,7 @@ static void __tegrax1_init(MachineState *machine)
 
     //cpu_address_space_init(cs, 0, "tegra.ape-address-space", ape_sysmem);
 
-    ARM_CPU(cs)->translate_addr = tegra_ape_translate;
+    //ARM_CPU(cs)->translate_addr = tegra_ape_translate;
 
     load_memory_images(machine);
 
