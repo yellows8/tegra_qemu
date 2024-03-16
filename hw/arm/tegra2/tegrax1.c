@@ -39,7 +39,7 @@
 #include "hw/loader.h"
 #include "hw/char/serial.h"
 #include "hw/sd/sdhci.h"
-#include "hw/net/lan9118.h"
+#include "hw/cpu/a9mpcore.h"
 #include "sysemu/reset.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/cpus.h"
@@ -144,16 +144,16 @@ static void memory_region_add_and_init_ram(MemoryRegion *mr, const char *name,
     memory_region_add_subregion(mr, offset, ram);
 }
 
-static void cop_memory_region_add_alias(MemoryRegion *mr, const char *name,
-                                        MemoryRegion *sysmem, hwaddr cop_offset,
-                                         hwaddr sys_offset, uint64_t size)
+static void tegra_memory_region_add_alias(MemoryRegion *mr, const char *name,
+                                          MemoryRegion *sysmem, hwaddr alias_offset,
+                                          hwaddr sys_offset, uint64_t size)
 {
     MemoryRegion *ram = g_new0(MemoryRegion, 1);
     memory_region_init_alias(ram, NULL, name, sysmem, sys_offset, size);
-    memory_region_add_subregion(mr, cop_offset, ram);
+    memory_region_add_subregion(mr, alias_offset, ram);
 }
 
-static void tegrax1_create_cpus(void)
+static void tegrax1_create_cpus(MemoryRegion *cop_sysmem, MemoryRegion *ape_sysmem)
 {
     int i;
 
@@ -181,13 +181,30 @@ static void tegrax1_create_cpus(void)
     }
 
     qdev_realize(DEVICE(cluster), NULL, &error_fatal);
+
+    /* BPMP */
     cluster = object_new(TYPE_CPU_CLUSTER);
     qdev_prop_set_uint32(DEVICE(cluster), "cluster-id", 1);
 
-    /* BPMP */
     Object *cpuobj = object_new(ARM_CPU_TYPE_NAME("arm7tdmi"));
     object_property_add_child(cluster, "cpu[*]", cpuobj);
     object_property_set_bool(cpuobj, "start-powered-off", true, &error_abort);
+    object_property_set_link(cpuobj, "memory", OBJECT(cop_sysmem), &error_abort);
+    qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
+
+    qdev_realize(DEVICE(cluster), NULL, &error_fatal);
+
+    /* APE */
+    cluster = object_new(TYPE_CPU_CLUSTER);
+    qdev_prop_set_uint32(DEVICE(cluster), "cluster-id", 2);
+
+    cpuobj = object_new(ARM_CPU_TYPE_NAME("cortex-a9"));
+    object_property_add_child(cluster, "cpu[*]", cpuobj);
+    object_property_set_int(cpuobj, "reset-cbar", 0x00C00000, &error_abort);
+    object_property_set_bool(cpuobj, "has_el3", true, &error_abort);
+    object_property_set_bool(cpuobj, "reset-hivecs", false, &error_abort);
+    object_property_set_bool(cpuobj, "start-powered-off", true, &error_abort);
+    object_property_set_link(cpuobj, "memory", OBJECT(ape_sysmem), &error_abort);
     qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
 
     qdev_realize(DEVICE(cluster), NULL, &error_fatal);
@@ -295,15 +312,37 @@ static void* tegra_init_timer(hwaddr base, qemu_irq irq, uint32_t id)
     return tegra_init_obj(base, irq, "tegra.timer", "id", id);
 }
 
+static hwaddr tegra_ape_translate(hwaddr addr, int access_type)
+{
+    if ((addr >= 0x01000000 && addr < 0x702C0000) || addr >= 0x70300000) {
+        // TODO
+        // addr = <translate>
+        if (addr < 0x80000000ULL+0x6F2C0000ULL)
+            addr = addr - 0x80000000ULL + 0x01000000ULL;
+        else
+            addr = addr - 0x80000000ULL - 0x6F2C0000ULL + 0x70300000;
+    }
+
+    return addr;
+}
+
 static void __tegrax1_init(MachineState *machine)
 {
     MemoryRegion *cop_sysmem = g_new0(MemoryRegion, 1);
-    AddressSpace *cop_as = g_new0(AddressSpace, 1);
+    MemoryRegion *ape_sysmem = g_new0(MemoryRegion, 1);
+    //AddressSpace *cop_as = g_new0(AddressSpace, 1);
+    //AddressSpace *ape_as = g_new0(AddressSpace, 1);
     MemoryRegion *sysmem = get_system_memory();
     SysBusDevice *irq_dispatcher, *lic;
     DeviceState *cpudev;
     CPUState *cs;
     int i, j;
+
+    memory_region_init(cop_sysmem, NULL, "tegra.cop-memory", UINT64_MAX);
+    //address_space_init(cop_as, cop_sysmem, "tegra.cop-address space");
+
+    memory_region_init(ape_sysmem, NULL, "tegra.ape-memory", UINT64_MAX);
+    //address_space_init(ape_as, ape_sysmem, "tegra.ape-address space");
 
     /* Main RAM */
     assert(machine->ram_size <= TEGRA_DRAM_SIZE);
@@ -354,7 +393,7 @@ static void __tegrax1_init(MachineState *machine)
                                    0x7d005800, 0x7e000000-0x7d005800, RW);
 
     /* Create the actual CPUs */
-    tegrax1_create_cpus();
+    tegrax1_create_cpus(cop_sysmem, ape_sysmem);
 
     /* Generic Interrupt Controller */
     gic_dev = qdev_new(gic_class_name());
@@ -433,7 +472,7 @@ static void __tegrax1_init(MachineState *machine)
     qdev_prop_set_uint32(DEVICE(tegra_irq_dispatcher_dev), "num-cpu", TEGRAX1_CCPLEX_NCORES);
     sysbus_realize_and_unref(irq_dispatcher, &error_fatal);
 
-    for (i = 0, j = 0; i < TEGRAX1_NCPUS; i++) {
+    for (i = 0, j = 0; i < TEGRAX1_MAIN_NCPUS; i++) {
         cpudev = DEVICE(qemu_get_cpu(i));
         sysbus_connect_irq(irq_dispatcher, j++,
                                         qdev_get_gpio_in(cpudev, ARM_CPU_IRQ));
@@ -659,7 +698,7 @@ static void __tegrax1_init(MachineState *machine)
     tegra_wdt_devs[4] = sysbus_create_simple("tegra.wdt",
                                              TEGRA_WDT4_BASE, DIRQ(INT_WDT_AVP));
 
-    for (i = 0; i < TEGRAX1_NCPUS; i++) {
+    for (i = 0; i < TEGRAX1_MAIN_NCPUS; i++) {
         cpudev = DEVICE(qemu_get_cpu(i));
         sysbus_connect_irq(tegra_wdt_devs[i], 1,
                            qdev_get_gpio_in(cpudev, ARM_CPU_FIQ));
@@ -1120,9 +1159,7 @@ static void __tegrax1_init(MachineState *machine)
     /* AVP "MMU" TLB controls.  */
     //tegra_cop_mmu_dev = sysbus_create_simple("tegra.cop_mmu", 0xF0000000, NULL);
 
-    /* COP's address map differs a bit from A9.  */
-    memory_region_init(cop_sysmem, NULL, "tegra.cop-memory", UINT64_MAX);
-    address_space_init(cop_as, cop_sysmem, "tegra.cop-address space");
+    /* BPMP address map differs a bit from CCPLEX.  */
 
     /*memory_region_add_and_init_ram(cop_sysmem, "tegra.cop-ivectors",
                                    0x00000000, 0x40, RW);
@@ -1130,75 +1167,156 @@ static void __tegrax1_init(MachineState *machine)
     memory_region_add_and_init_ram(cop_sysmem, "tegra.cop-hi-vec",
                                    0xffff0000, SZ_64K, RW);*/
 
-    /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-DRAM", sysmem,
+    /*tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-DRAM", sysmem,
                                 0x00000040,
                                 0x00000040, TEGRA_DRAM_SIZE - 0x40);*/
 
-    cop_memory_region_add_alias(cop_sysmem, "tegra.cop-IRAM", sysmem,
+    tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-IRAM", sysmem,
                                 TEGRA_IRAM_BASE,
                                 TEGRA_IRAM_BASE, TEGRA_IRAM_SIZE);
 
-    /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-GRHOST", sysmem,
+    /*tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-GRHOST", sysmem,
                                 TEGRA_GRHOST_BASE,
                                 TEGRA_GRHOST_BASE, TEGRA_GRHOST_SIZE);*/
 
-    cop_memory_region_add_alias(cop_sysmem, "tegra.cop-iomirror", sysmem,
+    tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-iomirror", sysmem,
                                 TEGRA_GRHOST_BASE,
                                 TEGRA_GRHOST_BASE, 0x60000000-TEGRA_GRHOST_BASE);
 
-    /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-HOST1X", sysmem,
+    /*tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-HOST1X", sysmem,
                                 TEGRA_HOST1X_BASE,
                                 TEGRA_HOST1X_BASE, TEGRA_HOST1X_SIZE);*/
 
-    /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-GART", sysmem,
+    /*tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-GART", sysmem,
                                 TEGRA_GART_BASE,
                                 TEGRA_GART_BASE, TEGRA_GART_SIZE);*/
 
-    cop_memory_region_add_alias(cop_sysmem, "tegra.cop-PPSB", sysmem,
+    tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-PPSB", sysmem,
                                 0x60000000,
                                 0x60000000, SZ_256M);
 
-    cop_memory_region_add_alias(cop_sysmem, "tegra.cop-APB", sysmem,
+    tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-APB", sysmem,
                                 0x70000000,
                                 0x70000000, SZ_256M);
 
-    cop_memory_region_add_alias(cop_sysmem, "tegra.cop-DRAM UC", sysmem,
+    tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-DRAM UC", sysmem,
                                 0x80000000,
                                 0x80000000, machine->ram_size);
 
-    /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-AHB", sysmem,
+    /*tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-AHB", sysmem,
                                 0xC0000000,
                                 0xC0000000, SZ_128M + SZ_1K + SZ_512);*/
 
-    cop_memory_region_add_alias(cop_sysmem, "tegra.bpmp-IROM_LOVEC", sysmem,
+    tegra_memory_region_add_alias(cop_sysmem, "tegra.bpmp-IROM_LOVEC", sysmem,
                                 BOOTROM_LOVEC_BASE,
                                 BOOTROM_LOVEC_BASE, 0x1000);
 
-    cop_memory_region_add_alias(cop_sysmem, "tegra.cop-IROM", sysmem,
+    tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-IROM", sysmem,
                                 TEGRA_IROM_BASE,
                                 TEGRA_IROM_BASE, TEGRA_IROM_SIZE);
 
-    /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-bootmon", sysmem,
+    /*tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-bootmon", sysmem,
                                 BOOTMON_BASE,
                                 BOOTMON_BASE, TARGET_PAGE_SIZE);*/
 
-    /*cop_memory_region_add_alias(cop_sysmem, "tegra.cop-mmu", sysmem,
+    /*tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-mmu", sysmem,
                                 0xF0000000,
                                 0xF0000000, SZ_64K);*/
 
     /* Map 0x2F600000-0x1F600000 to remote device.  */
 //     sysbus_create_simple("tegra.remote_mem", 0x2F600000, NULL);
-//     cop_memory_region_add_alias(cop_sysmem, "tegra.cop-remote_mem", sysmem,
+//     tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-remote_mem", sysmem,
 //                                 0x2F600000,
 //                                 0x2F600000, 0x10000000);
 
     cs = qemu_get_cpu(TEGRA_BPMP);
-    cs->as = cop_as;
+    //cs->as = cop_as;
 
     /* Override default AS.  */
-    memory_listener_unregister(&cs->cpu_ases[0].tcg_as_listener);
+    /*memory_listener_unregister(&cs->cpu_ases[0].tcg_as_listener);
     cs->cpu_ases[0].as = cop_as;
-    memory_listener_register(&cs->cpu_ases[0].tcg_as_listener, cop_as);
+    memory_listener_register(&cs->cpu_ases[0].tcg_as_listener, cop_as);*/
+
+    //cpu_address_space_init(cs, 0, "tegra.cop-address-space", cop_sysmem);
+
+    /* Setup APE addrspace. */
+
+    /*memory_region_add_and_init_ram(ape_sysmem, "tegra.ape-arom",
+                                   0x00000000, SZ_4M, RO);*/
+
+    memory_region_add_and_init_ram(ape_sysmem, "tegra.ape-aram",
+                                   0x00400000, SZ_8M, RW);
+
+    /* Cache controller */
+    sysbus_create_simple("l2x0", 0x00C02000, NULL);
+
+    tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-dram1", sysmem,
+                                0x01000000,
+                                0x80000000, 0x6F2C0000);
+
+    tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-mirror", sysmem,
+                                TEGRA_APE_BASE,
+                                TEGRA_APE_BASE, TEGRA_APE_SIZE);
+
+    tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-dram2", sysmem,
+                                0x70300000,
+                                0x80000000 + 0x6F2C0000, 0x8FD00000);
+
+    /* A9 (SCU) private memory region */
+    tegra_a9mpcore_dev = qdev_new("a9mpcore_priv");
+    qdev_prop_set_uint32(tegra_a9mpcore_dev, "num-cpu", 2); // main-CPUs + ADSP
+    qdev_prop_set_uint32(tegra_a9mpcore_dev, "num-irq", 64 + 32);
+    s = SYS_BUS_DEVICE(tegra_a9mpcore_dev);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, 0x00C00000);
+
+    A9MPPrivState *a9mpcore = A9MPCORE_PRIV(tegra_a9mpcore_dev);
+    SysBusDevice *gicbusdev_ape = SYS_BUS_DEVICE(&a9mpcore->gic);
+
+    for (i = 0; i < 2; i++) {
+        if (i==0) continue; // TODO: fix
+
+        int cpu_id = i == 0 ? TEGRA_CCPLEX_CORE3 : TEGRA_APE;
+        cpudev = DEVICE(qemu_get_cpu(cpu_id));
+
+        if (i==0)
+            sysbus_connect_irq(gicbusdev_ape, i, DIRQ_INT(ARM_CPU_IRQ + cpu_id));
+        else
+            sysbus_connect_irq(gicbusdev_ape, i, qdev_get_gpio_in(cpudev, ARM_CPU_IRQ));
+
+        sysbus_connect_irq(gicbusdev_ape, i + 2,
+                           qdev_get_gpio_in(cpudev, ARM_CPU_FIQ));
+        sysbus_connect_irq(gicbusdev_ape, i + 2 * 2,
+                           qdev_get_gpio_in(cpudev, ARM_CPU_VIRQ));
+        sysbus_connect_irq(gicbusdev_ape, i + 3 * 2,
+                           qdev_get_gpio_in(cpudev, ARM_CPU_VFIQ));
+    }
+
+    // Mirror AGIC into the above device.
+    tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-agic-gicd", sysmem,
+                                0x702F8000+0x1000,
+                                0x00C00000+0x1000, 0x1000);
+
+    tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-agic-gicc", sysmem,
+                                0x702F8000+0x2000,
+                                0x00C00000+0x100, 0x100);
+
+    // Mirror AMC EVP regs into the exception vectors. (Not sure if correct but whatever)
+    tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-evp", sysmem,
+                                0x00000000,
+                                0x702EF000+0x700, 0x40);
+
+    cs = qemu_get_cpu(TEGRA_APE);
+    //cs->as = ape_as;
+
+    /* Override default AS.  */
+    /*memory_listener_unregister(&cs->cpu_ases[0].tcg_as_listener);
+    cs->cpu_ases[0].as = ape_as;
+    memory_listener_register(&cs->cpu_ases[0].tcg_as_listener, ape_as);*/
+
+    //cpu_address_space_init(cs, 0, "tegra.ape-address-space", ape_sysmem);
+
+    ARM_CPU(cs)->translate_addr = tegra_ape_translate;
 
     load_memory_images(machine);
 

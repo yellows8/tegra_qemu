@@ -39,8 +39,7 @@
 #undef TPRINT
 #define TPRINT(...) {}
 
-static bool tegra_CCPLEX_powergated[TEGRA_CCPLEX_NCORES];
-static int tegra_AVP_powergated;
+static bool tcpu_powergated[TEGRA_NCPUS];
 
 static bool tcpu_in_reset[TEGRA_NCPUS];
 static bool tcpu_in_reset_pending[TEGRA_NCPUS];
@@ -72,8 +71,7 @@ static bool tcpu_in_reset_pending[TEGRA_NCPUS];
 
 static void tegra_cpu_pwrgate_reset(void *opaque)
 {
-    for (size_t i=0; i<TEGRA_CCPLEX_NCORES; i++) tegra_CCPLEX_powergated[i] = 1;
-    tegra_AVP_powergated = 1;
+    for (size_t i=0; i<TEGRA_NCPUS; i++) tcpu_powergated[i] = 1;
     memset(tcpu_in_reset_pending, 0, sizeof(tcpu_in_reset_pending));
 
     tegra_cpu_hlt_clr();
@@ -141,7 +139,7 @@ void tegra_cpu_reset_deassert(int cpu_id, int flow)
         tcpu_in_reset_pending[cpu_id] = 0;
 
         if (tegra_board >= TEGRAX1_BOARD) {
-            if (cpu_id != TEGRA_BPMP) {
+            if (cpu_id < TEGRA_CCPLEX_NCORES) {
                 uint64_t value = tegra_sb_get_cpu_reset_vector();
                 if ((value & 0x1) == 0) value = tegra_evp_get_cpu_reset_vector();
                 else value &= ~0x1;
@@ -174,9 +172,9 @@ int tegra_cpu_is_powergated(int cpu_id)
     case TEGRA_CCPLEX_CORE1:
     case TEGRA_CCPLEX_CORE2:
     case TEGRA_CCPLEX_CORE3:
-        return tegra_CCPLEX_powergated[cpu_id];
     case TEGRA_BPMP:
-        return tegra_AVP_powergated;
+    case TEGRA_APE:
+        return tcpu_powergated[cpu_id];
     default:
         g_assert_not_reached();
     }
@@ -212,22 +210,22 @@ int tegra_cpu_is_powergated(int cpu_id)
 
 static void tegra_cpu_powergateAVP(void)
 {
-    TPRINT("%s powergated=%d\n", __func__, tegra_AVP_powergated);
+    TPRINT("%s powergated=%d\n", __func__, tcpu_powergated[TEGRA_BPMP]);
 
-    assert(!tegra_AVP_powergated);
+    assert(!tcpu_powergated[TEGRA_BPMP]);
 
     //tegra_cpu_reset_assert(TEGRA_BPMP);
-    tegra_AVP_powergated = 1;
+    tcpu_powergated[TEGRA_BPMP] = 1;
 }
 
 static void tegra_cpu_unpowergateAVP(void)
 {
     TPRINT("%s\n", __func__);
 
-    assert(tegra_AVP_powergated);
+    assert(tcpu_powergated[TEGRA_BPMP]);
 
     //tegra_cpu_reset_deassert(TEGRA_BPMP, 1);
-    tegra_AVP_powergated = 0;
+    tcpu_powergated[TEGRA_BPMP] = 0;
 }
 
 static void tegra_cpu_powergate_sanity_check(int cpu_id)
@@ -250,10 +248,13 @@ void tegra_cpu_powergate(int cpu_id)
         //tegra_cpu_powergateA9();
         //tegra_cpu_reset_assert(cpu_id);
         tegra_cpu_halt(cpu_id);
-        tegra_CCPLEX_powergated[cpu_id] = 1;
+        tcpu_powergated[cpu_id] = 1;
         break;
     case TEGRA_BPMP:
         tegra_cpu_powergateAVP();
+        break;
+    case TEGRA_APE:
+        tcpu_powergated[cpu_id] = 1;
         break;
     default:
         g_assert_not_reached();
@@ -267,12 +268,15 @@ void tegra_cpu_unpowergate(int cpu_id)
     case TEGRA_CCPLEX_CORE1:
     case TEGRA_CCPLEX_CORE2:
     case TEGRA_CCPLEX_CORE3:
-        tegra_CCPLEX_powergated[cpu_id] = 0;
+        tcpu_powergated[cpu_id] = 0;
         if (tegra_cpu_halted(cpu_id)) tegra_cpu_unhalt(cpu_id);
         else if (tcpu_in_reset_pending[cpu_id]) tegra_cpu_reset_deassert(cpu_id, 1);
         break;
     case TEGRA_BPMP:
         tegra_cpu_unpowergateAVP();
+        break;
+    case TEGRA_APE:
+        tcpu_powergated[cpu_id] = 0;
         break;
     default:
         g_assert_not_reached();

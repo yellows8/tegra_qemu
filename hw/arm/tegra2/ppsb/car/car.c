@@ -750,6 +750,30 @@ static void clr_rst_devices_u(uint32_t value)
 {
 }
 
+static void set_clk_devices_y(uint32_t value)
+{
+    if (value & BIT(7)) // ADSP
+        tegra_cpu_unpowergate(TEGRA_APE);
+}
+
+static void clr_clk_devices_y(uint32_t value)
+{
+    if (value & BIT(7)) // ADSP
+        tegra_cpu_powergate(TEGRA_APE);
+}
+
+static void set_rst_devices_y(uint32_t value)
+{
+    if (value & BIT(7)) // ADSP
+        tegra_cpu_reset_assert(TEGRA_APE);
+}
+
+static void clr_rst_devices_y(uint32_t value)
+{
+    if (value & BIT(7)) // ADSP
+        tegra_cpu_reset_deassert(TEGRA_APE, 0);
+}
+
 static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,
                                     unsigned size)
 {
@@ -1725,6 +1749,7 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         if (offset != s->rst_cpu_cmplx_clr_offset && offset <= sizeof(s->regs)-4) {
             TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
             uint32_t off=0;
+            bool is_set = false;
             if (offset >= CLK_OUT_ENB_X_OFFSET && offset < RST_DEVICES_Y_OFFSET+0xC) {
                 if (offset >= CLK_OUT_ENB_X_OFFSET && offset < CLK_OUT_ENB_X_OFFSET+0xC) {
                     off = offset - CLK_OUT_ENB_X_OFFSET;
@@ -1745,11 +1770,25 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
                     offset = RST_DEVICES_Y_OFFSET;
                 }
 
-                if ((off & 0x4) != 0)
-                    s->regs[offset>>2] |= value;
-                else
-                    s->regs[offset>>2] &= ~value;
-                break;
+                if (off>=0x4) {
+                    is_set = (off & 0x4) != 0;
+
+                    if (is_set)
+                        s->regs[offset>>2] |= value;
+                    else
+                        s->regs[offset>>2] &= ~value;
+
+                    if (offset == CLK_OUT_ENB_Y_OFFSET) {
+                        if (is_set) set_clk_devices_y(value);
+                        else clr_clk_devices_y(value);
+                    }
+                    else if (offset == RST_DEVICES_Y_OFFSET) {
+                        if (is_set) set_rst_devices_y(value);
+                        else clr_rst_devices_y(value);
+                    }
+
+                    break;
+                }
             }
             else if (offset >= RST_DEV_V_SET_OFFSET && offset <= CLK_ENB_W_CLR_OFFSET) {
                 off = (((offset - RST_DEV_V_SET_OFFSET)>>3)<<2) + RST_DEVICES_V_OFFSET;
