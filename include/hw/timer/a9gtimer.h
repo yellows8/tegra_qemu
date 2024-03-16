@@ -26,7 +26,7 @@
 #include "hw/sysbus.h"
 #include "qom/object.h"
 
-#define A9_GTIMER_MAX_CPUS 4
+#define A9_GTIMER_MAX_CPUS 6 // NOTE: tegra-ADSP workaround
 
 #define TYPE_A9_GTIMER "arm.cortex-a9-global-timer"
 OBJECT_DECLARE_SIMPLE_TYPE(A9GTimerState, A9_GTIMER)

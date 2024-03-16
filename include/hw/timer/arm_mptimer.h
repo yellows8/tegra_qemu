@@ -24,7 +24,7 @@
 #include "hw/sysbus.h"
 #include "qom/object.h"
 
-#define ARM_MPTIMER_MAX_CPUS 4
+#define ARM_MPTIMER_MAX_CPUS 6 // NOTE: tegra-ADSP workaround
 
 /* State of a single timer or watchdog block */
 typedef struct {

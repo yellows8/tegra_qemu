@@ -102,10 +102,12 @@ static void a9_scu_realize(DeviceState *dev, Error **errp)
     A9SCUState *s = A9_SCU(dev);
     SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
 
-    if (!s->num_cpu || s->num_cpu > A9_SCU_CPU_MAX) {
+    if (!s->num_cpu /*|| s->num_cpu > A9_SCU_CPU_MAX*/) {
         error_setg(errp, "Illegal CPU count: %u", s->num_cpu);
         return;
     }
+    if (s->num_cpu > A9_SCU_CPU_MAX) // NOTE: tegra-ADSP workaround
+        s->num_cpu = 1;
 
     memory_region_init_io(&s->iomem, OBJECT(s), &a9_scu_ops, s,
                           "a9-scu", 0x100);
