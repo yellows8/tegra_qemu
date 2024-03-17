@@ -543,7 +543,10 @@ static void __tegrax1_init(MachineState *machine)
 
     /* Audio*/
     tegra_hda_dev = tegra_init_dummyio(TEGRA_HDA_BASE, TEGRA_HDA_SIZE, "tegra.hda");
-    tegra_ape_dev = tegra_init_dummyio(TEGRA_APE_BASE, (0x702F8000+0x1000)-TEGRA_APE_BASE, "tegra.ape");
+
+    tegra_ape_dev = qdev_new("tegra.ape");
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_ape_dev), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_ape_dev), 0, TEGRA_APE_BASE);
 
     /* DDS */
     tegra_dds_dev = tegra_init_dummyio(TEGRA_DDS_BASE, TEGRA_DDS_SIZE, "tegra.dds");
@@ -1269,7 +1272,7 @@ static void __tegrax1_init(MachineState *machine)
     /* A9 (SCU) private memory region */
     tegra_a9mpcore_dev = qdev_new("a9mpcore_priv");
     qdev_prop_set_uint32(tegra_a9mpcore_dev, "num-cpu", 6); // Must be 6 since APE is cpu5.
-    qdev_prop_set_uint32(tegra_a9mpcore_dev, "num-irq", 32);
+    qdev_prop_set_uint32(tegra_a9mpcore_dev, "num-irq", 64 + 32);
     s = SYS_BUS_DEVICE(tegra_a9mpcore_dev);
     sysbus_realize_and_unref(s, &error_fatal);
     memory_region_add_subregion(ape_sysmem, 0x00C00000, sysbus_mmio_get_region(s, 0));
@@ -1278,13 +1281,13 @@ static void __tegrax1_init(MachineState *machine)
     SysBusDevice *gicbusdev_ape = SYS_BUS_DEVICE(&a9mpcore->gic);
 
     for (i = 0; i < 2; i++) {
-        if (i==0) continue; // TODO: fix
-
-        int cpu_id = i == 0 ? TEGRA_CCPLEX_CORE3 : TEGRA_APE;
+        int cpu_id = TEGRA_APE;
         cpudev = DEVICE(qemu_get_cpu(cpu_id));
 
-        if (i==0)
-            sysbus_connect_irq(gicbusdev_ape, i, DIRQ_INT(ARM_CPU_IRQ + cpu_id));
+        if (i==0) {
+            sysbus_connect_irq(gicbusdev_ape, i, DIRQ(INT_APE_1));
+            continue;
+        }
         else
             sysbus_connect_irq(gicbusdev_ape, i, qdev_get_gpio_in(cpudev, ARM_CPU_IRQ));
 
@@ -1315,6 +1318,11 @@ static void __tegrax1_init(MachineState *machine)
     tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-evp", sysmem,
                                 0x00000000,
                                 0x702EF000+0x700, 0x40);
+
+    // Setup APE IRQs.
+    s = SYS_BUS_DEVICE(tegra_ape_dev);
+    for (i = 0; i < 8; i++)
+        sysbus_connect_irq(s, i, qdev_get_gpio_in(DEVICE(gicbusdev_ape), /*32+*/i));
 
     //cs = qemu_get_cpu(TEGRA_APE);
     //cs->as = ape_as;

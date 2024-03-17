@@ -56,6 +56,7 @@ arm_ss.add(files(
   'apb/sysctr/sysctr.c',
   'apb/dvfs/dvfs.c',
   'apb/spi/spi.c',
+  'apb/ape/ape.c',
 
   'cpu/arm_op.c',
   'cpu/cop_mmu.c',
