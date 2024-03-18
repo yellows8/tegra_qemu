@@ -48,6 +48,8 @@
                                     s->priority1[irq][cpu] :            \
                                     s->priority2[(irq) - GIC_INTERNAL])
 #define GIC_DIST_TARGET(irq) (s->irq_target[irq])
+#define GIC_DIST_CLEAR_TARGET(irq, cm) (s->irq_target[irq] &= ~(cm))
+#define GIC_DIST_SET_TARGET(irq, cm) (s->irq_target[irq] |= (cm))
 #define GIC_DIST_CLEAR_GROUP(irq, cm) (s->irq_state[irq].group &= ~(cm))
 #define GIC_DIST_SET_GROUP(irq, cm) (s->irq_state[irq].group |= (cm))
 #define GIC_DIST_TEST_GROUP(irq, cm) ((s->irq_state[irq].group & (cm)) != 0)

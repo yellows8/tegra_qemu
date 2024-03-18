@@ -59,7 +59,13 @@ static const uint8_t gic_id_gicv2[] = {
 static inline int gic_get_current_cpu(GICState *s)
 {
     if (!qtest_enabled() && s->num_cpu > 1) {
-        return current_cpu->cpu_index;
+        int cpu = current_cpu->cpu_index;
+
+        for (int i=0; i<ARRAY_SIZE(s->cpu_remap); i++) {
+            if (s->cpu_remap[i] == cpu) return i;
+        }
+
+        return cpu;
     }
     return 0;
 }
@@ -1090,7 +1096,7 @@ static uint8_t gic_dist_readb(void *opaque, hwaddr offset, MemTxAttrs attrs)
             } else if (irq < GIC_INTERNAL) {
                 res = cm;
             } else {
-                res = GIC_DIST_TARGET(irq);
+                res = GIC_DIST_TARGET(irq) & cm;
             }
         }
     } else if (offset < 0xf00) {
@@ -1283,7 +1289,7 @@ static void gic_dist_writeb(void *opaque, hwaddr offset,
 
         for (i = 0; i < 8; i++) {
             if (value & (1 << i)) {
-                int cm = (irq < GIC_INTERNAL) ? (1 << cpu) : ALL_CPU_MASK;
+                int cm = /*(irq < GIC_INTERNAL) ?*/ (1 << cpu) /*: ALL_CPU_MASK*/;
 
                 if (s->security_extn && !attrs.secure &&
                     !GIC_DIST_TEST_GROUP(irq + i, 1 << cpu)) {
@@ -1407,10 +1413,20 @@ static void gic_dist_writeb(void *opaque, hwaddr offset,
                 value = ALL_CPU_MASK;
             }
 
+            /* This register is banked per-cpu */
+            int cm = 1 << cpu;
+
             /* Ignore Non-secure access of Group0 IRQ */
             if (!(s->security_extn && !attrs.secure &&
                 !GIC_DIST_TEST_GROUP(irq, 1 << cpu))) {
-                s->irq_target[irq] = value & ALL_CPU_MASK;
+                value &= ALL_CPU_MASK;
+
+                if (value) { // NOTE: Not sure how to properly handle this.
+                    GIC_DIST_SET_TARGET(irq, value);
+                }
+                else {
+                    GIC_DIST_CLEAR_TARGET(irq, cm);
+                }
             }
         }
     } else if (offset < 0xf00) {

@@ -128,6 +128,8 @@ struct GICState {
 
     uint32_t num_cpu;
 
+    int32_t cpu_remap[GIC_NCPU];
+
     MemoryRegion iomem; /* Distributor */
     /* This is just so we can have an opaque pointer which identifies
      * both this GIC and which CPU interface we should be accessing.

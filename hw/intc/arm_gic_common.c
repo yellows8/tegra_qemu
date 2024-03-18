@@ -360,6 +360,14 @@ static Property arm_gic_common_properties[] = {
     /* True if the GIC should implement the virtualization extensions */
     DEFINE_PROP_BOOL("has-virtualization-extensions", GICState, virt_extn, 0),
     DEFINE_PROP_UINT32("num-priority-bits", GICState, n_prio_bits, 8),
+    DEFINE_PROP_INT32("cpu-remap0", GICState, cpu_remap[0], -1),
+    DEFINE_PROP_INT32("cpu-remap1", GICState, cpu_remap[1], -1),
+    DEFINE_PROP_INT32("cpu-remap2", GICState, cpu_remap[2], -1),
+    DEFINE_PROP_INT32("cpu-remap3", GICState, cpu_remap[3], -1),
+    DEFINE_PROP_INT32("cpu-remap4", GICState, cpu_remap[4], -1),
+    DEFINE_PROP_INT32("cpu-remap5", GICState, cpu_remap[5], -1),
+    DEFINE_PROP_INT32("cpu-remap6", GICState, cpu_remap[6], -1),
+    DEFINE_PROP_INT32("cpu-remap7", GICState, cpu_remap[7], -1),
     DEFINE_PROP_END_OF_LIST(),
 };
 
