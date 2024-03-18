@@ -201,7 +201,7 @@ static void tegrax1_create_cpus(MemoryRegion *cop_sysmem, MemoryRegion *ape_sysm
     cpuobj = object_new(ARM_CPU_TYPE_NAME("cortex-a9"));
     object_property_add_child(cluster, "cpu[*]", cpuobj);
     object_property_set_int(cpuobj, "reset-cbar", 0x00C00000, &error_abort);
-    object_property_set_bool(cpuobj, "has_el3", true, &error_abort);
+    object_property_set_bool(cpuobj, "has_el3", /*true*/false, &error_abort); // NOTE: Disabled for AGIC to work properly CPU-side.
     object_property_set_bool(cpuobj, "reset-hivecs", false, &error_abort);
     object_property_set_bool(cpuobj, "start-powered-off", true, &error_abort);
     object_property_set_link(cpuobj, "memory", OBJECT(ape_sysmem), &error_abort);
@@ -1272,13 +1272,17 @@ static void __tegrax1_init(MachineState *machine)
     /* A9 (SCU) private memory region */
     tegra_a9mpcore_dev = qdev_new("a9mpcore_priv");
     qdev_prop_set_uint32(tegra_a9mpcore_dev, "num-cpu", 6); // Must be 6 since APE is cpu5.
-    qdev_prop_set_uint32(tegra_a9mpcore_dev, "num-irq", 64 + 32);
-    s = SYS_BUS_DEVICE(tegra_a9mpcore_dev);
-    sysbus_realize_and_unref(s, &error_fatal);
-    memory_region_add_subregion(ape_sysmem, 0x00C00000, sysbus_mmio_get_region(s, 0));
+    qdev_prop_set_uint32(tegra_a9mpcore_dev, "num-irq", 96 + 32);
 
     A9MPPrivState *a9mpcore = A9MPCORE_PRIV(tegra_a9mpcore_dev);
     SysBusDevice *gicbusdev_ape = SYS_BUS_DEVICE(&a9mpcore->gic);
+    //qdev_prop_set_uint32(DEVICE(gicbusdev_ape), "revision", 2);
+    qdev_prop_set_uint32(DEVICE(gicbusdev_ape), "cpu-remap0", TEGRA_CCPLEX_CORE3);
+    qdev_prop_set_uint32(DEVICE(gicbusdev_ape), "cpu-remap1", TEGRA_APE);
+
+    s = SYS_BUS_DEVICE(tegra_a9mpcore_dev);
+    sysbus_realize_and_unref(s, &error_fatal);
+    memory_region_add_subregion(ape_sysmem, 0x00C00000, sysbus_mmio_get_region(s, 0));
 
     for (i = 0; i < 2; i++) {
         int cpu_id = TEGRA_APE;
