@@ -48,6 +48,8 @@ typedef struct tegra_ape_state {
     qemu_irq irqs[2][NUM_MAILBOX];
     MemoryRegion iomem;
 
+    bool mailbox_irq_raised[NUM_MAILBOX];
+
     uint32_t regs[((0x702F8000+0x1000)-TEGRA_APE_BASE)>>2];
 
 } tegra_ape;
@@ -57,6 +59,7 @@ static const VMStateDescription vmstate_tegra_ape = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
+        VMSTATE_BOOL_ARRAY(mailbox_irq_raised, tegra_ape, NUM_MAILBOX),
         VMSTATE_UINT32_ARRAY(regs, tegra_ape, ((0x702F8000+0x1000)-TEGRA_APE_BASE)>>2),
 
         VMSTATE_END_OF_LIST()
@@ -73,12 +76,6 @@ static uint64_t tegra_ape_priv_read(void *opaque, hwaddr offset,
 
     if (offset+size <= sizeof(s->regs)) {
         ret = s->regs[offset/sizeof(uint32_t)] & ((1ULL<<size*8)-1);
-
-        if (offset >= 0x2C058 && offset+size <= 0x2C068) { // AMISC_SHRD_MBOX_0
-            int mailbox = (offset-0x2C058)>>2;
-            TRACE_IRQ_LOWER(s->iomem.addr, s->irqs[MAILBOX_INT_FULL][mailbox]);
-            TRACE_IRQ_RAISE(s->iomem.addr, s->irqs[MAILBOX_INT_EMPTY][mailbox]);
-        }
     }
 
     return ret;
@@ -96,8 +93,17 @@ static void tegra_ape_priv_write(void *opaque, hwaddr offset,
 
         if (offset >= 0x2C058 && offset+size <= 0x2C068) { // AMISC_SHRD_MBOX_0
             int mailbox = (offset-0x2C058)>>2;
-            TRACE_IRQ_LOWER(s->iomem.addr, s->irqs[MAILBOX_INT_EMPTY][mailbox]);
-            TRACE_IRQ_RAISE(s->iomem.addr, s->irqs[MAILBOX_INT_FULL][mailbox]);
+
+            if (s->mailbox_irq_raised[mailbox]) { // Ack
+                TRACE_IRQ_LOWER(s->iomem.addr, s->irqs[MAILBOX_INT_FULL][mailbox]);
+                TRACE_IRQ_RAISE(s->iomem.addr, s->irqs[MAILBOX_INT_EMPTY][mailbox]);
+                s->mailbox_irq_raised[mailbox] = false;
+            }
+            else if (value & BIT(31)) {
+                TRACE_IRQ_LOWER(s->iomem.addr, s->irqs[MAILBOX_INT_EMPTY][mailbox]);
+                TRACE_IRQ_RAISE(s->iomem.addr, s->irqs[MAILBOX_INT_FULL][mailbox]);
+                s->mailbox_irq_raised[mailbox] = true;
+            }
         }
     }
 }
@@ -106,6 +112,7 @@ static void tegra_ape_priv_reset(DeviceState *dev)
 {
     tegra_ape *s = TEGRA_APE(dev);
 
+    memset(s->mailbox_irq_raised, 0, sizeof(s->mailbox_irq_raised));
     memset(s->regs, 0, sizeof(s->regs));
 }
 
