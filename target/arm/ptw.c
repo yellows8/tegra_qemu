@@ -19,6 +19,8 @@
 # include "tcg/oversized-guest.h"
 #endif
 
+#include "hw/boards.h"
+
 typedef struct S1Translate {
     /*
      * in_mmu_idx : specifies which TTBR, TCR, etc to use for the walk.
@@ -279,7 +281,15 @@ static bool regime_translation_disabled(CPUARMState *env, ARMMMUIdx mmu_idx,
         g_assert_not_reached();
     }
 
-    return (regime_sctlr(env, mmu_idx) & SCTLR_M) == 0;
+    // HACK: QEMU doesn't handle caching MMU table entries. Workaround an issue with tegra ADSP firmware where (.text) MMU table entries are setup with the MMU still on (initial MMU init was already done at this point).
+    // This returns MMU-disabled for tegra when SCTLR_C and SCTLR_I are set, for V7 CPUs (aka ADSP).
+    // TODO: Remove if this is properly fixed at some point.
+    const char *machine_name = object_get_typename(OBJECT(current_machine));
+    bool flag = false;
+    flag = (arm_feature(env, ARM_FEATURE_V7) && !arm_feature(env, ARM_FEATURE_AARCH64) && (regime_sctlr(env, mmu_idx) & SCTLR_C)==0 && (regime_sctlr(env, mmu_idx) & SCTLR_I)==0);
+    if (flag)
+        flag = strcmp(MACHINE_TYPE_NAME("tegrax1"), machine_name)==0 || strcmp(MACHINE_TYPE_NAME("tegrax1plus"), machine_name)==0;
+    return (regime_sctlr(env, mmu_idx) & SCTLR_M) == 0 || flag;
 }
 
 static bool granule_protection_check(CPUARMState *env, uint64_t paddress,
