@@ -57,6 +57,7 @@ arm_ss.add(files(
   'apb/dvfs/dvfs.c',
   'apb/spi/spi.c',
   'apb/ape/ape.c',
+  'apb/hda/hda.c',
 
   'cpu/arm_op.c',
   'cpu/cop_mmu.c',

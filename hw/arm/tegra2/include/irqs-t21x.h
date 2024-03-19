@@ -108,9 +108,9 @@
 #define INT_SOR				(INT_TRI_BASE + 12)
 #define INT_MC_GENERAL			(INT_TRI_BASE + 13)
 #define INT_EMC_GENERAL			(INT_TRI_BASE + 14)
-#define INT_SPI_6			(INT_SEC_BASE + 15) // Unassigned?
+#define INT_SPI_6			(INT_TRI_BASE + 15) // Unassigned?
 #define INT_TSECB			(INT_TRI_BASE + 16)
-#define INT_HDA				(INT_SEC_BASE + 17)
+#define INT_HDA				(INT_TRI_BASE + 17)
 #define INT_SPI_2			(INT_TRI_BASE + 18)
 #define INT_SPI_3			(INT_TRI_BASE + 19)
 #define INT_I2C2			(INT_TRI_BASE + 20)

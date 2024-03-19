@@ -542,7 +542,9 @@ static void __tegrax1_init(MachineState *machine)
     tegra_sata_dev = tegra_init_dummyio(TEGRA_SATA_BASE, TEGRA_SATA_SIZE, "tegra.sata");
 
     /* Audio*/
-    tegra_hda_dev = tegra_init_dummyio(TEGRA_HDA_BASE, TEGRA_HDA_SIZE, "tegra.hda");
+    tegra_hda_dev = sysbus_create_simple("tegra.hda",
+                                         TEGRA_HDA_BASE,
+                                         DIRQ(INT_HDA));
 
     tegra_ape_dev = qdev_new("tegra.ape");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_ape_dev), &error_fatal);
