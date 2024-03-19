@@ -93,6 +93,8 @@ static void tegra_hda_priv_write(void *opaque, hwaddr offset,
             TRACE_IRQ_RAISE(s->iomem.addr, s->irq);
 
             s->regs[(0x8000+0x24)>>2] |= BIT(31) | BIT(30);
+            s->regs[(0x8000+0x5C)>>2] |= BIT(8);
+            s->regs[(0x8000+0x58)>>2] = (s->regs[(0x8000+0x58)>>2] + 1) & 0xFF;
         }
     }
 }
