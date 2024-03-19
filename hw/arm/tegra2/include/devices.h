@@ -109,6 +109,7 @@ extern void * tegra_dvc_dev;
 extern void * tegra_spi_devs[6];
 extern void * tegra_qspi_dev;
 extern void * tegra_i2c_tmpsensor_dev;
+extern void * tegra_i2c_audio_codec_dev;
 extern void * tegra_i2c_rtc_dev;
 extern void * tegra_i2c_pmic_dev;
 extern void * tegra_i2c_subpmic_devs[4];

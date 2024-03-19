@@ -867,6 +867,9 @@ static void __tegrax1_init(MachineState *machine)
 
     dummyi2c_set_regs(tegra_i2c_tmpsensor_dev, tmpsensor_regs, sizeof(tmpsensor_regs), sizeof(uint8_t), sizeof(tmpsensor_regs));
 
+    /* Alc5639 (Audio Codec) */
+    tegra_i2c_audio_codec_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc1_dev), "dummyi2c", 0x1C);
+
     /* Max77620Rtc */
     tegra_i2c_rtc_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77x", 0x68);
 
