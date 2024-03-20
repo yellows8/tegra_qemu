@@ -753,25 +753,25 @@ static void clr_rst_devices_u(uint32_t value)
 static void set_clk_devices_y(uint32_t value)
 {
     if (value & BIT(7)) // ADSP
-        tegra_cpu_unpowergate(TEGRA_APE);
+        tegra_cpu_unpowergate(TEGRA_ADSP);
 }
 
 static void clr_clk_devices_y(uint32_t value)
 {
     if (value & BIT(7)) // ADSP
-        tegra_cpu_powergate(TEGRA_APE);
+        tegra_cpu_powergate(TEGRA_ADSP);
 }
 
 static void set_rst_devices_y(uint32_t value)
 {
     if (value & BIT(7)) // ADSP
-        tegra_cpu_reset_assert(TEGRA_APE);
+        tegra_cpu_reset_assert(TEGRA_ADSP);
 }
 
 static void clr_rst_devices_y(uint32_t value)
 {
     if (value & BIT(7)) // ADSP
-        tegra_cpu_reset_deassert(TEGRA_APE, 0);
+        tegra_cpu_reset_deassert(TEGRA_ADSP, 0);
 }
 
 static uint64_t tegra_car_priv_read(void *opaque, hwaddr offset,

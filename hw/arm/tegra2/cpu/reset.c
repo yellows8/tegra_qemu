@@ -173,7 +173,7 @@ int tegra_cpu_is_powergated(int cpu_id)
     case TEGRA_CCPLEX_CORE2:
     case TEGRA_CCPLEX_CORE3:
     case TEGRA_BPMP:
-    case TEGRA_APE:
+    case TEGRA_ADSP:
         return tcpu_powergated[cpu_id];
     default:
         g_assert_not_reached();
@@ -253,7 +253,7 @@ void tegra_cpu_powergate(int cpu_id)
     case TEGRA_BPMP:
         tegra_cpu_powergateAVP();
         break;
-    case TEGRA_APE:
+    case TEGRA_ADSP:
         tcpu_powergated[cpu_id] = 1;
         break;
     default:
@@ -275,7 +275,7 @@ void tegra_cpu_unpowergate(int cpu_id)
     case TEGRA_BPMP:
         tegra_cpu_unpowergateAVP();
         break;
-    case TEGRA_APE:
+    case TEGRA_ADSP:
         tcpu_powergated[cpu_id] = 0;
         break;
     default:

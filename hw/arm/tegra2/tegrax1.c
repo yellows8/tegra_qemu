@@ -194,7 +194,7 @@ static void tegrax1_create_cpus(MemoryRegion *cop_sysmem, MemoryRegion *ape_sysm
 
     qdev_realize(DEVICE(cluster), NULL, &error_fatal);
 
-    /* APE */
+    /* ADSP */
     cluster = object_new(TYPE_CPU_CLUSTER);
     qdev_prop_set_uint32(DEVICE(cluster), "cluster-id", 2);
 
@@ -1283,14 +1283,14 @@ static void __tegrax1_init(MachineState *machine)
     SysBusDevice *gicbusdev_ape = SYS_BUS_DEVICE(&a9mpcore->gic);
     //qdev_prop_set_uint32(DEVICE(gicbusdev_ape), "revision", 2);
     qdev_prop_set_uint32(DEVICE(gicbusdev_ape), "cpu-remap0", TEGRA_CCPLEX_CORE3);
-    qdev_prop_set_uint32(DEVICE(gicbusdev_ape), "cpu-remap1", TEGRA_APE);
+    qdev_prop_set_uint32(DEVICE(gicbusdev_ape), "cpu-remap1", TEGRA_ADSP);
 
     s = SYS_BUS_DEVICE(tegra_a9mpcore_dev);
     sysbus_realize_and_unref(s, &error_fatal);
     memory_region_add_subregion(ape_sysmem, 0x00C00000, sysbus_mmio_get_region(s, 0));
 
     for (i = 0; i < 2; i++) {
-        int cpu_id = TEGRA_APE;
+        int cpu_id = TEGRA_ADSP;
         cpudev = DEVICE(qemu_get_cpu(cpu_id));
 
         if (i==0) {
@@ -1333,7 +1333,7 @@ static void __tegrax1_init(MachineState *machine)
     for (i = 0; i < 8; i++)
         sysbus_connect_irq(s, i, qdev_get_gpio_in(DEVICE(gicbusdev_ape), /*32+*/i));
 
-    //cs = qemu_get_cpu(TEGRA_APE);
+    //cs = qemu_get_cpu(TEGRA_ADSP);
     //cs->as = ape_as;
 
     /* Override default AS.  */
