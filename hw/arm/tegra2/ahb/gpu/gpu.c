@@ -21,6 +21,8 @@
 
 // NOTE: Not intended to render anything.
 
+// Various reg names are from linux nvgpu.
+
 #include "tegra_common.h"
 
 #include "hw/sysbus.h"
@@ -75,8 +77,8 @@ static void tegra_gpu_priv_write(void *opaque, hwaddr offset,
         if (offset < 4) return; // Ignore id reg.
         s->regs[offset/sizeof(uint32_t)] = (s->regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
 
-        if (offset == 0x70000 && (value & BIT(0)))
-            s->regs[offset>>2] &= ~BIT(0);
+        if ((offset == 0x00070000 || offset == 0x00070004 || offset == 0x00070010) && (value & BIT(0))) // flush_fb_flush/flush_l2_system_invalidate/flush_l2_flush_dirty_r pending
+            s->regs[offset>>2] &= ~(BIT(0) | BIT(1)); // Clear pending (from busy) and outstanding.
         else if (offset == 0x100C80 && (value & BIT(12)))
             s->regs[offset>>2] |= 0x1<<16;
         else if (offset == 0x100C80+0x3C && (value & BIT(31)))
