@@ -73,6 +73,8 @@ static void tegra_gpu_priv_write(void *opaque, hwaddr offset,
 
     TRACE_WRITE(s->iomem.addr, offset, 0, value);
 
+    // NOTE: Mailbox-ret values for sizes below are dummy values, not the proper values from hardware.
+
     if (offset+size <= sizeof(s->regs)) {
         if (offset < 4) return; // Ignore id reg.
         s->regs[offset/sizeof(uint32_t)] = (s->regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
@@ -94,15 +96,37 @@ static void tegra_gpu_priv_write(void *opaque, hwaddr offset,
         else if (offset == 0x13701C && (value & BIT(31)))
             s->regs[0x1328A0>>2] |= BIT(24);
         else if (offset == 0x409130 && (value & BIT(1)))
-            s->regs[0x409800>>2] = 0x1;
+            s->regs[0x409800>>2] = 0x1; // gr_fecs_ctxsw_mailbox(0) = eUcodeHandshakeInitComplete
         else if (offset == 0x409400 && (value & BIT(12)))
             s->regs[offset>>2] &= ~BIT(12);
-        else if (offset == 0x409504 && (value & BIT(2))) {
-            s->regs[0x120074>>2] = 0x1;
-            s->regs[0x120078>>2] = 0x1;
-            s->regs[0x22430>>2] = 0x1;
-            s->regs[0x22434>>2] = 0x1;
-            s->regs[0x22438>>2] = 0x1;
+        else if (offset == 0x409504) { // gr_fecs_method_push
+            if (value == 0x00000004) { // gr_fecs_method_push_adr_halt_pipeline_v
+                s->regs[(0x409800+(1*4))>>2] = 0x1; // gr_fecs_ctxsw_mailbox(1) = gr_fecs_ctxsw_mailbox_value_pass_v
+            }
+            else if (value == 0x00000003) { // gr_fecs_method_push_adr_bind_pointer_v
+                s->regs[(0x409800+(0*4))>>2] = 0x10; // gr_fecs_ctxsw_mailbox(0)
+            }
+            else if (value == 0x00000009) { // gr_fecs_method_push_adr_wfi_golden_save_v
+                s->regs[(0x409800+(0*4))>>2] = 0x1; // gr_fecs_ctxsw_mailbox(0)
+            }
+            else if (value == 0x00000015) { // gr_fecs_method_push_adr_restore_golden_v
+                s->regs[(0x409800+(0*4))>>2] = 0x1; // gr_fecs_ctxsw_mailbox(0) = gr_fecs_ctxsw_mailbox_value_pass_v
+            }
+            else if (value == 0x00000010 || value == 0x00000016 || value == 0x00000025) { // gr_fecs_method_push_adr_discover_image_size_v, gr_fecs_method_push_adr_discover_zcull_image_size_v, gr_fecs_method_push_adr_discover_pm_image_size_v
+                s->regs[(0x409800+(0*4))>>2] = 0x1; // gr_fecs_ctxsw_mailbox(0)
+                //if (value == 0x00000010) s->regs[(0x409800+(0*4))>>2] = 0x4;
+                // NOTE: These use the mailbox ret as size values.
+            }
+            else if (value == 0x00000030) { // gr_fecs_method_push_adr_discover_reglist_image_size_v
+                s->regs[(0x409800+(0*4))>>2] = 0x1; // gr_fecs_ctxsw_mailbox(0)
+                // NOTE: Mailbox ret is used as a size value.
+            }
+            else if (value == 0x00000031 || value == 0x00000032) { // gr_fecs_method_push_adr_set_reglist_bind_instance_v, gr_fecs_method_push_adr_set_reglist_virtual_address_v
+                s->regs[(0x409800+(4*4))>>2] = 0x1; // gr_fecs_ctxsw_mailbox(4)
+            }
+            else if (value == 0x00000038 || value == 0x00000038) { // gr_fecs_method_push_adr_stop_ctxsw_v, gr_fecs_method_push_adr_start_ctxsw_v
+                s->regs[(0x409800+(1*4))>>2] = 0x1; // gr_fecs_ctxsw_mailbox(1) = gr_fecs_ctxsw_mailbox_value_pass_v
+            }
         }
         else if ((offset == 0x409A10 || offset == 0x409B00) && (value & 0x1F))
             s->regs[offset>>2] &= ~0x1F;
@@ -118,6 +142,13 @@ static void tegra_gpu_priv_reset(DeviceState *dev)
     s->regs[0x0] = tegra_board >= TEGRAX1PLUS_BOARD ? 0x12E000A1 : 0x12B000A1;
 
     s->regs[0x1010000>>2] = 0x33;
+
+    // TODO: Use actual values from hardware?
+    s->regs[0x120074>>2] = 0x1;
+    s->regs[0x120078>>2] = 0x1;
+    s->regs[0x22430>>2] = 0x1;
+    s->regs[0x22434>>2] = 0x1;
+    s->regs[0x22438>>2] = 0x1;
 }
 
 static const MemoryRegionOps tegra_gpu_mem_ops = {
