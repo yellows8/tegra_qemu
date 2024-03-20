@@ -555,6 +555,12 @@ static void tegra_flow_update_mode(tegra_flow *s, int cpu_id, int in_wfe)
 //     TPRINT("%s mode=%s in_wfe=%d cpu %d\n", __func__,
 //            tegra_flow_mode_name(s->halt_events[cpu_id].mode), in_wfe, cpu_id);
 
+    if (cpu_id == TEGRA_ADSP) {
+        CPUState *cs = CPU(qemu_get_cpu(cpu_id));
+        cpu_loop_exit(cs);
+        return;
+    }
+
     if (in_wfe) {
         CPUState *cs = CPU(qemu_get_cpu(cpu_id));
 

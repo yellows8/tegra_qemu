@@ -214,6 +214,7 @@ static void tegrax1_create_cpus(MemoryRegion *cop_sysmem, MemoryRegion *ape_sysm
     set_is_tegra_cpu(TEGRA_CCPLEX_CORE2);
     set_is_tegra_cpu(TEGRA_CCPLEX_CORE3);
     set_is_tegra_cpu(TEGRA_BPMP);
+    set_is_tegra_cpu(TEGRA_ADSP);
 }
 
 //static struct arm_boot_info tegra_board_binfo = {
