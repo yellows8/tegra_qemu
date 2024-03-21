@@ -539,6 +539,9 @@ static void __tegrax1_init(MachineState *machine)
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_mc1_dev), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(tegra_mc1_dev), 0, TEGRA_MC1_BASE);
 
+    /* PCIE */
+    tegra_pcie_dev = tegra_init_dummyio(IO_PCIE_PHYS, SZ_256K, "tegra.pcie");
+
     /* SATA */
     tegra_sata_dev = tegra_init_dummyio(TEGRA_SATA_BASE, TEGRA_SATA_SIZE, "tegra.sata");
 
@@ -845,6 +848,9 @@ static void __tegrax1_init(MachineState *machine)
 
     /* QSPI */
     tegra_qspi_dev = tegra_init_dummyio(TEGRA_QSPI_BASE, TEGRA_QSPI_SIZE, "tegra.qspi");
+
+    /* TouchPanel */
+    tegra_i2c_touch_panel_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc3_dev), "dummyi2c", 0x49);
 
     /* Tmp451 (Temperature Sensor) */
     tegra_i2c_tmpsensor_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc1_dev), "dummyi2c", 0x4C);
