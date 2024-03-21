@@ -21,6 +21,8 @@
 
 #include "exec/address-spaces.h"
 #include "hw/sysbus.h"
+#include "qapi/error.h"
+#include "qapi/visitor.h"
 
 #include "gpio.h"
 #include "iomap.h"
@@ -88,6 +90,7 @@ typedef struct tegra_gpio_state {
     uint32_t bank_shift;
     uint32_t offset_mask;
     uint32_t offset_reg_mask;
+    uint32_t reset_values[BANKS_NB][PORTS_NB];
     tegra_gpio_port regs[BANKS_NB * PORTS_NB];
     qemu_irq irq[BANKS_NB];
 } tegra_gpio;
@@ -101,11 +104,58 @@ static const VMStateDescription vmstate_tegra_gpio = {
         VMSTATE_UINT32(bank_shift, tegra_gpio),
         VMSTATE_UINT32(offset_mask, tegra_gpio),
         VMSTATE_UINT32(offset_reg_mask, tegra_gpio),
+        VMSTATE_UINT32_2DARRAY(reset_values, tegra_gpio, BANKS_NB, PORTS_NB),
         VMSTATE_STRUCT_ARRAY(regs, tegra_gpio, BANKS_NB * PORTS_NB, 0,
                              vmstate_tegra_gpio_port, tegra_gpio_port),
         VMSTATE_END_OF_LIST()
     }
 };
+
+static inline bool tegra_gpio_parse_prop_name(const char *name, Error **errp, int *bank, int *port)
+{
+    if (sscanf(name, "reset-value-bank%d-port%d", bank, port) != 2) {
+        error_setg(errp, "error reading %s: %s", name, g_strerror(errno));
+        return false;
+    }
+
+    if ((*bank >= BANKS_NB || *bank < 0) ||
+        (*port >= PORTS_NB || *port < 0)) {
+        error_setg(errp, "error reading %s", name);
+        return false;
+    }
+
+    return true;
+}
+
+static void tegra_gpio_get_reset_value(Object *obj, Visitor *v, const char *name,
+                                       void *opaque, Error **errp)
+{
+    tegra_gpio *s = TEGRA_GPIO(obj);
+    int64_t value;
+    int bank=0, port=0;
+
+    if (!tegra_gpio_parse_prop_name(name, errp, &bank, &port)) return;
+
+    value = s->reset_values[bank][port];
+
+    visit_type_int(v, name, &value, errp);
+}
+
+static void tegra_gpio_set_reset_value(Object *obj, Visitor *v, const char *name,
+                                       void *opaque, Error **errp)
+{
+    tegra_gpio *s = TEGRA_GPIO(obj);
+    int64_t value=0;
+    int bank=0, port=0;
+
+    if (!visit_type_int(v, name, &value, errp)) {
+        return;
+    }
+
+    if (!tegra_gpio_parse_prop_name(name, errp, &bank, &port)) return;
+
+    s->reset_values[bank][port] = value;
+}
 
 static uint64_t tegra_gpio_priv_read(void *opaque, hwaddr offset,
                                      unsigned size)
@@ -146,10 +196,6 @@ static uint64_t tegra_gpio_priv_read(void *opaque, hwaddr offset,
         if (tegra_board == TEGRA2_BOARD_PICASSO && port_nb == 16) {
             ret |= (1 << 4);
             ret |= (1 << 5);
-        }
-
-        if (tegra_board >= TEGRAX1_BOARD) {
-            if (bank == 5 && port == 3) ret |= BIT(6) | BIT(7); // ButtonVolUp/ButtonVolDn (TODO: allow user-control?)
         }
         break;
     case GPIO_INT_STA_OFFSET:
@@ -314,6 +360,14 @@ static void tegra_gpio_priv_reset(DeviceState *dev)
         p->gpio_msk_int_lvl.reg32 = GPIO_MSK_INT_LVL_RESET;
         p->gpio_db_cnt.reg32 = GPIO_DB_CNT_RESET;
     }
+
+    for (int bank=0; bank<BANKS_NB; bank++) {
+        for (int port=0; port<PORTS_NB; port++) {
+            tegra_gpio_port *p = &s->regs[bank * PORTS_NB + port];
+
+            p->gpio_in.reg32 = s->reset_values[bank][port];
+        }
+    }
 }
 
 static const MemoryRegionOps tegra_gpio_mem_ops = {
@@ -351,10 +405,20 @@ static void tegra_gpio_priv_realize(DeviceState *dev, Error **errp)
 static void tegra_gpio_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
+    char tmpstr[32]={};
 
     dc->realize = tegra_gpio_priv_realize;
     dc->vmsd = &vmstate_tegra_gpio;
     dc->reset = tegra_gpio_priv_reset;
+
+    for (int bank=0; bank<BANKS_NB; bank++) {
+        for (int port=0; port<PORTS_NB; port++) {
+            snprintf(tmpstr, sizeof(tmpstr)-1, "reset-value-bank%d-port%d", bank, port);
+            object_class_property_add(klass, tmpstr, "int",
+                                      tegra_gpio_get_reset_value,
+                                      tegra_gpio_set_reset_value, NULL, NULL);
+        }
+    }
 }
 
 static const TypeInfo tegra_gpio_info = {

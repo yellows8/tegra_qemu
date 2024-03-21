@@ -69,6 +69,8 @@ Run Tegra X1
 
 * To configure the value of register APB_MISC_PP_STRAPPING_OPT_A_0 (default is setup for booting from emmc): ``-global driver=tegra.apb_misc,property=pp-strapping-opt-a,value={value}``
 
+* To configure the reset value of GPIO_IN for each bank/port (each bit corresponds to a GPIO pin): ``-global driver=tegra.gpio,property=reset-value-bank{0-7}-port{0-3},value={value}`` This defaults to 0, so make sure to set this as required for your machine (buttons etc).
+
 See also QEMU docs regarding secrets input / cmdline arguments.
 
 ===========
