@@ -199,13 +199,13 @@ void host1x_clear_syncpts_irq_status(enum hcpu cpu_id, uint32_t index, uint32_t 
 
     lock_irqs();
 
-    FOREACH_BIT_SET(clear_mask, i, NV_HOST1X_SYNCPT_NB_PTS) {
+    FOREACH_BIT_SET(clear_mask, i, 32) {
         if (!(syncpts_percpu_dst_mask[cpu_id][index] & (1 << i))) {
             continue;
         }
 
-        /* Don't clear if IRQ line is enabled and active.  */
-        if (host1x_syncpt_threshold_is_crossed(i)) {
+        /* Don't clear if IRQ line is not enabled and active.  */
+        if (!host1x_syncpt_threshold_is_crossed(index*32 + i)) {
             clear_mask &= ~(1 << i);
         }
     }
