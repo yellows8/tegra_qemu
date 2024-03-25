@@ -60,15 +60,14 @@ void host1x_reset_syncpts(void);
 int host1x_syncpt_threshold_is_crossed(uint32_t syncpt_id);
 
 uint32_t host1x_get_syncpts_irq_status(void);
-uint32_t host1x_get_syncpts_cpu_irq_status(void);
-uint32_t host1x_get_syncpts_cop_irq_status(void);
-uint32_t host1x_get_syncpts_dst_mask_low(void);
-uint32_t host1x_get_syncpts_dst_mask_high(void);
-void host1x_enable_syncpts_irq_mask(enum hcpu cpu_id, uint32_t enable_mask);
-void host1x_set_syncpts_irq_dst_mask(int part, uint32_t mask);
-void host1x_clear_syncpts_irq_dst_mask(uint32_t clear_mask);
+uint32_t host1x_get_syncpts_cpu_irq_status(uint32_t index);
+uint32_t host1x_get_syncpts_cop_irq_status(uint32_t index);
+uint32_t host1x_get_syncpts_dst_mask(uint32_t index);
+void host1x_enable_syncpts_irq_mask(enum hcpu cpu_id, uint32_t index, uint32_t enable_mask);
+void host1x_set_syncpts_irq_dst_mask(uint32_t index, uint32_t mask);
+void host1x_clear_syncpts_irq_dst_mask(uint32_t index, uint32_t clear_mask);
 void host1x_set_syncpt_irq(uint8_t syncpt_id);
-void host1x_clear_syncpts_irq_status(enum hcpu cpu_id, uint32_t clear_mask);
+void host1x_clear_syncpts_irq_status(enum hcpu cpu_id, uint32_t index, uint32_t clear_mask);
 void host1x_init_syncpts_irq(qemu_irq *cpu_irq, qemu_irq *cop_irq);
 void host1x_reset_syncpt_irqs(void);
 

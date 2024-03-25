@@ -241,7 +241,12 @@ typedef struct tegra_host1x_channel_state {
 
     uint32_t sync_base;
     uint32_t sync_size;
+    uint32_t syncpt_thresh_cpu0_int_status_offset;
+    uint32_t syncpt_thresh_cpu1_int_status_offset;
+    uint32_t syncpt_thresh_int_mask_offset;
+    uint32_t syncpt_thresh_int_enable_cpu0_offset;
     uint32_t syncpt_offset;
+    uint32_t syncpt_int_thresh_offset;
     uint32_t syncpt_count;
     uint32_t bases_count;
 

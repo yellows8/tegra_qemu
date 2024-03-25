@@ -43,7 +43,12 @@ static const VMStateDescription vmstate_tegra_host1x_channel = {
     .fields = (VMStateField[]) {
         VMSTATE_UINT32(sync_base, tegra_host1x_channel),
         VMSTATE_UINT32(sync_size, tegra_host1x_channel),
+        VMSTATE_UINT32(syncpt_thresh_cpu0_int_status_offset, tegra_host1x_channel),
+        VMSTATE_UINT32(syncpt_thresh_cpu1_int_status_offset, tegra_host1x_channel),
+        VMSTATE_UINT32(syncpt_thresh_cpu1_int_status_offset, tegra_host1x_channel),
+        VMSTATE_UINT32(syncpt_thresh_int_mask_offset, tegra_host1x_channel),
         VMSTATE_UINT32(syncpt_offset, tegra_host1x_channel),
+        VMSTATE_UINT32(syncpt_int_thresh_offset, tegra_host1x_channel),
         VMSTATE_UINT32(syncpt_count, tegra_host1x_channel),
         VMSTATE_UINT32(bases_count, tegra_host1x_channel),
         VMSTATE_UINT32(fifostat.reg32, tegra_host1x_channel),
@@ -91,21 +96,7 @@ static uint32_t host1x_sync_read_reg(tegra_host1x_channel *s, hwaddr base, hwadd
         break;
     case HINTMASK_EXT_OFFSET:
         break;
-    case SYNCPT_THRESH_CPU0_INT_STATUS_OFFSET:
-        ret = host1x_get_syncpts_cpu_irq_status();
-        break;
-    case SYNCPT_THRESH_CPU1_INT_STATUS_OFFSET:
-        ret = host1x_get_syncpts_cop_irq_status();
-        break;
-    case SYNCPT_THRESH_INT_MASK_OFFSET:
-        ret = host1x_get_syncpts_dst_mask_low();
-        break;
-    case SYNCPT_THRESH_INT_MASK_1_OFFSET:
-        ret = host1x_get_syncpts_dst_mask_high();
-        break;
     case SYNCPT_THRESH_INT_DISABLE_OFFSET:
-        break;
-    case SYNCPT_THRESH_INT_ENABLE_CPU0_OFFSET:
         break;
     case SYNCPT_THRESH_INT_ENABLE_CPU1_OFFSET:
         break;
@@ -184,9 +175,6 @@ static uint32_t host1x_sync_read_reg(tegra_host1x_channel *s, hwaddr base, hwadd
         break;
     case MLOCK_ERROR_OFFSET:
         break;
-    case SYNCPT_INT_THRESH_OFFSET ... SYNCPT_INT_THRESH_31_OFFSET:
-        ret = host1x_get_syncpt_threshold((offset & 0xff) >> 2);
-        break;
     case SYNCPT_CPU_INCR_OFFSET:
         break;
     case CBREAD0_OFFSET ... CBREAD7_OFFSET:
@@ -236,10 +224,22 @@ static uint32_t host1x_sync_read_reg(tegra_host1x_channel *s, hwaddr base, hwadd
     case RDMA_DMATRIGGER0_OFFSET:
         break;
     default:
-        if (offset >= s->syncpt_offset && offset <= s->syncpt_offset + s->syncpt_count*4 - 4)
-            ret = host1x_get_syncpt_count((offset - s->syncpt_offset) >> 2);
+        if (offset >= s->syncpt_thresh_cpu0_int_status_offset && offset <= s->syncpt_thresh_cpu0_int_status_offset + (((s->syncpt_count/32)*4) - 4))
+            ret = host1x_get_syncpts_cpu_irq_status((offset - s->syncpt_thresh_cpu0_int_status_offset) >> 2);
+        else if (offset >= s->syncpt_thresh_cpu1_int_status_offset && offset <= s->syncpt_thresh_cpu1_int_status_offset + (((s->syncpt_count/32)*4) - 4))
+            ret = host1x_get_syncpts_cop_irq_status((offset - s->syncpt_thresh_cpu1_int_status_offset) >> 2);
+        else if (offset >= s->syncpt_thresh_int_mask_offset && offset <= s->syncpt_thresh_int_mask_offset + (((s->syncpt_count/32)*4) - 4))
+            ret = host1x_get_syncpts_dst_mask((offset - s->syncpt_thresh_int_mask_offset) >> 2);
+        else if (offset >= s->syncpt_offset && offset <= s->syncpt_offset + s->syncpt_count*4 - 4) {
+            uint32_t syncpt = (offset - s->syncpt_offset) >> 2;
+
+            ret = host1x_get_syncpt_count(syncpt);
+        }
         else if (offset >= SYNCPT_BASE_OFFSET && offset <= SYNCPT_BASE_OFFSET + s->bases_count*4 - 4)
             ret = host1x_get_syncpt_base((offset - SYNCPT_BASE_OFFSET) >> 2);
+        else if (offset >= s->syncpt_int_thresh_offset && offset <= s->syncpt_int_thresh_offset + s->syncpt_count*4 - 4) {
+            ret = host1x_get_syncpt_threshold((offset - s->syncpt_int_thresh_offset) >> 2);
+        }
         break;
     }
 
@@ -277,33 +277,13 @@ static void host1x_sync_write_reg(tegra_host1x_channel *s, hwaddr base, hwaddr o
     case HINTMASK_EXT_OFFSET:
         TRACE_WRITE(base, offset, 0, value);
         break;
-    case SYNCPT_THRESH_CPU0_INT_STATUS_OFFSET:
-        TRACE_WRITE(base, offset, 0, value);
-        host1x_clear_syncpts_irq_status(HOST1X_CPU, value);
-        break;
-    case SYNCPT_THRESH_CPU1_INT_STATUS_OFFSET:
-        TRACE_WRITE(base, offset, 0, value);
-        host1x_clear_syncpts_irq_status(HOST1X_COP, value);
-        break;
-    case SYNCPT_THRESH_INT_MASK_OFFSET:
-        TRACE_WRITE(base, offset, 0, value);
-        host1x_set_syncpts_irq_dst_mask(0, value);
-        break;
-    case SYNCPT_THRESH_INT_MASK_1_OFFSET:
-        TRACE_WRITE(base, offset, 0, value);
-        host1x_set_syncpts_irq_dst_mask(1, value);
-        break;
     case SYNCPT_THRESH_INT_DISABLE_OFFSET:
         TRACE_WRITE(base, offset, 0, value);
-        host1x_clear_syncpts_irq_dst_mask(value);
-        break;
-    case SYNCPT_THRESH_INT_ENABLE_CPU0_OFFSET:
-        TRACE_WRITE(base, offset, 0, value);
-        host1x_enable_syncpts_irq_mask(HOST1X_CPU, value);
+        host1x_clear_syncpts_irq_dst_mask(0, value);
         break;
     case SYNCPT_THRESH_INT_ENABLE_CPU1_OFFSET:
         TRACE_WRITE(base, offset, 0, value);
-        host1x_enable_syncpts_irq_mask(HOST1X_COP, value);
+        host1x_enable_syncpts_irq_mask(HOST1X_COP, 0, value);
         break;
     case CF0_SETUP_OFFSET ... CF7_SETUP_OFFSET:
         TRACE_WRITE(base, offset, 0, value);
@@ -367,13 +347,6 @@ static void host1x_sync_write_reg(tegra_host1x_channel *s, hwaddr base, hwaddr o
     case MLOCK_ERROR_OFFSET:
         TRACE_WRITE(base, offset, 0, value);
         break;
-    case SYNCPT_INT_THRESH_OFFSET ... SYNCPT_INT_THRESH_31_OFFSET:
-    {
-        syncpt_int_thresh_t thresh = { .reg32 = value };
-        TRACE_WRITE(base, offset, 0, value);
-        host1x_set_syncpt_threshold((offset & 0xff) >> 2, thresh.int_thresh);
-        break;
-    }
     case SYNCPT_CPU_INCR_OFFSET:
         TRACE_WRITE(base, offset, 0, value);
 
@@ -427,11 +400,23 @@ static void host1x_sync_write_reg(tegra_host1x_channel *s, hwaddr base, hwaddr o
         break;
     default:
         TRACE_WRITE(base, offset, 0, value);
-        if (offset >= s->syncpt_offset && offset <= s->syncpt_offset + s->syncpt_count*4 - 4)
+        if (offset >= s->syncpt_thresh_cpu0_int_status_offset && offset <= s->syncpt_thresh_cpu0_int_status_offset + (((s->syncpt_count/32)*4) - 4))
+            host1x_clear_syncpts_irq_status(HOST1X_CPU, (offset - s->syncpt_thresh_cpu0_int_status_offset) >> 2, value);
+        else if (offset >= s->syncpt_thresh_cpu1_int_status_offset && offset <= s->syncpt_thresh_cpu1_int_status_offset + (((s->syncpt_count/32)*4) - 4))
+            host1x_clear_syncpts_irq_status(HOST1X_COP, (offset - s->syncpt_thresh_cpu1_int_status_offset) >> 2, value);
+        else if (offset >= s->syncpt_thresh_int_mask_offset && offset <= s->syncpt_thresh_int_mask_offset + (((s->syncpt_count/32)*4) - 4))
+            host1x_set_syncpts_irq_dst_mask((offset - s->syncpt_thresh_int_mask_offset) >> 2, value);
+        else if (offset >= s->syncpt_thresh_int_enable_cpu0_offset && offset <= s->syncpt_thresh_int_enable_cpu0_offset + (((s->syncpt_count/32)*4) - 4))
+            host1x_enable_syncpts_irq_mask(HOST1X_CPU, (offset - s->syncpt_thresh_int_enable_cpu0_offset) >> 2, value);
+        else if (offset >= s->syncpt_offset && offset <= s->syncpt_offset + s->syncpt_count*4 - 4)
             host1x_set_syncpt_count((offset - s->syncpt_offset) >> 2, value);
         else if (offset >= SYNCPT_BASE_OFFSET && offset <= SYNCPT_BASE_OFFSET + s->bases_count*4 - 4) {
             syncpt_base_t syncpt_base = { .reg32 = value };
             host1x_set_syncpt_base((offset - SYNCPT_BASE_OFFSET) >> 2, syncpt_base.base_0);
+        }
+        else if (offset >= s->syncpt_int_thresh_offset && offset <= s->syncpt_int_thresh_offset + s->syncpt_count*4 - 4) {
+            syncpt_int_thresh_t thresh = { .reg32 = value };
+            host1x_set_syncpt_threshold((offset - s->syncpt_int_thresh_offset) >> 2, thresh.int_thresh);
         }
         break;
     }
@@ -662,14 +647,24 @@ static void tegra_host1x_channel_priv_reset(DeviceState *dev)
     if (tegra_board >= TEGRAX1_BOARD) {
         s->sync_base = 0x2100;
         s->sync_size = 0x1800;
+        s->syncpt_thresh_cpu0_int_status_offset = 0xE80;
+        s->syncpt_thresh_cpu1_int_status_offset = 0xEA0;
+        s->syncpt_thresh_int_mask_offset = 0xEC0;
+        s->syncpt_thresh_int_enable_cpu0_offset = 0xF20;
         s->syncpt_offset = 0xF80;
+        s->syncpt_int_thresh_offset = 0x1380;
         s->syncpt_count = NV_HOST1X_SYNCPT_NB_PTS_X1;
         s->bases_count = NV_HOST1X_SYNCPT_NB_BASES_TEGRAX1;
     }
     else {
         s->sync_base = 0x3000;
         s->sync_size = 0x8E8;
+        s->syncpt_thresh_cpu0_int_status_offset = SYNCPT_THRESH_CPU0_INT_STATUS_OFFSET;
+        s->syncpt_thresh_cpu1_int_status_offset = SYNCPT_THRESH_CPU1_INT_STATUS_OFFSET;
+        s->syncpt_thresh_int_mask_offset = SYNCPT_THRESH_CPU1_INT_STATUS_OFFSET;
+        s->syncpt_thresh_int_enable_cpu0_offset = SYNCPT_THRESH_INT_ENABLE_CPU0_OFFSET;
         s->syncpt_offset = SYNCPT_OFFSET;
+        s->syncpt_int_thresh_offset = SYNCPT_INT_THRESH_OFFSET;
         s->syncpt_count = NV_HOST1X_SYNCPT_NB_PTS_TEGRA2;
         s->bases_count = NV_HOST1X_SYNCPT_NB_BASES_TEGRA2;
     }
