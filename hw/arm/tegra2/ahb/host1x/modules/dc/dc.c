@@ -445,6 +445,22 @@ static void tegra_dc_vblank(void *opaque)
     TRACE_IRQ_RAISE(s->iomem.addr, s->irq);
 }
 
+bool tegra_dc_get_vblank_syncpt(void *opaque, uint32_t *out)
+{
+    tegra_dc *s = opaque;
+
+    if (s->dc.cmd_display_command.display_ctrl_mode == 0) {
+        return false;
+    }
+
+    if (s->dc.cmd_cont_syncpt_vsync.vsync_en) {
+        *out = s->dc.cmd_cont_syncpt_vsync.vsync_indx;
+        return true;
+    }
+
+    return false;
+}
+
 static void tegra_dc_module_write(struct host1x_module *module,
                                   uint32_t offset, uint32_t data)
 {

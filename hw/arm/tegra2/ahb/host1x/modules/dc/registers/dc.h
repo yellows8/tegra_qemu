@@ -22,6 +22,8 @@
 #ifndef TEGRA_DC_H
 #define TEGRA_DC_H
 
+#include <pixman.h>
+
 #include "regs.h"
 
 #define CMD_GENERAL_INCR_SYNCPT_OFFSET 0x0
@@ -2648,5 +2650,7 @@ extern regs_io_handler dc_handler;
 
 void tegra_dc_pixman_transform_flags(pixman_image_t *image, bool flipx, bool flipy, bool transpose, int *x, int *y, int *width, int *height);
 void tegra_dc_pixman_transform_rotate(pixman_image_t *image, int rotate, int *x, int *y, int *width, int *height);
+
+bool tegra_dc_get_vblank_syncpt(void *opaque, uint32_t *out);
 
 #endif // TEGRA_DC_H
