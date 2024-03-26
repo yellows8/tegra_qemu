@@ -27,6 +27,11 @@
 
 #include "hw/sysbus.h"
 
+#include "host1x_syncpts.h"
+
+#include "../host1x/modules/dc/registers/dc.h"
+#include "devices.h"
+
 #include "iomap.h"
 #include "tegra_trace.h"
 
@@ -130,6 +135,27 @@ static void tegra_gpu_priv_write(void *opaque, hwaddr offset,
         }
         else if ((offset == 0x409A10 || offset == 0x409B00) && (value & 0x1F))
             s->regs[offset>>2] &= ~0x1F;
+        else if ((s->regs[0x2254>>2] & 0x10000000)) { // fifo_bar1_base fifo_bar1_base_valid_true_f
+            uint32_t base = (s->regs[0x2254>>2] & 0xFFFFFFF)<<12;
+            base+= 0x1000000;
+            size_t num_channels = 0x80;
+            size_t entrysize = 1<<9;
+            if (offset >= base && offset < base+num_channels*entrysize) {
+                if (((offset - base) & (entrysize-1)) == 35*4) { // ram_userd_gp_put_w (GPFIFO)
+                    // HACK: The GPU updates syncpts via GPFIFO. Avoid parsing GPFIFO etc and just update all syncpts where threshold is set.
+                    for (uint32_t syncpt=0; syncpt<NV_HOST1X_SYNCPT_NB_PTS; syncpt++) {
+                        //uint32_t tmp=0, tmp2;
+                        uint32_t threshold = host1x_get_syncpt_threshold(syncpt);
+                        if (threshold!=0 /*&&
+                            (tegra_dca_dev && tegra_dc_get_vblank_syncpt(tegra_dca_dev, &tmp) && syncpt!=tmp) &&
+                            (tegra_dcb_dev && tegra_dc_get_vblank_syncpt(tegra_dcb_dev, &tmp2) && syncpt!=tmp2)*/)
+                        {
+                            host1x_set_syncpt_count(syncpt, threshold);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
