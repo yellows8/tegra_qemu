@@ -850,7 +850,7 @@ static void __tegrax1_init(MachineState *machine)
     tegra_qspi_dev = tegra_init_dummyio(TEGRA_QSPI_BASE, TEGRA_QSPI_SIZE, "tegra.qspi");
 
     /* TouchPanel */
-    tegra_i2c_touch_panel_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc3_dev), "dummyi2c", 0x49);
+    tegra_i2c_touch_panel_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc3_dev), "ftm3bd56", 0x49);
 
     /* Tmp451 (Temperature Sensor) */
     tegra_i2c_tmpsensor_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc1_dev), "dummyi2c", 0x4C);

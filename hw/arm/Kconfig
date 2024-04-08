@@ -704,3 +704,4 @@ config TEGRA2
     select A9MPCORE
     select USB_EHCI_SYSBUS
     select USB_XHCI_SYSBUS
+    select FTM3BD56
