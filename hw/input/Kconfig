@@ -46,3 +46,7 @@ config TSC210X
 
 config LASIPS2
     select PS2
+
+config FTM3BD56
+    bool
+    depends on I2C
