@@ -136,8 +136,8 @@ static const VMStateDescription vmstate_ftm3bd56 = {
 static void ftm3bd56_set_event(FTM3BD56State *s, uint8_t event, uint8_t status)
 {
     memset(s->event, 0, sizeof(s->event));
-    s->event[1] = event;
-    s->event[2] = status;
+    s->event[0] = event;
+    s->event[1] = status;
 }
 
 static void ftm3bd56_reset(DeviceState *dev)
@@ -190,7 +190,8 @@ static int ftm3bd56_send(I2CSlave *i2c, uint8_t data)
             pos += s->num_args - 2;
 
             if (pos < sizeof(s->regs)) {
-                s->regs[s->num_args++] = data;
+                s->num_args++;
+                s->regs[pos] = data;
                 return 0;
             }
 
@@ -205,7 +206,7 @@ static int ftm3bd56_send(I2CSlave *i2c, uint8_t data)
             if (addr == STMFTS_ITO_CHECK && s->num_args == 2) {
                 ftm3bd56_set_event(s, 0xF, 0x5);
             }
-            if (addr == STMFTS_WRITE_REG && s->num_args == 3) {
+            else if (addr == STMFTS_WRITE_REG && s->num_args == 3) {
                 if (s->cmd_args[0] == 0x0 && s->cmd_args[1] == 0x28 && s->cmd_args[2] == 0x80) { // System reset cmd
                     ftm3bd56_set_event(s, STMFTS_EV_CONTROLLER_READY, 0);
                 }
@@ -214,9 +215,9 @@ static int ftm3bd56_send(I2CSlave *i2c, uint8_t data)
                 if (s->cmd_args[0] == STMFTS_VENDOR_GPIO_STATE) {
                     ftm3bd56_set_event(s, STMFTS_EV_VENDOR, STMFTS_VENDOR_GPIO_STATE);
                     // GPIOs for "NISSHA NFT-K12D":
+                    s->event[2] = 1;
                     s->event[3] = 1;
                     s->event[4] = 1;
-                    s->event[5] = 1;
                 }
             }
         }
@@ -256,7 +257,10 @@ static uint8_t ftm3bd56_recv(I2CSlave *i2c)
         pos = (s->cmd_args[0]<<8) | (s->cmd_args[1]);
         pos += s->recv_pos-1;
 
-        if (pos < sizeof(s->regs)) return s->regs[s->recv_pos++];
+        if (pos < sizeof(s->regs)) {
+            s->recv_pos++;
+            return s->regs[pos];
+        }
 
         qemu_log_mask(LOG_GUEST_ERROR, "%s: pos is too large for STMFTS_RW_FRAMEBUFFER_REG, returning 0.\n",
                       __func__);
