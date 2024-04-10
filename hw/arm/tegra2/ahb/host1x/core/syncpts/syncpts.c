@@ -177,9 +177,9 @@ void host1x_reset_syncpts(void)
 
 int host1x_syncpt_threshold_is_crossed(uint32_t syncpt_id)
 {
-    struct host1x_syncpt *syncpt = &syncpts[syncpt_id];
+    g_assert(syncpt_id < NV_HOST1X_SYNCPT_NB_PTS);
 
-    assert(syncpt_id < NV_HOST1X_SYNCPT_NB_PTS);
+    struct host1x_syncpt *syncpt = &syncpts[syncpt_id];
 
     return counter_reached_threshold(syncpt->counter, syncpt->threshold);
 }

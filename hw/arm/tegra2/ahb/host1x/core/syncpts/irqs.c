@@ -135,7 +135,7 @@ void host1x_enable_syncpts_irq_mask(enum hcpu cpu_id, uint32_t index, uint32_t e
 
     unlock_irqs();
 
-    FOREACH_BIT_SET(enable_mask, i, NV_HOST1X_SYNCPT_NB_PTS) {
+    FOREACH_BIT_SET(enable_mask, i, 32) {
         uint32_t id = index*32 + i;
         if (host1x_syncpt_threshold_is_crossed(id)) {
             host1x_set_syncpt_irq(id);
@@ -151,7 +151,7 @@ void host1x_set_syncpts_irq_dst_mask(uint32_t index, uint32_t mask)
 
     lock_irqs();
 
-    FOREACH_BIT_SET(mask, i, NV_HOST1X_SYNCPT_NB_PTS) {
+    FOREACH_BIT_SET(mask, i, 32) {
         cpu_id = ((1 << i) & 0x55555555) ? HOST1X_CPU : HOST1X_COP;
         dst_mask = 1 << ((i - cpu_id) / 2);
 
