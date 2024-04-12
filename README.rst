@@ -42,6 +42,8 @@ Run Tegra X1
 
   ./qemu-system-aarch64 -machine tegrax1 -m 4G -bootloader {BPMP IRAM bootloader path}
 
+Actual GPU rendering will not be supported. Playing commercial titles with graphics display requires GPU rendering.
+
 * Use ``-machine tegrax1plus`` for TX1+.
 
 * ``-bios {path}`` can also be used for running the BPMP IROM. The IROM must be unpatched (all IPATCH slots disabled), since IPATCH patching is emulated. If neither are specified, CCPLEX core0 is started in EL3. It's assumed the user loaded the required data, such as with (repeating as needed for each file): ``-device loader,addr={value},{force-raw=true},file={path}``. To set the reset vector for this: ``-global driver=tegra.evp,property=cpu-reset-vector,value={addr}``.
