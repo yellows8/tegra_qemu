@@ -26,6 +26,7 @@
 #include "tegra_common.h"
 
 #include "hw/sysbus.h"
+#include "qemu/log.h"
 
 #include "host1x_syncpts.h"
 
@@ -151,6 +152,7 @@ static void tegra_gpu_priv_write(void *opaque, hwaddr offset,
                             (tegra_dcb_dev && tegra_dc_get_vblank_syncpt(tegra_dcb_dev, &tmp2) && syncpt!=tmp2)*/)
                         {
                             host1x_set_syncpt_count(syncpt, threshold);
+                            qemu_log_mask(LOG_GUEST_ERROR, "tegra.gpu: Set syncpt_count for syncpt 0x%x to 0x%x, for GPFIO handling.\n", syncpt, threshold);
                         }
                     }
                 }
