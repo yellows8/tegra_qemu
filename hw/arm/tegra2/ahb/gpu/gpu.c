@@ -136,6 +136,7 @@ static void tegra_gpu_priv_write(void *opaque, hwaddr offset,
         }
         else if ((offset == 0x409A10 || offset == 0x409B00) && (value & 0x1F))
             s->regs[offset>>2] &= ~0x1F;
+        #if 0 // Not needed with the workaround in host1x_channel.
         else if ((s->regs[0x2254>>2] & 0x10000000)) { // fifo_bar1_base fifo_bar1_base_valid_true_f
             uint32_t base = (s->regs[0x2254>>2] & 0xFFFFFFF)<<12;
             base+= 0x1000000;
@@ -158,6 +159,7 @@ static void tegra_gpu_priv_write(void *opaque, hwaddr offset,
                 }
             }
         }
+        #endif
     }
 }
 

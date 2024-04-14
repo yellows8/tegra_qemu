@@ -19,6 +19,7 @@
 
 #include "tegra_common.h"
 
+#include "qemu/log.h"
 
 #include "modules/host1x/host1x.h"
 
@@ -416,7 +417,12 @@ static void host1x_sync_write_reg(tegra_host1x_channel *s, hwaddr base, hwaddr o
         }
         else if (offset >= s->syncpt_int_thresh_offset && offset <= s->syncpt_int_thresh_offset + s->syncpt_count*4 - 4) {
             syncpt_int_thresh_t thresh = { .reg32 = value };
-            host1x_set_syncpt_threshold((offset - s->syncpt_int_thresh_offset) >> 2, thresh.int_thresh);
+            uint32_t id = (offset - s->syncpt_int_thresh_offset) >> 2;
+            host1x_set_syncpt_threshold(id, thresh.int_thresh);
+
+            // HACK: Force the syncpt to immediately trigger. This is for GPU GPFIFO: in some cases the target threshold isn't written until after GPFIFO is written.
+            host1x_set_syncpt_count(id, thresh.int_thresh);
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra.host1x_channel: Set syncpt_count for syncpt 0x%x to 0x%x.\n", id, thresh.int_thresh);
         }
         break;
     }
