@@ -44,6 +44,8 @@
 typedef struct tegra_gpu_state {
     SysBusDevice parent_obj;
 
+    qemu_irq irq_stall;
+    qemu_irq irq_nonstall;
     MemoryRegion iomem;
     uint32_t regs[0x2000000>>2];
 } tegra_gpu;
@@ -83,6 +85,22 @@ static void tegra_gpu_priv_write(void *opaque, hwaddr offset,
 
     if (offset+size <= sizeof(s->regs)) {
         if (offset < 4) return; // Ignore id reg.
+
+        if (offset == 0x2638) {
+            s->regs[offset>>2] = value;
+
+            s->regs[0x00002a00>>2] |= value;
+            if (s->regs[0x00002a00>>2])
+                TRACE_IRQ_RAISE(s->iomem.addr, s->irq_nonstall);
+            s->regs[0x20290>>2] = 0;
+        }
+        else if (offset == 0x00002a00) { // fifo_intr_runlist_r
+            s->regs[offset>>2] &= ~value;
+            if (s->regs[offset>>2] == 0)
+                TRACE_IRQ_LOWER(s->iomem.addr, s->irq_nonstall);
+            return;
+        }
+
         s->regs[offset/sizeof(uint32_t)] = (s->regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
 
         if ((offset == 0x00070000 || offset == 0x00070004 || offset == 0x00070010) && (value & BIT(0))) // flush_fb_flush/flush_l2_system_invalidate/flush_l2_flush_dirty_r pending
@@ -190,6 +208,9 @@ static const MemoryRegionOps tegra_gpu_mem_ops = {
 static void tegra_gpu_priv_realize(DeviceState *dev, Error **errp)
 {
     tegra_gpu *s = TEGRA_GPU(dev);
+
+    sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq_stall);
+    sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irq_nonstall);
 
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_gpu_mem_ops, s,
                           TYPE_TEGRA_GPU, sizeof(s->regs));

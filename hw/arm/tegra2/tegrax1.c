@@ -1152,7 +1152,10 @@ static void __tegrax1_init(MachineState *machine)
     sysbus_connect_irq(s, 0, DIRQ(INT_NVJPG));
 
     /* GPU */
-    tegra_gpu_dev = sysbus_create_simple("tegra.gpu", TEGRA_GK20A_BAR0_BASE, NULL);
+    tegra_gpu_dev = sysbus_create_varargs("tegra.gpu", TEGRA_GK20A_BAR0_BASE,
+                                                      DIRQ(INT_GPU_STALL),
+                                                      DIRQ(INT_GPU_NONSTALL),
+                                                      NULL);
 
     /* Process generator tag */
     sysbus_create_simple("tegra.pg", 0x60000000, NULL);
