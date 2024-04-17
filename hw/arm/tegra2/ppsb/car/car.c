@@ -2011,8 +2011,12 @@ static void tegra_car_priv_reset(DeviceState *dev)
 
                     s->regs[offset>>2] = value;
                 }
-                else
+                else {
+                    if (offset == RST_CONTROLLER_PLLC4_BASE_OFFSET)
+                        value |= PLL_LOCKED;
+
                     tegra_car_priv_write(s, offset, value, 4);
+                }
             }
         }
 
