@@ -1031,13 +1031,18 @@ static void tegra_pmc_priv_write(void *opaque, hwaddr offset,
         if (offset>=0x160) {
             if (offset == AOTAG_INTR_DIS_OFFSET)
                 s->regs[(AOTAG_INTR_EN_OFFSET-0x160)>>2] &= ~(value & 0x3);
-            else if (offset == IO_DPD3_REQ_OFFSET || offset == IO_DPD4_REQ_OFFSET) {
+            else if (offset == IO_DPD_REQ_OFFSET || offset == IO_DPD2_REQ_OFFSET || offset == IO_DPD3_REQ_OFFSET || offset == IO_DPD4_REQ_OFFSET) {
                 s->regs[(offset-0x160)>>2] = value;
                 if (offset == IO_DPD3_REQ_OFFSET) {
                     if (tegra_board == TEGRAX1PLUS_BOARD) value &= ~0x6000;
                 }
                 else if (offset == IO_DPD4_REQ_OFFSET) value &= ~0xE000;
-                s->regs[(offset-0x160+0x4)>>2] = value & 0xFFFFFFF; // STATUS
+                uint32_t op = value>>30;
+                value &= ~0xC0000000;
+                if (op == 1) // DPD_OFF
+                    s->regs[(offset-0x160+0x4)>>2] &= ~value; // STATUS
+                else if (op == 2) // DPD_ON
+                    s->regs[(offset-0x160+0x4)>>2] |= value; // STATUS
             }
             else
                 s->regs[(offset-0x160)>>2] = value;
@@ -1291,9 +1296,11 @@ void tegra_pmc_reset(DeviceState *dev, ShutdownCause cause)
                 QNum *num = qobject_to(QNum, keyobj);
 
                 if (num) {
-                    uint64_t regoff=0;
+                    uint64_t regoff=0, regval=0;
                     if (!qemu_strtoul(keyname, NULL, 16, &regoff)) {
-                        tegra_pmc_priv_write(s, regoff, qnum_get_uint(num), 4);
+                        regval = qnum_get_uint(num);
+                        qemu_log_mask(LOG_GUEST_ERROR, "tegra.pmc: Writing reg for cold-reset-regs: 0x%lx = 0x%lx.\n", regoff, regval);
+                        tegra_pmc_priv_write(s, regoff, regval, 4);
                     }
                 }
             }
