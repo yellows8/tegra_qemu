@@ -89,6 +89,7 @@ static uint64_t tegra_dvfs_priv_read(void *opaque, hwaddr offset,
 
             if (s->regs[0x24>>2] & BIT(6)) // CL_DVFS_OUTPUT_FORCE_0
                 val = (s->regs[0x24>>2] & 0x3F) << 1;
+            else val = 0xB<<1;
 
             s->regs[offset>>2] = val;
         }
