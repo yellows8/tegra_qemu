@@ -1096,7 +1096,7 @@ static uint8_t gic_dist_readb(void *opaque, hwaddr offset, MemTxAttrs attrs)
             } else if (irq < GIC_INTERNAL) {
                 res = cm;
             } else {
-                res = GIC_DIST_TARGET(irq) & cm;
+                res = GIC_DIST_TARGET(irq);
             }
         }
     } else if (offset < 0xf00) {
