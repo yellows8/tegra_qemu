@@ -1268,6 +1268,8 @@ void tegra_pmc_reset(DeviceState *dev, ShutdownCause cause)
             s->regs[(tegra_pmc_regdef_tegrax1_reset_table[i]-0x160)>>2] = tegra_pmc_regdef_tegrax1_reset_table[i+1];
         }
 
+        s->pwrgate_status.reg32 = 0x3FFE814C & ~BIT(3); // Value from hardware. PCX (PCIE) is cleared since sw expects it to be off.
+
         // Setup regs as validated by Erista NX_Bootloader with certain versions.
         s->pwr_det_val.reg32 = 0x007C3C2C;
         s->regs[(AOTAG_CFG_OFFSET-0x160)>>2] = 0x00000001;
