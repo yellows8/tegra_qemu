@@ -290,7 +290,7 @@ static const USBDescDevice desc_device_net = {
     },
 };
 
-static const USBDesc desc_net = {
+static USBDesc desc_net = {
     .id = {
         .idVendor          = RNDIS_VENDOR_NUM,
         .idProduct         = RNDIS_PRODUCT_NUM,
@@ -641,6 +641,9 @@ struct USBNetState {
     uint32_t media_state;
     uint16_t filter;
     uint32_t vendorid;
+
+    uint16_t usb_vendorid;
+    uint16_t usb_productid;
 
     uint16_t connection;
 
@@ -1369,6 +1372,9 @@ static void usb_net_realize(USBDevice *dev, Error **errp)
 {
     USBNetState *s = USB_NET(dev);
 
+    desc_net.id.idVendor = s->usb_vendorid;
+    desc_net.id.idProduct = s->usb_productid;
+
     usb_desc_create_serial(dev);
     usb_desc_init(dev);
 
@@ -1417,6 +1423,8 @@ static const VMStateDescription vmstate_usb_net = {
 
 static Property net_properties[] = {
     DEFINE_NIC_PROPERTIES(USBNetState, conf),
+    DEFINE_PROP_UINT16("usb-vendorid", USBNetState, usb_vendorid, RNDIS_VENDOR_NUM),
+    DEFINE_PROP_UINT16("usb-productid", USBNetState, usb_productid, RNDIS_PRODUCT_NUM),
     DEFINE_PROP_END_OF_LIST(),
 };
 
