@@ -1341,7 +1341,12 @@ static void __tegrax1_init(MachineState *machine)
     // Setup APE IRQs.
     s = SYS_BUS_DEVICE(tegra_ape_dev);
     for (i = 0; i < 8; i++)
-        sysbus_connect_irq(s, i, qdev_get_gpio_in(DEVICE(gicbusdev_ape), /*32+*/i));
+        sysbus_connect_irq(s, i, qdev_get_gpio_in(DEVICE(gicbusdev_ape), i));
+
+    // Setup the ADSP watchdog IRQ.
+    // TODO: Enable this once working. Currently the watchdog expires without any ADSP exception/assert occuring.
+    /*s = SYS_BUS_DEVICE(&a9mpcore->wdt);
+    sysbus_connect_irq(s, 6 + TEGRA_ADSP, qdev_get_gpio_in(DEVICE(gicbusdev_ape), 79-32));*/
 
     //cs = qemu_get_cpu(TEGRA_ADSP);
     //cs->as = ape_as;
