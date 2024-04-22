@@ -22,6 +22,7 @@
 #include "tegra_common.h"
 
 #include "hw/sysbus.h"
+#include "hw/ptimer.h"
 
 #include "qapi/error.h"
 #include "qapi/qapi-commands.h"
@@ -42,12 +43,21 @@
 #define MAILBOX_INT_FULL 0
 #define MAILBOX_INT_EMPTY 1
 
+#define TIMER_FREQ 19200000 // NOTE: Same as CCPLEX freq, perhaps this should be a prop?
+
+#define SCALE   1
+
+#define TIMER_LIMIT (BIT(56)-1)
+
 typedef struct tegra_ape_state {
     SysBusDevice parent_obj;
 
     qemu_irq irqs[2][NUM_MAILBOX];
     MemoryRegion iomem;
+    ptimer_state *ptimer;
 
+    uint64_t timer_count;
+    bool timer_word_flag;
     bool mailbox_irq_raised[NUM_MAILBOX];
 
     uint32_t regs[((0x702F8000+0x1000)-TEGRA_APE_BASE)>>2];
@@ -59,6 +69,9 @@ static const VMStateDescription vmstate_tegra_ape = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
+        VMSTATE_PTIMER(ptimer, tegra_ape),
+        VMSTATE_UINT64(timer_count, tegra_ape),
+        VMSTATE_BOOL(timer_word_flag, tegra_ape),
         VMSTATE_BOOL_ARRAY(mailbox_irq_raised, tegra_ape, NUM_MAILBOX),
         VMSTATE_UINT32_ARRAY(regs, tegra_ape, ((0x702F8000+0x1000)-TEGRA_APE_BASE)>>2),
 
@@ -76,6 +89,16 @@ static uint64_t tegra_ape_priv_read(void *opaque, hwaddr offset,
 
     if (offset+size <= sizeof(s->regs)) {
         ret = s->regs[offset/sizeof(uint32_t)] & ((1ULL<<size*8)-1);
+
+        if (offset == 0x2C048) { // AMISC_TSC_0
+            if (!s->timer_word_flag) s->timer_count = TIMER_LIMIT - ptimer_get_count(s->ptimer);
+            ret = s->timer_count;
+            if (!s->timer_word_flag) ret >>= 32;
+            ret &= 0xFFFFFFFF;
+            s->timer_word_flag = !s->timer_word_flag;
+        }
+        else if (offset == 0x2C04C) // AMISC_AMISC_DEBUG_0
+            ret = s->timer_word_flag<<31;
     }
 
     return ret;
@@ -114,6 +137,18 @@ static void tegra_ape_priv_reset(DeviceState *dev)
 
     memset(s->mailbox_irq_raised, 0, sizeof(s->mailbox_irq_raised));
     memset(s->regs, 0, sizeof(s->regs));
+
+    s->regs[0x2C004/sizeof(uint32_t)] = 0xE0800000; // AMISC_ADSP_CONFIG_0
+    s->regs[0x2C008/sizeof(uint32_t)] = 0x00C00000; // AMISC_ADSP_PERIP
+    s->regs[0x2C00C/sizeof(uint32_t)] = 0x02000000; // AMISC_ADSP_L2_CONFIG_0
+    s->regs[0x2C010/sizeof(uint32_t)] = 0x00C02000; // AMISC_ADSP_L2_REGFILEBASE_0
+
+    s->timer_count = 0;
+    s->timer_word_flag = false;
+
+    ptimer_transaction_begin(s->ptimer);
+    ptimer_run(s->ptimer, 0);
+    ptimer_transaction_commit(s->ptimer);
 }
 
 static const MemoryRegionOps tegra_ape_mem_ops = {
@@ -121,6 +156,11 @@ static const MemoryRegionOps tegra_ape_mem_ops = {
     .write = tegra_ape_priv_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
+
+static void tegra_ape_timer_tick(void *opaque)
+{
+    /* Nothing to do on timer rollover */
+}
 
 static void tegra_ape_priv_realize(DeviceState *dev, Error **errp)
 {
@@ -134,6 +174,12 @@ static void tegra_ape_priv_realize(DeviceState *dev, Error **errp)
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_ape_mem_ops, s,
                           TYPE_TEGRA_APE, (0x702F8000+0x1000)-TEGRA_APE_BASE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
+
+    s->ptimer = ptimer_init(tegra_ape_timer_tick, s, PTIMER_POLICY_CONTINUOUS_TRIGGER);
+    ptimer_transaction_begin(s->ptimer);
+    ptimer_set_freq(s->ptimer, TIMER_FREQ * SCALE);
+    ptimer_set_limit(s->ptimer, TIMER_LIMIT, 1);
+    ptimer_transaction_commit(s->ptimer);
 }
 
 static void tegra_ape_class_init(ObjectClass *klass, void *data)
