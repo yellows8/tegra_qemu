@@ -55,7 +55,8 @@ static inline int get_current_cpu(ARMMPTimerState *s)
 
 static inline void timerblock_update_irq(TimerBlock *tb)
 {
-    qemu_set_irq(tb->irq, tb->status && (tb->control & 4));
+    qemu_set_irq(tb->irq, tb->status && (tb->control & 4) && (tb->control & 8) == 0);
+    qemu_set_irq(tb->irq_wdt, tb->status && (tb->control & 8)); // watchdog
 }
 
 /* Return conversion factor from mpcore timer ticks to qemu timer ticks.  */
@@ -274,6 +275,11 @@ static void arm_mptimer_realize(DeviceState *dev, Error **errp)
         memory_region_init_io(&tb->iomem, OBJECT(s), &timerblock_ops, tb,
                               "arm_mptimer_timerblock", 0x20);
         sysbus_init_mmio(sbd, &tb->iomem);
+    }
+
+    for (i = 0; i < s->num_cpu; i++) {
+        TimerBlock *tb = &s->timerblock[i];
+        sysbus_init_irq(sbd, &tb->irq_wdt);
     }
 }
 
