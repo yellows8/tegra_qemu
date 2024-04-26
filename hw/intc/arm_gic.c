@@ -56,16 +56,21 @@ static const uint8_t gic_id_gicv2[] = {
     0x04, 0x00, 0x00, 0x00, 0x90, 0xb4, 0x2b, 0x00, 0x0d, 0xf0, 0x05, 0xb1
 };
 
+static inline int gic_get_remap_cpu(GICState *s, int cpu)
+{
+    for (int i=0; i<ARRAY_SIZE(s->cpu_remap); i++) {
+        if (s->cpu_remap[i] == cpu) return i;
+    }
+
+    return cpu;
+}
+
 static inline int gic_get_current_cpu(GICState *s)
 {
     if (!qtest_enabled() && s->num_cpu > 1) {
         int cpu = current_cpu->cpu_index;
 
-        for (int i=0; i<ARRAY_SIZE(s->cpu_remap); i++) {
-            if (s->cpu_remap[i] == cpu) return i;
-        }
-
-        return cpu;
+        return gic_get_remap_cpu(s, cpu);
     }
     return 0;
 }
@@ -404,6 +409,7 @@ static void gic_set_irq(void *opaque, int irq, int level)
         int cpu;
         irq -= (s->num_irq - GIC_INTERNAL);
         cpu = irq / GIC_INTERNAL;
+        cpu = gic_get_remap_cpu(s, cpu);
         irq %= GIC_INTERNAL;
         cm = 1 << cpu;
         target = cm;
