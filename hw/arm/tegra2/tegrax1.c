@@ -1346,7 +1346,7 @@ static void __tegrax1_init(MachineState *machine)
         sysbus_connect_irq(s, i, qdev_get_gpio_in(DEVICE(gicbusdev_ape), i));
 
     // Setup the ADSP watchdog IRQ.
-    // TODO: Enable this once working. Currently the watchdog expires without any ADSP exception/assert occuring.
+    // NOTE: The watchdog ptimer can expire while the guest is paused (gdb usage for example), hence this is disabled.
     /*s = SYS_BUS_DEVICE(&a9mpcore->wdt);
     sysbus_connect_irq(s, 6 + TEGRA_ADSP, qdev_get_gpio_in(DEVICE(gicbusdev_ape), 79-32));*/
 
