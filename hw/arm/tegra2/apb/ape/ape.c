@@ -47,7 +47,8 @@
 
 #define SCALE   1
 
-#define TIMER_LIMIT (BIT(56)-1)
+// The hardware uses 56-bits, but this is the largest bit-count which can be used with this freq without issues with ptimer.
+#define TIMER_LIMIT (BIT(35)-1)
 
 typedef struct tegra_ape_state {
     SysBusDevice parent_obj;
@@ -131,6 +132,18 @@ static void tegra_ape_priv_write(void *opaque, hwaddr offset,
     }
 }
 
+static void tegra_ape_start_timer(void *opaque)
+{
+    tegra_ape *s = opaque;
+
+    ptimer_transaction_begin(s->ptimer);
+    ptimer_stop(s->ptimer);
+    ptimer_set_freq(s->ptimer, TIMER_FREQ * SCALE);
+    ptimer_set_limit(s->ptimer, TIMER_LIMIT, 1);
+    ptimer_run(s->ptimer, 0);
+    ptimer_transaction_commit(s->ptimer);
+}
+
 static void tegra_ape_priv_reset(DeviceState *dev)
 {
     tegra_ape *s = TEGRA_APE(dev);
@@ -146,9 +159,7 @@ static void tegra_ape_priv_reset(DeviceState *dev)
     s->timer_count = 0;
     s->timer_word_flag = false;
 
-    ptimer_transaction_begin(s->ptimer);
-    ptimer_run(s->ptimer, 0);
-    ptimer_transaction_commit(s->ptimer);
+    tegra_ape_start_timer(s);
 }
 
 static const MemoryRegionOps tegra_ape_mem_ops = {
@@ -176,10 +187,6 @@ static void tegra_ape_priv_realize(DeviceState *dev, Error **errp)
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 
     s->ptimer = ptimer_init(tegra_ape_timer_tick, s, PTIMER_POLICY_CONTINUOUS_TRIGGER);
-    ptimer_transaction_begin(s->ptimer);
-    ptimer_set_freq(s->ptimer, TIMER_FREQ * SCALE);
-    ptimer_set_limit(s->ptimer, TIMER_LIMIT, 1);
-    ptimer_transaction_commit(s->ptimer);
 }
 
 static void tegra_ape_class_init(ObjectClass *klass, void *data)
