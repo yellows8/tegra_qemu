@@ -86,6 +86,8 @@
 
 #define JMP_FIXUP   (sizeof(tegra_bootrom) / 4 - 2)
 
+#define UART_BAUDRATE 12500000
+
 /* WARNING: HACK! FIXME: Copied from exec.c  */
 struct CPUAddressSpace {
     CPUState *cpu;
@@ -720,25 +722,25 @@ static void __tegrax1_init(MachineState *machine)
 
     /* UART controllers */
     tegra_uarta_dev = serial_mm_init(sysmem, TEGRA_UARTA_BASE, 2,
-                                     DIRQ(INT_UARTA), 115200,
+                                     DIRQ(INT_UARTA), UART_BAUDRATE,
                                      serial_hd(0),
                                      DEVICE_LITTLE_ENDIAN);
     tegra_uarta_vendor_dev = sysbus_create_simple("tegra.uart", TEGRA_UARTA_BASE+0x20, NULL);
 
     tegra_uartb_dev = serial_mm_init(sysmem, TEGRA_UARTB_BASE, 2,
-                                     DIRQ(INT_UARTB), 115200,
+                                     DIRQ(INT_UARTB), UART_BAUDRATE,
                                      serial_hd(1),
                                      DEVICE_LITTLE_ENDIAN);
     tegra_uartb_vendor_dev = sysbus_create_simple("tegra.uart", TEGRA_UARTB_BASE+0x20, NULL);
 
     tegra_uartc_dev = serial_mm_init(sysmem, TEGRA_UARTC_BASE, 2,
-                                     DIRQ(INT_UARTC), 115200,
+                                     DIRQ(INT_UARTC), UART_BAUDRATE,
                                      serial_hd(2),
                                      DEVICE_LITTLE_ENDIAN);
     tegra_uartc_vendor_dev = sysbus_create_simple("tegra.uart", TEGRA_UARTC_BASE+0x20, NULL);
 
     tegra_uartd_dev = serial_mm_init(sysmem, TEGRA_UARTD_BASE, 2,
-                                     DIRQ(INT_UARTD), 115200,
+                                     DIRQ(INT_UARTD), UART_BAUDRATE,
                                      serial_hd(3),
                                      DEVICE_LITTLE_ENDIAN);
     tegra_uartd_vendor_dev = sysbus_create_simple("tegra.uart", TEGRA_UARTD_BASE+0x20, NULL);
