@@ -292,9 +292,10 @@ static void arm_gic_common_reset_hold(Object *obj)
         arm_gic_common_reset_irq_state(s, GIC_NCPU, 0);
     }
 
-    for (i = 0; i < GIC_NR_SGIS; i++) {
-        GIC_DIST_SET_ENABLED(i, ALL_CPU_MASK);
-        GIC_DIST_SET_EDGE_TRIGGER(i);
+    for (i = 0; i < GIC_INTERNAL; i++) {
+        if (i < GIC_NR_SGIS)
+            GIC_DIST_SET_ENABLED(i, ALL_CPU_MASK);
+        GIC_DIST_SET_EDGE_TRIGGER(i); // Configure SGIs and PPIs, on hardware these are read-only.
     }
 
     for (i = 0; i < ARRAY_SIZE(s->priority2); i++) {
