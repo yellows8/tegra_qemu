@@ -1044,8 +1044,12 @@ static void tegra_pmc_priv_write(void *opaque, hwaddr offset,
                 else if (op == 2) // DPD_ON
                     s->regs[(offset-0x160+0x4)>>2] |= value; // STATUS
             }
-            else
+            else {
+                if (offset == SET_SW_CLAMP_OFFSET && (value & BIT(0))) // CRAIL
+                    s->clamp_status.reg32 |= BIT(0);
+
                 s->regs[(offset-0x160)>>2] = value;
+            }
         }
         break;
     }

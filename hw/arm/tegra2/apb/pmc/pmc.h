@@ -1196,6 +1196,8 @@ typedef union gate_u {
 
 #define IO_DPD4_REQ_OFFSET 0x464
 
+#define SET_SW_CLAMP_OFFSET 0x47C
+
 #define AOTAG_CFG_OFFSET 0x484
 
 #define AOTAG_INTR_EN_OFFSET 0x4B8
