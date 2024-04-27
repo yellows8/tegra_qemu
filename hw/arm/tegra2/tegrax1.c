@@ -284,6 +284,7 @@ static void* tegra_init_sdmmc(int index, hwaddr base, qemu_irq irq, bool emmc, u
     qdev_prop_set_drive(carddev, "drive", blk);
     qdev_prop_set_bit(carddev, "emmc", emmc);
     if (emmc) qdev_prop_set_uint32(carddev, "bootpartsize", bootpartsize);
+    qdev_prop_set_bit(carddev, "single-reset", true);
     qdev_realize_and_unref(carddev, qdev_get_child_bus(tmpdev, "sd-bus"), &error_fatal);
     return tmpdev;
 }
