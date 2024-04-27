@@ -118,6 +118,7 @@ struct SDState {
     bool emmc;
     uint32_t mmcpart;
     uint32_t bootpartsize;
+    bool single_reset;
 
     /* Runtime changeables */
 
@@ -151,6 +152,8 @@ struct SDState {
     bool enable;
     uint8_t dat_lines;
     bool cmd_line;
+
+    bool reset_flag;
 };
 
 static void sd_realize(DeviceState *dev, Error **errp);
@@ -1213,7 +1216,7 @@ static inline uint64_t sd_addr_to_wpnum(uint64_t addr)
     return addr >> (HWBLOCK_SHIFT + SECTOR_SHIFT + WPGROUP_SHIFT);
 }
 
-static void sd_reset(DeviceState *dev)
+static void sd_reset_internal(DeviceState *dev)
 {
     SDState *sd = SD_CARD(dev);
     uint64_t size;
@@ -1256,6 +1259,18 @@ static void sd_reset(DeviceState *dev)
     sd->mmcpart = 0;
 }
 
+static void sd_reset(DeviceState *dev)
+{
+    SDState *sd = SD_CARD(dev);
+
+    if (sd->single_reset) {
+        if (sd->reset_flag) return;
+        sd->reset_flag = true;
+    }
+
+    sd_reset_internal(dev);
+}
+
 static bool sd_get_inserted(SDState *sd)
 {
     return sd->blk && blk_is_inserted(sd->blk);
@@ -1276,7 +1291,7 @@ static void sd_cardchange(void *opaque, bool load, Error **errp)
 
     if (inserted) {
         trace_sdcard_inserted(readonly);
-        sd_reset(dev);
+        sd_reset_internal(dev);
     } else {
         trace_sdcard_ejected();
     }
@@ -1674,7 +1689,7 @@ static sd_rsp_type_t sd_cmd_GO_IDLE_STATE(SDState *sd, SDRequest req)
 {
     if (sd->state != sd_inactive_state) {
         sd->state = sd_idle_state;
-        sd_reset(DEVICE(sd));
+        sd_reset_internal(DEVICE(sd));
     }
 
     return sd_is_spi(sd) ? sd_r1 : sd_r0;
@@ -2943,6 +2958,8 @@ static void sd_realize(DeviceState *dev, Error **errp)
         }
         blk_set_dev_ops(sd->blk, &sd_block_ops, sd);
     }
+
+    sd->reset_flag = false;
 }
 
 static Property sd_properties[] = {
@@ -2955,6 +2972,7 @@ static Property sd_properties[] = {
      * is asserted.  */
     DEFINE_PROP_BOOL("emmc", SDState, emmc, false),
     DEFINE_PROP_UINT32("bootpartsize", SDState, bootpartsize, 0),
+    DEFINE_PROP_BOOL("single-reset", SDState, single_reset, false), // For guest-reset where the card doesn't get reset.
     DEFINE_PROP_END_OF_LIST()
 };
 
