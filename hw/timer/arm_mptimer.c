@@ -29,6 +29,7 @@
 #include "qapi/error.h"
 #include "qemu/module.h"
 #include "hw/core/cpu.h"
+#include "sysemu/runstate.h"
 
 #define PTIMER_POLICY                       \
     (PTIMER_POLICY_WRAP_AFTER_ONE_PERIOD |  \
@@ -215,6 +216,31 @@ static const MemoryRegionOps timerblock_ops = {
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
+// The timer has to be paused when the guest is paused, since otherwise the watchdog can trigger.
+static void arm_mptimer_state_change_handler(void *opaque, bool running, RunState state)
+{
+    ARMMPTimerState *s = opaque;
+    int i;
+
+    printf("arm_mptimer_state_change_handler: running = %d\n", running);
+
+    for (i = 0; i < ARRAY_SIZE(s->timerblock); i++) {
+        TimerBlock *tb = &s->timerblock[i];
+
+        ptimer_transaction_begin(tb->timer);
+
+        if (!running)
+            ptimer_stop(tb->timer);
+        else {
+            uint64_t count = ptimer_get_count(tb->timer);
+            timerblock_run(tb->timer,
+                           tb->control, count);
+        }
+
+        ptimer_transaction_commit(tb->timer);
+    }
+}
+
 static void timerblock_reset(TimerBlock *tb)
 {
     tb->control = 0;
@@ -281,6 +307,9 @@ static void arm_mptimer_realize(DeviceState *dev, Error **errp)
         TimerBlock *tb = &s->timerblock[i];
         sysbus_init_irq(sbd, &tb->irq_wdt);
     }
+
+    qemu_add_vm_change_state_handler(arm_mptimer_state_change_handler,
+                                     s);
 }
 
 static const VMStateDescription vmstate_timerblock = {
