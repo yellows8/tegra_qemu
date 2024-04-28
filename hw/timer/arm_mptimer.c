@@ -222,8 +222,6 @@ static void arm_mptimer_state_change_handler(void *opaque, bool running, RunStat
     ARMMPTimerState *s = opaque;
     int i;
 
-    printf("arm_mptimer_state_change_handler: running = %d\n", running);
-
     for (i = 0; i < ARRAY_SIZE(s->timerblock); i++) {
         TimerBlock *tb = &s->timerblock[i];
 
