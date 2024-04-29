@@ -339,6 +339,7 @@ static void __tegrax1_init(MachineState *machine)
     //AddressSpace *ape_as = g_new0(AddressSpace, 1);
     MemoryRegion *sysmem = get_system_memory();
     SysBusDevice *irq_dispatcher, *lic;
+    SysBusDevice *s = NULL;
     DeviceState *cpudev;
     //CPUState *cs;
     int i, j;
@@ -598,8 +599,16 @@ static void __tegrax1_init(MachineState *machine)
     tegra_avpcache_dev = sysbus_create_simple("tegra.avpcache", TEGRA_ARM_PERIF_BASE, NULL);
 
     /* APB DMA controller */
-    tegra_apb_dma_dev = sysbus_create_simple("tegra.apb_dma",
-                                             TEGRA_APB_DMA_BASE, NULL);
+    tegra_apb_dma_dev = qdev_new("tegra.apb_dma");
+    s = SYS_BUS_DEVICE(tegra_apb_dma_dev);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, TEGRA_APB_DMA_BASE);
+    sysbus_connect_irq(s, 0, DIRQ(INT_APB_DMA_COP));
+    sysbus_connect_irq(s, 1, DIRQ(INT_APB_DMA));
+    for (i=0; i<16; i++) {
+        sysbus_connect_irq(s, 2+i, DIRQ(INT_APB_DMA_CH0+i));
+        sysbus_connect_irq(s, 2+16+i, DIRQ(INT_APB_DMA_CH16+i));
+    }
 
     /* APB bus controller */
     tegra_apb_misc_dev = sysbus_create_simple("tegra.apb_misc",
@@ -615,7 +624,7 @@ static void __tegrax1_init(MachineState *machine)
 
     /* CPU Flow controller */
     tegra_flow_dev = qdev_new("tegra.flow");
-    SysBusDevice *s = SYS_BUS_DEVICE(tegra_flow_dev);
+    s = SYS_BUS_DEVICE(tegra_flow_dev);
     qdev_prop_set_uint32(DEVICE(tegra_flow_dev), "num-cpu", TEGRA_CCPLEX_NCORES);
     sysbus_realize_and_unref(s, &error_fatal);
     sysbus_mmio_map(s, 0, TEGRA_FLOW_CTRL_BASE);

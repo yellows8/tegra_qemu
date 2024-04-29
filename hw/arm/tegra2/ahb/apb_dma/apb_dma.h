@@ -337,9 +337,69 @@ typedef union trig_reg_u {
     uint32_t reg32;
 } trig_reg_t;
 
-#define CHANNEL_0_CSR_OFFSET 0x1000
-#define CHANNEL_0_CSR_RESET  0x00000000
-typedef union channel_0_csr_u {
+#define CHANNEL_TRIG_REG_OFFSET 0x2C
+#define CHANNEL_TRIG_REG_RESET  0x00000000
+typedef union channel_trig_reg_u {
+    uint32_t reg32;
+} channel_trig_reg_t;
+
+#define DMA_STATUS_OFFSET 0x30
+#define DMA_STATUS_RESET  0x00000000
+typedef union dma_status_u {
+    uint32_t reg32;
+} dma_status_t;
+
+#define CHANNEL_EN_REG_OFFSET 0x34
+#define CHANNEL_EN_REG_RESET  0x00000000
+typedef union channel_en_reg_u {
+    uint32_t reg32;
+} channel_en_reg_t;
+
+#define SECURITY_REG_OFFSET 0x38
+#define SECURITY_REG_RESET  0x00000000
+typedef union security_reg_u {
+    uint32_t reg32;
+} security_reg_t;
+
+#define CHANNEL_SWID_0_OFFSET 0x3C
+#define CHANNEL_SWID_0_RESET  0x00000000
+typedef union channel_swid_0_u {
+    uint32_t reg32;
+} channel_swid_0_t;
+
+#define CHAN_WT_REG0_OFFSET 0x44
+#define CHAN_WT_REG0_RESET  0x11111111
+typedef union chan_wt_reg0_u {
+    uint32_t reg32;
+} chan_wt_reg0_t;
+
+#define CHAN_WT_REG1_OFFSET 0x48
+#define CHAN_WT_REG1_RESET  0x11111111
+typedef union chan_wt_reg1_u {
+    uint32_t reg32;
+} chan_wt_reg1_t;
+
+#define CHAN_WT_REG2_OFFSET 0x4C
+#define CHAN_WT_REG2_RESET  0x11111111
+typedef union chan_wt_reg2_u {
+    uint32_t reg32;
+} chan_wt_reg2_t;
+
+#define CHAN_WT_REG3_OFFSET 0x50
+#define CHAN_WT_REG3_RESET  0x11111111
+typedef union chan_wt_reg3_u {
+    uint32_t reg32;
+} chan_wt_reg3_t;
+
+#define CHANNEL_SWID_1_OFFSET 0x54
+#define CHANNEL_SWID_1_RESET  0x00000000
+typedef union channel_swid_1_u {
+    uint32_t reg32;
+} channel_swid_1_t;
+
+#define CHANNEL_CSR_OFFSET 0x1000
+#define CHANNEL_CSR_RESET  0x00000000
+typedef union channel_csr_u {
     struct {
         unsigned int undefined_bits_0_1:2;
         unsigned int wcount:14;             /* Number of 32bit word cycles */
@@ -354,12 +414,12 @@ typedef union channel_0_csr_u {
     };
 
     uint32_t reg32;
-} channel_0_csr_t;
+} channel_csr_t;
 
-#define CHANNEL_0_STA_OFFSET 0x1004
-#define CHANNEL_0_STA_RESET  0x00000000
-#define CHANNEL_0_STA_WRMASK 0x4FFF0003
-typedef union channel_0_sta_u {
+#define CHANNEL_STA_OFFSET 0x1004
+#define CHANNEL_STA_RESET  0x00000000
+#define CHANNEL_STA_WRMASK 0x4FFF0003
+typedef union channel_sta_u {
     struct {
         unsigned int undefined_bits_0_1:2;
         unsigned int count:14;              /* Current 32bit word cycles Flags set /cleared by HW */
@@ -371,22 +431,34 @@ typedef union channel_0_sta_u {
     };
 
     uint32_t reg32;
-} channel_0_sta_t;
+} channel_sta_t;
 
-#define CHANNEL_0_AHB_PTR_OFFSET 0x1010
-#define CHANNEL_0_AHB_PTR_RESET  0x00000000
-typedef union channel_0_ahb_ptr_u {
+#define CHANNEL_DMA_BYTE_STA_OFFSET 0x1008
+#define CHANNEL_DMA_BYTE_STA_RESET  0x00000000
+typedef union channel_dma_byte_sta_u {
+    uint32_t reg32;
+} channel_dma_byte_sta_t;
+
+#define CHANNEL_CSRE_OFFSET 0x100C
+#define CHANNEL_CSRE_RESET  0x00000000
+typedef union channel_csre_u {
+    uint32_t reg32;
+} channel_csre_t;
+
+#define CHANNEL_AHB_PTR_OFFSET 0x1010
+#define CHANNEL_AHB_PTR_RESET  0x00000000
+typedef union channel_ahb_ptr_u {
     struct {
         unsigned int undefined_bits_0_1:2;
         unsigned int ahb_base:30;           /* APB-DMA Starting Address for AHB Bus: SW writes to modify */
     };
 
     uint32_t reg32;
-} channel_0_ahb_ptr_t;
+} channel_ahb_ptr_t;
 
-#define CHANNEL_0_AHB_SEQ_OFFSET 0x1014
-#define CHANNEL_0_AHB_SEQ_RESET  0x00002000
-typedef union channel_0_ahb_seq_u {
+#define CHANNEL_AHB_SEQ_OFFSET 0x1014
+#define CHANNEL_AHB_SEQ_RESET  0x00002000
+typedef union channel_ahb_seq_u {
     struct {
         unsigned int undefined_bits_0_15:16;
         unsigned int wrap:3;                /* AHB Address Wrap: AHB Address wrap-around window 0=No Wrap (default) 5=Wrap on 512 word window 1=Wrap on 32 word window 6=Wrap on 1024 word window 2=Wrap on 64 word window 7=Wrap on 2048 word window 3=Wrap on 128 word window 4=Wrap on 256 word window; 0 = NO_WRAP; 1 = WRAP_0N_32WORDS; 2 = WRAP_ON_64WORDS; 3 = WRAP_ON_128WORDS; 4 = WRAP_ON_256WORDS; 5 = WRAP_ON_512WORDS; 6 = WRAP_ON_1024WORDS; 7 = WRAP_ON_2048WORDS */
@@ -399,11 +471,11 @@ typedef union channel_0_ahb_seq_u {
     };
 
     uint32_t reg32;
-} channel_0_ahb_seq_t;
+} channel_ahb_seq_t;
 
-#define CHANNEL_0_APB_PTR_OFFSET 0x1018
-#define CHANNEL_0_APB_PTR_RESET  0x00000000
-typedef union channel_0_apb_ptr_u {
+#define CHANNEL_APB_PTR_OFFSET 0x1018
+#define CHANNEL_APB_PTR_RESET  0x00000000
+typedef union channel_apb_ptr_u {
     struct {
         unsigned int undefined_bits_0_1:2;
         unsigned int apb_base:14;           /* APB-DMA Starting address for APB Bus: APB Base address: Upper  16 bits are fixed at 0x7000:XXXX */
@@ -411,11 +483,11 @@ typedef union channel_0_apb_ptr_u {
     };
 
     uint32_t reg32;
-} channel_0_apb_ptr_t;
+} channel_apb_ptr_t;
 
-#define CHANNEL_0_APB_SEQ_OFFSET 0x101C
-#define CHANNEL_0_APB_SEQ_RESET  0x00002001
-typedef union channel_0_apb_seq_u {
+#define CHANNEL_APB_SEQ_OFFSET 0x101C
+#define CHANNEL_APB_SEQ_RESET  0x00002001
+typedef union channel_apb_seq_u {
     struct {
         unsigned int undefined_bits_0_15:16;
         unsigned int apb_addr_wrap:3;       /* APB Address Wrap-around Window 0 = No Wrap 1 = Wrap on 1 Word Window (def) 2 = Wrap on 2 Word Window 3 = Wrap on 4 Word Window 4 = Wrap on 8 Word Window 5 = Wrap on 16 Word Window 6 = Wrap on 32 Word Window 7 = Wrap on 64 Word Window (RSVD); 0 = NO_WRAP; 1 = WRAP_0N_1WORDS; 2 = WRAP_ON_2WORDS; 3 = WRAP_ON_4WORDS; 4 = WRAP_ON_8WORDS; 5 = WRAP_ON_16WORDS; 6 = WRAP_ON_32WORDS; 7 = WRAP_ON_64WORDS */
@@ -426,7 +498,19 @@ typedef union channel_0_apb_seq_u {
     };
 
     uint32_t reg32;
-} channel_0_apb_seq_t;
+} channel_apb_seq_t;
+
+#define CHANNEL_WCOUNT_OFFSET 0x1020
+#define CHANNEL_WCOUNT_RESET  0x00000000
+typedef union channel_wcount_u {
+    uint32_t reg32;
+} channel_wcount_t;
+
+#define CHANNEL_WORD_TRANSFER_OFFSET 0x1024
+#define CHANNEL_WORD_TRANSFER_RESET  0x00000000
+typedef union channel_word_transfer_u {
+    uint32_t reg32;
+} channel_word_transfer_t;
 
 #define CHANNEL_1_CSR_OFFSET 0x1020
 #define CHANNEL_1_CSR_RESET  0x00000000
