@@ -427,6 +427,7 @@ static void tegra_dc_compose_window(QemuConsole *console, display_window *win)
 static void tegra_dc_vblank(void *opaque)
 {
     tegra_dc *s = opaque;
+    bool flag=false;
 
     if (s->dc.cmd_display_command.display_ctrl_mode == 0) {
         return;
@@ -436,13 +437,20 @@ static void tegra_dc_vblank(void *opaque)
         host1x_incr_syncpt(s->dc.cmd_cont_syncpt_vsync.vsync_indx);
     }
 
-    if (!s->dc.cmd_int_mask.v_blank_int_mask) {
-        return;
+    if (s->dc.cmd_int_enable.v_blank_int_enable) {
+        s->dc.cmd_int_status.v_blank_int = 1;
+        if (s->dc.cmd_int_mask.v_blank_int_mask)
+            flag = true;
     }
 
-    s->dc.cmd_int_status.v_blank_int = 1;
+    if (s->dc.cmd_int_enable.frame_end_int_enable) {
+        s->dc.cmd_int_status.frame_end_int = 1;
+        if (s->dc.cmd_int_mask.frame_end_int_mask)
+            flag = true;
+    }
 
-    TRACE_IRQ_RAISE(s->iomem.addr, s->irq);
+    if (flag)
+        TRACE_IRQ_RAISE(s->iomem.addr, s->irq);
 }
 
 bool tegra_dc_get_vblank_syncpt(void *opaque, uint32_t *out)
