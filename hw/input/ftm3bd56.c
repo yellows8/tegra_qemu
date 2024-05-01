@@ -107,6 +107,13 @@ OBJECT_DECLARE_SIMPLE_TYPE(FTM3BD56State, FTM3BD56)
 #define STMFTS_DATA_MAX_SIZE (STMFTS_EVENT_SIZE * STMFTS_STACK_DEPTH)
 #define STMFTS_MAX_FINGERS   10
 
+struct TouchSlot {
+    int64_t tracking_id;
+    uint32_t x, y;
+    bool touched, last_touched;
+    bool updated;
+};
+
 struct FTM3BD56State {
     I2CSlave parent_obj;
     QemuInputHandlerState *handler;
@@ -117,13 +124,25 @@ struct FTM3BD56State {
     uint32_t events_write_pos;
     uint32_t events_num;
 
-    uint32_t x, y;
-    bool touched, last_touched;
-    bool updated;
+    struct TouchSlot touch_slots[STMFTS_MAX_FINGERS+1];
 
     uint8_t regs[0x10000];
     uint8_t cmd_args[0x8];
     uint8_t events[STMFTS_STACK_DEPTH][STMFTS_EVENT_SIZE];
+};
+
+static const VMStateDescription vmstate_touch_slot = {
+    .name = "ftm3bd56_touch_slot",
+    .version_id = 2,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_INT64(tracking_id, struct TouchSlot),
+        VMSTATE_UINT32(x, struct TouchSlot),
+        VMSTATE_UINT32(y, struct TouchSlot),
+        VMSTATE_BOOL(touched, struct TouchSlot),
+        VMSTATE_BOOL(last_touched, struct TouchSlot),
+        VMSTATE_BOOL(updated, struct TouchSlot),
+    }
 };
 
 static const VMStateDescription vmstate_ftm3bd56 = {
@@ -138,11 +157,8 @@ static const VMStateDescription vmstate_ftm3bd56 = {
         VMSTATE_UINT32(events_read_pos, FTM3BD56State),
         VMSTATE_UINT32(events_write_pos, FTM3BD56State),
         VMSTATE_UINT32(events_num, FTM3BD56State),
-        VMSTATE_UINT32(x, FTM3BD56State),
-        VMSTATE_UINT32(y, FTM3BD56State),
-        VMSTATE_BOOL(touched, FTM3BD56State),
-        VMSTATE_BOOL(last_touched, FTM3BD56State),
-        VMSTATE_BOOL(updated, FTM3BD56State),
+        VMSTATE_STRUCT_ARRAY(touch_slots, FTM3BD56State, STMFTS_MAX_FINGERS+1, 0,
+                             vmstate_touch_slot, struct TouchSlot),
         VMSTATE_UINT8_ARRAY(regs, FTM3BD56State, 0x10000),
         VMSTATE_UINT8_ARRAY(cmd_args, FTM3BD56State, 0x8),
         VMSTATE_UINT8_2DARRAY(events, FTM3BD56State, STMFTS_STACK_DEPTH, 0x8),
@@ -168,46 +184,73 @@ static void ftm3bd56_write_event(FTM3BD56State *s, uint8_t event, uint8_t status
         s->events_read_pos = (s->events_read_pos + 1) % STMFTS_STACK_DEPTH;
 }
 
+static void ftm3bd56_update_axis(struct TouchSlot *slot, InputAxis axis, int64_t value, int width, int height)
+{
+    uint32_t tmp=0;
+    if (axis == INPUT_AXIS_X) {
+        tmp = qemu_input_scale_axis(value,
+                                    INPUT_EVENT_ABS_MIN, INPUT_EVENT_ABS_MAX,
+                                    0, width);
+        if (slot->x != tmp) {
+            slot->x = tmp;
+            slot->updated = true;
+        }
+    } else if (axis == INPUT_AXIS_Y) {
+        tmp = qemu_input_scale_axis(value,
+                                    INPUT_EVENT_ABS_MIN, INPUT_EVENT_ABS_MAX,
+                                    0, height);
+        if (slot->y != tmp) {
+            slot->y = tmp;
+            slot->updated = true;
+        }
+    }
+}
+
 static void ftm3bd56_input_event(DeviceState *dev, QemuConsole *src,
                                  InputEvent *evt)
 {
     FTM3BD56State *s = (FTM3BD56State*)dev;
     InputMoveEvent *move;
     InputBtnEvent *btn;
+    InputMultiTouchEvent *mtt;
 
     int width=0, height=0;
-    uint32_t tmp=0;
     width = qemu_console_get_width(src, 1280);
     height = qemu_console_get_height(src, 720);
+
+    struct TouchSlot *slot = &s->touch_slots[0]; // First slot for mouse, rest for MTT.
 
     switch (evt->type) {
     case INPUT_EVENT_KIND_ABS:
         move = evt->u.abs.data;
-        if (move->axis == INPUT_AXIS_X) {
-            tmp = qemu_input_scale_axis(move->value,
-                                        INPUT_EVENT_ABS_MIN, INPUT_EVENT_ABS_MAX,
-                                        0, width);
-            if (s->x != tmp) {
-                s->x = tmp;
-                s->updated = true;
-            }
-        } else if (move->axis == INPUT_AXIS_Y) {
-            tmp = qemu_input_scale_axis(move->value,
-                                        INPUT_EVENT_ABS_MIN, INPUT_EVENT_ABS_MAX,
-                                        0, height);
-            if (s->y != tmp) {
-                s->y = tmp;
-                s->updated = true;
-            }
-        }
+        ftm3bd56_update_axis(slot, move->axis, move->value, width, height);
         break;
 
     case INPUT_EVENT_KIND_BTN:
         btn = evt->u.btn.data;
-        if (btn->button == INPUT_BUTTON_LEFT) {
-            if (s->touched != btn->down) {
-                s->touched = btn->down;
-                s->updated = true;
+        if (btn->button == INPUT_BUTTON_LEFT || btn->button == INPUT_BUTTON_TOUCH) {
+            if (slot->touched != btn->down) {
+                slot->touched = btn->down;
+                slot->updated = true;
+            }
+        }
+        break;
+
+    case INPUT_EVENT_KIND_MTT:
+        mtt = evt->u.mtt.data;
+        if (mtt->slot >=0 && mtt->slot < ARRAY_SIZE(s->touch_slots)-1) {
+            slot = &s->touch_slots[1+mtt->slot];
+
+            bool flag = (mtt->type != INPUT_MULTI_TOUCH_TYPE_END && mtt->type != INPUT_MULTI_TOUCH_TYPE_CANCEL);
+            if (flag != slot->touched) {
+                slot->touched = flag;
+                slot->updated = true;
+            }
+            ftm3bd56_update_axis(slot, mtt->axis, mtt->value, width, height);
+            if (mtt->type != INPUT_MULTI_TOUCH_TYPE_END) { // tracking_id is -1 for END.
+                slot->tracking_id = mtt->tracking_id;
+                if (slot->tracking_id>0)
+                    slot->tracking_id--;
             }
         }
         break;
@@ -224,40 +267,46 @@ static void ftm3bd56_input_sync(DeviceState *dev)
     uint8_t event=0;
     uint8_t status=0;
 
-    if (s->updated) {
-        s->updated = false;
+    for (int i=0; i<ARRAY_SIZE(s->touch_slots); i++) {
+        struct TouchSlot *slot = &s->touch_slots[i];
 
-        printf("ftm3bd56_input_sync: x = %d, y = %d, touched = %d, last_touched = %d\n", s->x, s->y, s->touched, s->last_touched);
+        if (!slot->updated)
+            continue;
+        slot->updated = false;
+
+        printf("ftm3bd56_input_sync [%d]: x = %d, y = %d, touched = %d, last_touched = %d\n", i, slot->x, slot->y, slot->touched, slot->last_touched);
         // TODO: fix rotation
 
-        if (s->last_touched == false && s->touched == true)
+        if (slot->last_touched == false && slot->touched == true)
             event = STMFTS_EV_MULTI_TOUCH_ENTER;
-        else if (s->last_touched == true && s->touched == false)
+        else if (slot->last_touched == true && slot->touched == false)
             event = STMFTS_EV_MULTI_TOUCH_LEAVE;
-        else if (s->last_touched == true && s->touched == true)
+        else if (slot->last_touched == true && slot->touched == true)
             event = STMFTS_EV_MULTI_TOUCH_MOTION;
         else
             event = STMFTS_EV_NO_EVENT;
 
-        data[1] = (s->y & 0xF);
-        data[0] = (s->y >> 4) & 0xFF;
-        data[1] |= (s->x & 0xF) << 4;
-        status = (s->x >> 4) & 0xFF;
+        event |= (slot->tracking_id & 0xF)<<4; // finger id. Use the same id for mouse and the first MTT slot.
 
-        if (s->touched) {
+        data[1] = (slot->y & 0xF);
+        data[0] = (slot->y >> 4) & 0xFF;
+        data[1] |= (slot->x & 0xF) << 4;
+        status = (slot->x >> 4) & 0xFF;
+
+        if (slot->touched) {
             data[2] = 0x1;//0x0D;
             data[4] = 0x1;//0x81;
         }
 
         ftm3bd56_write_event(s, event, status, data);
 
-        s->last_touched = s->touched;
+        slot->last_touched = slot->touched;
     }
 }
 
 static const QemuInputHandler ftm3bd56_handler = {
     .name  = "QEMU ftm3bd56 TouchPanel",
-    .mask  = INPUT_EVENT_MASK_BTN | INPUT_EVENT_MASK_ABS,
+    .mask  = INPUT_EVENT_MASK_BTN | INPUT_EVENT_MASK_ABS | INPUT_EVENT_MASK_MTT,
     .event = ftm3bd56_input_event,
     .sync  = ftm3bd56_input_sync,
 };
@@ -292,9 +341,7 @@ static void ftm3bd56_reset(DeviceState *dev)
     s->events_write_pos = 0;
     s->events_num = 0;
 
-    s->x = s->y = 0;
-    s->touched = s->last_touched = false;
-    s->updated = false;
+    memset(s->touch_slots, 0, sizeof(s->touch_slots));
 
     ftm3bd56_write_event(s, STMFTS_EV_CONTROLLER_READY, 0, NULL);
 
@@ -395,7 +442,7 @@ static uint8_t ftm3bd56_recv(I2CSlave *i2c)
             return s->events[s->events_read_pos][s->recv_pos++ % STMFTS_EVENT_SIZE];
         }
 
-        qemu_log_mask(LOG_GUEST_ERROR, "%s: recv_pos + events_read_pos is too large for STMFTS_READ_ONE_EVENT/STMFTS_READ_ALL_EVENT, returning 0.\n",
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: recv_pos + events_read_pos is too large for STMFTS_READ_ONE_EVENT/STMFTS_READ_ALL_EVENT/STMFTS_LATEST_EVENT, returning 0.\n",
                       __func__);
         return 0;
     }
