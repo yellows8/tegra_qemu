@@ -16,6 +16,7 @@
 #include "hw/i2c/i2c.h"
 #include "qom/object.h"
 #include "migration/vmstate.h"
+#include "ui/console.h"
 
 #define TYPE_FTM3BD56 "ftm3bd56"
 OBJECT_DECLARE_SIMPLE_TYPE(FTM3BD56State, FTM3BD56)
@@ -108,13 +109,21 @@ OBJECT_DECLARE_SIMPLE_TYPE(FTM3BD56State, FTM3BD56)
 
 struct FTM3BD56State {
     I2CSlave parent_obj;
+    QemuInputHandlerState *handler;
     int32_t addr;
     uint32_t num_args;
     uint32_t recv_pos;
+    uint32_t events_read_pos;
+    uint32_t events_write_pos;
+    uint32_t events_num;
+
+    uint32_t x, y;
+    bool touched, last_touched;
+    bool updated;
 
     uint8_t regs[0x10000];
     uint8_t cmd_args[0x8];
-    uint8_t event[0x8];
+    uint8_t events[STMFTS_STACK_DEPTH][STMFTS_EVENT_SIZE];
 };
 
 static const VMStateDescription vmstate_ftm3bd56 = {
@@ -126,18 +135,146 @@ static const VMStateDescription vmstate_ftm3bd56 = {
         VMSTATE_INT32(addr, FTM3BD56State),
         VMSTATE_UINT32(num_args, FTM3BD56State),
         VMSTATE_UINT32(recv_pos, FTM3BD56State),
+        VMSTATE_UINT32(events_read_pos, FTM3BD56State),
+        VMSTATE_UINT32(events_write_pos, FTM3BD56State),
+        VMSTATE_UINT32(events_num, FTM3BD56State),
+        VMSTATE_UINT32(x, FTM3BD56State),
+        VMSTATE_UINT32(y, FTM3BD56State),
+        VMSTATE_BOOL(touched, FTM3BD56State),
+        VMSTATE_BOOL(last_touched, FTM3BD56State),
+        VMSTATE_BOOL(updated, FTM3BD56State),
         VMSTATE_UINT8_ARRAY(regs, FTM3BD56State, 0x10000),
         VMSTATE_UINT8_ARRAY(cmd_args, FTM3BD56State, 0x8),
-        VMSTATE_UINT8_ARRAY(event, FTM3BD56State, 0x8),
+        VMSTATE_UINT8_2DARRAY(events, FTM3BD56State, STMFTS_STACK_DEPTH, 0x8),
         VMSTATE_END_OF_LIST()
     }
 };
 
-static void ftm3bd56_set_event(FTM3BD56State *s, uint8_t event, uint8_t status)
+static void ftm3bd56_write_event(FTM3BD56State *s, uint8_t event, uint8_t status, uint8_t *data)
 {
-    memset(s->event, 0, sizeof(s->event));
-    s->event[0] = event;
-    s->event[1] = status;
+    uint8_t tmpevent[STMFTS_EVENT_SIZE]={};
+
+    if (s->events_num == STMFTS_STACK_DEPTH-1) return; // No more space.
+
+    tmpevent[0] = event;
+    tmpevent[1] = status;
+    if (data) memcpy(&tmpevent[2], data, 6);
+
+    memcpy(s->events[s->events_write_pos], tmpevent, sizeof(tmpevent));
+    s->events_write_pos = (s->events_write_pos + 1) % STMFTS_STACK_DEPTH;
+    s->events_num++;
+
+    if (s->events_num == 1)
+        s->events_read_pos = (s->events_read_pos + 1) % STMFTS_STACK_DEPTH;
+}
+
+static void ftm3bd56_input_event(DeviceState *dev, QemuConsole *src,
+                                 InputEvent *evt)
+{
+    FTM3BD56State *s = (FTM3BD56State*)dev;
+    InputMoveEvent *move;
+    InputBtnEvent *btn;
+
+    int width=0, height=0;
+    uint32_t tmp=0;
+    width = qemu_console_get_width(src, 1280);
+    height = qemu_console_get_height(src, 720);
+
+    switch (evt->type) {
+    case INPUT_EVENT_KIND_ABS:
+        move = evt->u.abs.data;
+        if (move->axis == INPUT_AXIS_X) {
+            tmp = qemu_input_scale_axis(move->value,
+                                        INPUT_EVENT_ABS_MIN, INPUT_EVENT_ABS_MAX,
+                                        0, width);
+            if (s->x != tmp) {
+                s->x = tmp;
+                s->updated = true;
+            }
+        } else if (move->axis == INPUT_AXIS_Y) {
+            tmp = qemu_input_scale_axis(move->value,
+                                        INPUT_EVENT_ABS_MIN, INPUT_EVENT_ABS_MAX,
+                                        0, height);
+            if (s->y != tmp) {
+                s->y = tmp;
+                s->updated = true;
+            }
+        }
+        break;
+
+    case INPUT_EVENT_KIND_BTN:
+        btn = evt->u.btn.data;
+        if (btn->button == INPUT_BUTTON_LEFT) {
+            if (s->touched != btn->down) {
+                s->touched = btn->down;
+                s->updated = true;
+            }
+        }
+        break;
+
+    default:
+        break;
+    }
+}
+
+static void ftm3bd56_input_sync(DeviceState *dev)
+{
+    FTM3BD56State *s = (FTM3BD56State*)dev;
+    uint8_t data[6]={};
+    uint8_t event=0;
+    uint8_t status=0;
+
+    if (s->updated) {
+        s->updated = false;
+
+        printf("ftm3bd56_input_sync: x = %d, y = %d, touched = %d, last_touched = %d\n", s->x, s->y, s->touched, s->last_touched);
+        // TODO: fix rotation
+
+        if (s->last_touched == false && s->touched == true)
+            event = STMFTS_EV_MULTI_TOUCH_ENTER;
+        else if (s->last_touched == true && s->touched == false)
+            event = STMFTS_EV_MULTI_TOUCH_LEAVE;
+        else if (s->last_touched == true && s->touched == true)
+            event = STMFTS_EV_MULTI_TOUCH_MOTION;
+        else
+            event = STMFTS_EV_NO_EVENT;
+
+        data[1] = (s->y & 0xF);
+        data[0] = (s->y >> 4) & 0xFF;
+        data[1] |= (s->x & 0xF) << 4;
+        status = (s->x >> 4) & 0xFF;
+
+        if (s->touched) {
+            data[2] = 0x1;//0x0D;
+            data[4] = 0x1;//0x81;
+        }
+
+        ftm3bd56_write_event(s, event, status, data);
+
+        s->last_touched = s->touched;
+    }
+}
+
+static const QemuInputHandler ftm3bd56_handler = {
+    .name  = "QEMU ftm3bd56 TouchPanel",
+    .mask  = INPUT_EVENT_MASK_BTN | INPUT_EVENT_MASK_ABS,
+    .event = ftm3bd56_input_event,
+    .sync  = ftm3bd56_input_sync,
+};
+
+static void ftm3bd56_realize(DeviceState *dev, Error **errp)
+{
+    FTM3BD56State *s = FTM3BD56(dev);
+
+    s->handler = qemu_input_handler_register((DeviceState *)s,
+                                             &ftm3bd56_handler);
+}
+
+static void ftm3bd56_unrealize(DeviceState *dev)
+{
+    FTM3BD56State *s = FTM3BD56(dev);
+
+    qemu_input_handler_unregister(s->handler);
 }
 
 static void ftm3bd56_reset(DeviceState *dev)
@@ -151,7 +288,15 @@ static void ftm3bd56_reset(DeviceState *dev)
     memset(s->regs, 0, sizeof(s->regs));
     memset(s->cmd_args, 0, sizeof(s->cmd_args));
 
-    ftm3bd56_set_event(s, STMFTS_EV_CONTROLLER_READY, 0);
+    s->events_read_pos = STMFTS_STACK_DEPTH-1;
+    s->events_write_pos = 0;
+    s->events_num = 0;
+
+    s->x = s->y = 0;
+    s->touched = s->last_touched = false;
+    s->updated = false;
+
+    ftm3bd56_write_event(s, STMFTS_EV_CONTROLLER_READY, 0, NULL);
 
     s->regs[0x60] = 0x70; // Offset for fw-info.
     s->regs[0x61] = 0x0;
@@ -173,13 +318,13 @@ static int ftm3bd56_send(I2CSlave *i2c, uint8_t data)
         addr = s->addr;
 
         if (addr == STMFTS_MS_CX_TUNING) {
-            ftm3bd56_set_event(s, STMFTS_EV_STATUS, STMFTS_EV_STATUS_MS_CX_TUNING_DONE);
+            ftm3bd56_write_event(s, STMFTS_EV_STATUS, STMFTS_EV_STATUS_MS_CX_TUNING_DONE, NULL);
         }
         else if (addr == STMFTS_SS_CX_TUNING) {
-            ftm3bd56_set_event(s, STMFTS_EV_STATUS, STMFTS_EV_STATUS_SS_CX_TUNING_DONE);
+            ftm3bd56_write_event(s, STMFTS_EV_STATUS, STMFTS_EV_STATUS_SS_CX_TUNING_DONE, NULL);
         }
         else if (addr == STMFTS_SAVE_CX_TUNING) {
-            ftm3bd56_set_event(s, STMFTS_EV_STATUS, STMFTS_EV_STATUS_WRITE_CX_TUNE_DONE);
+            ftm3bd56_write_event(s, STMFTS_EV_STATUS, STMFTS_EV_STATUS_WRITE_CX_TUNE_DONE, NULL);
         }
     } else {
         addr = s->addr;
@@ -204,20 +349,18 @@ static int ftm3bd56_send(I2CSlave *i2c, uint8_t data)
             s->cmd_args[s->num_args++] = data;
 
             if (addr == STMFTS_ITO_CHECK && s->num_args == 2) {
-                ftm3bd56_set_event(s, 0xF, 0x5);
+                ftm3bd56_write_event(s, 0xF, 0x5, NULL);
             }
             else if (addr == STMFTS_WRITE_REG && s->num_args == 3) {
                 if (s->cmd_args[0] == 0x0 && s->cmd_args[1] == 0x28 && s->cmd_args[2] == 0x80) { // System reset cmd
-                    ftm3bd56_set_event(s, STMFTS_EV_CONTROLLER_READY, 0);
+                    ftm3bd56_write_event(s, STMFTS_EV_CONTROLLER_READY, 0, NULL);
                 }
             }
             else if (addr == STMFTS_VENDOR && s->num_args == 1) {
                 if (s->cmd_args[0] == STMFTS_VENDOR_GPIO_STATE) {
-                    ftm3bd56_set_event(s, STMFTS_EV_VENDOR, STMFTS_VENDOR_GPIO_STATE);
                     // GPIOs for "NISSHA NFT-K12D":
-                    s->event[2] = 1;
-                    s->event[3] = 1;
-                    s->event[4] = 1;
+                    uint8_t event_data[3] = {1, 1, 1};
+                    ftm3bd56_write_event(s, STMFTS_EV_VENDOR, STMFTS_VENDOR_GPIO_STATE, event_data);
                 }
             }
         }
@@ -240,10 +383,19 @@ static uint8_t ftm3bd56_recv(I2CSlave *i2c)
     }
     int32_t addr = s->addr;
 
-    if (addr == STMFTS_READ_ONE_EVENT) {
-        if (s->recv_pos < sizeof(s->event)) return s->event[s->recv_pos++];
+    if (addr == STMFTS_READ_ONE_EVENT || addr == STMFTS_READ_ALL_EVENT || addr == STMFTS_LATEST_EVENT) {
+        if ((s->recv_pos % STMFTS_EVENT_SIZE) + s->events_read_pos*STMFTS_EVENT_SIZE < sizeof(s->events)) {
+            if (s->recv_pos % STMFTS_EVENT_SIZE == 7) {
+                if (s->events_num) {
+                    if (s->events_num > 1)
+                        s->events_read_pos = (s->events_read_pos + 1) % STMFTS_STACK_DEPTH;
+                    s->events_num--;
+                }
+            }
+            return s->events[s->events_read_pos][s->recv_pos++ % STMFTS_EVENT_SIZE];
+        }
 
-        qemu_log_mask(LOG_GUEST_ERROR, "%s: recv_pos is too large for STMFTS_READ_ONE_EVENT, returning 0.\n",
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: recv_pos + events_read_pos is too large for STMFTS_READ_ONE_EVENT/STMFTS_READ_ALL_EVENT, returning 0.\n",
                       __func__);
         return 0;
     }
@@ -265,6 +417,11 @@ static uint8_t ftm3bd56_recv(I2CSlave *i2c)
         qemu_log_mask(LOG_GUEST_ERROR, "%s: pos is too large for STMFTS_RW_FRAMEBUFFER_REG, returning 0.\n",
                       __func__);
         return 0;
+    }
+    else if (addr == STMFTS_WRITE_REG && s->num_args == 2) {
+        if (s->cmd_args[0] == 0x0 && s->cmd_args[1] == 0x23) { // Total events
+            return s->recv_pos++ != 1 ? 0 : s->events_num<<1;
+        }
     }
 
     qemu_log_mask(LOG_GUEST_ERROR, "%s: unhandled addr, returning 0: 0x%02X\n",
@@ -292,6 +449,8 @@ static void ftm3bd56_class_init(ObjectClass *klass, void *data)
     I2CSlaveClass *sc = I2C_SLAVE_CLASS(klass);
 
     dc->reset = ftm3bd56_reset;
+    dc->realize = ftm3bd56_realize;
+    dc->unrealize = ftm3bd56_unrealize;
     dc->vmsd = &vmstate_ftm3bd56;
     sc->send = ftm3bd56_send;
     sc->recv = ftm3bd56_recv;
