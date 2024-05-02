@@ -228,7 +228,7 @@ static void ftm3bd56_input_event(DeviceState *dev, QemuConsole *src,
 
     case INPUT_EVENT_KIND_BTN:
         btn = evt->u.btn.data;
-        if (btn->button == INPUT_BUTTON_LEFT || btn->button == INPUT_BUTTON_TOUCH) {
+        if (btn->button == INPUT_BUTTON_LEFT) {
             if (slot->touched != btn->down) {
                 slot->touched = btn->down;
                 slot->updated = true;
@@ -293,10 +293,9 @@ static void ftm3bd56_input_sync(DeviceState *dev)
         data[1] |= (slot->x & 0xF) << 4;
         status = (slot->x >> 4) & 0xFF;
 
-        if (slot->touched) {
-            data[2] = 0x1;//0x0D;
-            data[4] = 0x1;//0x81;
-        }
+        // Used for determining diameter and angle.
+        data[2] = 0x0D;
+        data[4] = 0x81;
 
         ftm3bd56_write_event(s, event, status, data);
 
