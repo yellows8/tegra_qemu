@@ -274,9 +274,6 @@ static void ftm3bd56_input_sync(DeviceState *dev)
             continue;
         slot->updated = false;
 
-        printf("ftm3bd56_input_sync [%d]: x = %d, y = %d, touched = %d, last_touched = %d\n", i, slot->x, slot->y, slot->touched, slot->last_touched);
-        // TODO: fix rotation
-
         if (slot->last_touched == false && slot->touched == true)
             event = STMFTS_EV_MULTI_TOUCH_ENTER;
         else if (slot->last_touched == true && slot->touched == false)
