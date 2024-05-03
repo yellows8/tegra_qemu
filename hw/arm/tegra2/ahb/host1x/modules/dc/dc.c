@@ -59,6 +59,7 @@ typedef struct tegra_dc_state {
 
     uint32_t disp_width;
     uint32_t disp_height;
+    int32_t rotate;
 
     MemoryRegion iomem;
 
@@ -402,7 +403,7 @@ void tegra_dc_pixman_transform_rotate(pixman_image_t *image, int rotate, int *x,
     tegra_dc_pixman_transform_flags(image, flipx, flipy, transpose, x, y, width, height);
 }
 
-static void tegra_dc_compose_window(QemuConsole *console, display_window *win)
+static void tegra_dc_compose_window(QemuConsole *console, display_window *win, int32_t rotate)
 {
     if (!win->regs_active.win_options.win_enable || !win->surface)
         return;
@@ -412,8 +413,8 @@ static void tegra_dc_compose_window(QemuConsole *console, display_window *win)
     int width = win->regs_active.win_size.h_size;
     int height = win->regs_active.win_size.v_size;
 
-    if (graphic_rotate) {
-        tegra_dc_pixman_transform_rotate(win->surface->image, graphic_rotate, &x, &y, &width, &height);
+    if (rotate) {
+        tegra_dc_pixman_transform_rotate(win->surface->image, rotate, &x, &y, &width, &height);
     }
 
     pixman_image_composite(PIXMAN_OP_SRC,
@@ -501,7 +502,7 @@ static void tegra_dc_compose(void *opaque)
 
     int width = s->dc.disp_disp_active.h_disp_active;
     int height = s->dc.disp_disp_active.v_disp_active;
-    if (graphic_rotate == 90 || graphic_rotate == 270) {
+    if (s->rotate == 90 || s->rotate == 270) {
         width = s->dc.disp_disp_active.v_disp_active;
         height = s->dc.disp_disp_active.h_disp_active;
     }
@@ -523,11 +524,11 @@ static void tegra_dc_compose(void *opaque)
                                      &rect);
     }
 
-    tegra_dc_compose_window(s->console, &s->win_a);
-    tegra_dc_compose_window(s->console, &s->win_b);
-    tegra_dc_compose_window(s->console, &s->win_c);
-    tegra_dc_compose_window(s->console, &s->win_d);
-    tegra_dc_compose_window(s->console, &s->win_t);
+    tegra_dc_compose_window(s->console, &s->win_a, s->rotate);
+    tegra_dc_compose_window(s->console, &s->win_b, s->rotate);
+    tegra_dc_compose_window(s->console, &s->win_c, s->rotate);
+    tegra_dc_compose_window(s->console, &s->win_d, s->rotate);
+    tegra_dc_compose_window(s->console, &s->win_t, s->rotate);
 
     dpy_gfx_update(s->console, 0, 0, width, height);
 }
@@ -567,6 +568,7 @@ static void tegra_dc_priv_realize(DeviceState *dev, Error **errp)
 static Property tegra_dc_properties[] = {
     DEFINE_PROP_UINT32("display_width",  tegra_dc, disp_width, 1366),
     DEFINE_PROP_UINT32("display_height", tegra_dc, disp_height, 768),
+    DEFINE_PROP_INT32("rotate",  tegra_dc, rotate, 0),
     DEFINE_PROP_UINT8("refresh_rate", tegra_dc, disp_refresh_rate, 60),
     DEFINE_PROP_UINT8("class_id", tegra_dc, module.class_id, 0x70),
     DEFINE_PROP_END_OF_LIST(),

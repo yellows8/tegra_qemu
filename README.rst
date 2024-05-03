@@ -67,7 +67,7 @@ Actual GPU rendering will not be supported. Playing commercial titles with graph
 
 * To resume after sleep-mode is entered via the PMC reg, use ``system_wakeup`` via the QEMU monitor. This is only available when tegra.evp bpmp-reset-vector is left at the default, and when ``-bios`` is specified.
 
-* The ``-rotate {value}`` option is also supported for rotating the display.
+* To rotate the display: ``-global driver=tegra.dc,property=rotate,value={0/90/180/270}`` Note that -rotate is not used for this since that also enables rotating the host mouse input.
 
 * To configure the value of register APB_MISC_PP_STRAPPING_OPT_A_0 (default is setup for booting from emmc): ``-global driver=tegra.apb_misc,property=pp-strapping-opt-a,value={value}``
 
