@@ -212,7 +212,14 @@ void host1x_clear_syncpts_irq_status(enum hcpu cpu_id, uint32_t index, uint32_t 
 
     syncpts_percpu_irq_sts[cpu_id][index] &= ~clear_mask;
 
-    if (syncpts_percpu_irq_sts[cpu_id][index] == 0) {
+    bool flag=false;
+    for (i=0; i<ARRAY_SIZE(syncpts_percpu_irq_sts[cpu_id]); i++) {
+        if (syncpts_percpu_irq_sts[cpu_id][i]) {
+            flag = true;
+            break;
+        }
+    }
+    if (!flag) {
         host1x_set_irq_status_bit(cpu_id, 0);
     }
 
