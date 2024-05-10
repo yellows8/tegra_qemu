@@ -75,7 +75,10 @@ static MemTxResult tegra_gpu_translate_gmmu(tegra_gpu *s, dma_addr_t addr,
     pdb &= (1UL<<34)-1; // TODO: handle properly?
 
     size_t pde_lowbit = big_page_size ? 27 : 26;
-    size_t pte_lowbit = 12; // TODO: fix
+    size_t pte_lowbit = 12;
+
+    if (addr >= SZ_1G*16) // big pages range
+        pte_lowbit = big_page_size ? 17 : 16;
 
     uint64_t pde_i = (addr & ((1UL<<NV_GMMU_VA_RANGE)-1)) >> pde_lowbit;
     uint64_t pte_i = (addr & ((1UL<<pde_lowbit)-1)) >> pte_lowbit;
