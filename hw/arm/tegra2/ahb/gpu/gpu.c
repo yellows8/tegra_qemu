@@ -21,12 +21,14 @@
 
 // NOTE: Not intended to render anything.
 
-// Various reg names are from linux nvgpu.
+// Various reg names etc are from linux nvgpu.
 
 #include "tegra_common.h"
 
 #include "hw/sysbus.h"
+#include "sysemu/dma.h"
 #include "qemu/log.h"
+#include "qemu/cutils.h"
 
 #include "host1x_syncpts.h"
 
@@ -40,6 +42,8 @@
 #define TEGRA_GPU(obj) OBJECT_CHECK(tegra_gpu, (obj), TYPE_TEGRA_GPU)
 #define DEFINE_REG32(reg) reg##_t reg
 #define WR_MASKED(r, d, m)  r = (r & ~m##_WRMASK) | (d & m##_WRMASK)
+
+#define NV_GMMU_VA_RANGE          38
 
 typedef struct tegra_gpu_state {
     SysBusDevice parent_obj;
@@ -59,6 +63,145 @@ static const VMStateDescription vmstate_tegra_gpu = {
         VMSTATE_END_OF_LIST()
     }
 };
+
+static MemTxResult tegra_gpu_translate_gmmu(tegra_gpu *s, dma_addr_t addr,
+                                            dma_addr_t *out_addr,
+                                            IOMMUAccessFlags flag, dma_addr_t pdb, bool big_page_size)
+{
+    MemTxResult res = MEMTX_OK;
+
+    *out_addr = 0;
+
+    pdb &= (1UL<<34)-1; // TODO: handle properly?
+
+    size_t pde_lowbit = big_page_size ? 27 : 26;
+    size_t pte_lowbit = 12; // TODO: fix
+
+    uint64_t pde_i = (addr & ((1UL<<NV_GMMU_VA_RANGE)-1)) >> pde_lowbit;
+    uint64_t pte_i = (addr & ((1UL<<pde_lowbit)-1)) >> pte_lowbit;
+
+    uint32_t pde[2]={};
+    uint32_t pte[2]={};
+
+    dma_addr_t pte_base=0;
+
+    res = dma_memory_read(&address_space_memory, pdb + pde_i*8,
+                          pde, sizeof(pde),
+                          MEMTXATTRS_UNSPECIFIED);
+
+    if (res == MEMTX_OK) {
+        if ((pde[0] & 0x1) && (pde[1] & 0x8)) { // gmmu_pde_aperture_big_video_memory_f, gmmu_pde_vol_big_true_f
+            pte_base = ((dma_addr_t)pde[0]>>4) << 12;
+        }
+        else if ((pde[1] & 0x1) && (pde[1] & 0x4)) { // gmmu_pde_aperture_small_video_memory_f, gmmu_pde_vol_small_true_f
+            pte_base = ((dma_addr_t)pde[1]>>4) << 12;
+        }
+        else
+            res = MEMTX_DECODE_ERROR;
+    }
+
+    if (res == MEMTX_OK) {
+        pte_base &= (1UL<<34)-1;
+
+        res = dma_memory_read(&address_space_memory, pte_base + pte_i*8,
+                              pte, sizeof(pte),
+                              MEMTXATTRS_UNSPECIFIED);
+    }
+
+    if (res == MEMTX_OK) {
+        if (pte[0] & 0x1) { // gmmu_pte_valid_true_f
+            if (((pte[0] & 0x4) && (flag & IOMMU_WO)) ||      // gmmu_pte_read_only_true_f
+                ((pte[1] & 0x40000000) && (flag & IOMMU_RO))) // gmmu_pte_read_disable_true_f
+                res = MEMTX_ACCESS_ERROR;
+        }
+        else
+            res = MEMTX_DECODE_ERROR;
+    }
+
+    if (res == MEMTX_OK) {
+        *out_addr = ((dma_addr_t)pte[0]>>4) << 12;
+        *out_addr &= (1UL<<34)-1;
+        *out_addr |= addr & ((1UL<<pte_lowbit)-1);
+    }
+
+    return res;
+}
+
+static MemTxResult tegra_gpu_parse_gpfifo(tegra_gpu *s, uint32_t original_value, uint32_t value,
+                                          dma_addr_t gpfifo_base, dma_addr_t gpfifo_entries, dma_addr_t pdb, bool big_page_size)
+{
+    MemTxResult res = MEMTX_OK;
+    dma_addr_t gpfifo_gva = 0, gpfifo_gva_tmp = 0, gpfifo_ptr = 0;
+    uint32_t gpfifo[2]={};
+
+    for (uint64_t i=original_value % gpfifo_entries; i!=value; i = (i+1) % gpfifo_entries) {
+        gpfifo_gva_tmp = gpfifo_base + i*8;
+        if (gpfifo_ptr==0 || ((gpfifo_gva & ~0xFFF) != (gpfifo_gva_tmp & ~0xFFF))) {
+            gpfifo_gva = gpfifo_gva_tmp & ~0xFFF;
+            res = tegra_gpu_translate_gmmu(s, gpfifo_gva,
+                                           &gpfifo_ptr,
+                                           IOMMU_RO, pdb, big_page_size);
+            if (res != MEMTX_OK) break;
+        }
+
+        res = dma_memory_read(&address_space_memory, gpfifo_ptr | (gpfifo_gva_tmp & 0xFFF),
+                              gpfifo, sizeof(gpfifo),
+                              MEMTXATTRS_UNSPECIFIED);
+        if (res != MEMTX_OK) break;
+
+        qemu_hexdump(stdout, "gpfifo", gpfifo, sizeof(gpfifo));
+    }
+
+    return res;
+}
+
+static void tegra_gpu_process_gpfifo(tegra_gpu *s, uint32_t channel_id, uint32_t original_value, uint32_t value)
+{
+    uint32_t ccsr = s->regs[(0x00800000 + channel_id*8)>>2]; // ccsr_channel_inst
+
+    if (ccsr & 0x80000000) { // ccsr_channel_inst_bind_true_f
+        dma_addr_t inst_ptr = (((dma_addr_t)ccsr) & 0xFFFFFFF) << 12;
+        inst_ptr &= (1UL<<34)-1;
+
+        uint32_t inst[134]={};
+        uint32_t *gp_base = &inst[18]; // ram_fc_gp_base/ram_fc_gp_base_hi_w
+        uint32_t *page_dir_base = &inst[128]; // ram_in_page_dir_base_lo_w/ram_in_page_dir_base_hi_w
+
+        if (dma_memory_read(&address_space_memory, inst_ptr,
+                            inst, sizeof(inst),
+                            MEMTXATTRS_UNSPECIFIED) == MEMTX_OK) {
+            dma_addr_t gpfifo_base = gp_base[0] & (0x1FFFFFFF << 3);
+            gpfifo_base |= ((dma_addr_t)gp_base[1] & 0xFF) << 32;
+
+            dma_addr_t gpfifo_entries = (gp_base[1] >> 16) & 0x1F; // pbdma_gp_base_hi_limit2_f
+            gpfifo_entries = 1<<gpfifo_entries;
+
+            dma_addr_t pdb = page_dir_base[0] & (0xFFFFF << 12);
+            pdb |= ((dma_addr_t)page_dir_base[1] & 0xFF) << 32;
+
+            bool big_page_size = (page_dir_base[0] & 0x800) == 0; // big_page_size. Bit clear for 128kb, set for 64kb.
+
+            MemTxResult res = tegra_gpu_parse_gpfifo(s, original_value, value, gpfifo_base, gpfifo_entries, pdb, big_page_size);
+            if (res != MEMTX_OK) printf("tegra_gpu_process_gpfifo: tegra_gpu_parse_gpfifo(): 0x%x\n", res);
+        }
+    }
+
+    // Not needed with the workaround in host1x_channel.
+    // HACK: The GPU updates syncpts via GPFIFO. Avoid parsing GPFIFO etc and just update all syncpts where threshold is set.
+    #if 0
+    for (uint32_t syncpt=0; syncpt<NV_HOST1X_SYNCPT_NB_PTS; syncpt++) {
+        //uint32_t tmp=0, tmp2;
+        uint32_t threshold = host1x_get_syncpt_threshold(syncpt);
+        if (threshold!=0 /*&&
+           (tegra_dca_dev && tegra_dc_get_vblank_syncpt(tegra_dca_dev, &tmp) && syncpt!=tmp) &&
+           (tegra_dcb_dev && tegra_dc_get_vblank_syncpt(tegra_dcb_dev, &tmp2) && syncpt!=tmp2)*/)
+            {
+                host1x_set_syncpt_count(syncpt, threshold);
+                qemu_log_mask(LOG_GUEST_ERROR, "tegra.gpu: Set syncpt_count for syncpt 0x%x to 0x%x, for GPFIO handling.\n", syncpt, threshold);
+            }
+        }
+    #endif
+}
 
 static uint64_t tegra_gpu_priv_read(void *opaque, hwaddr offset,
                                      unsigned size)
@@ -100,6 +243,8 @@ static void tegra_gpu_priv_write(void *opaque, hwaddr offset,
                 TRACE_IRQ_LOWER(s->iomem.addr, s->irq_nonstall);
             return;
         }
+
+        uint32_t original_value = s->regs[offset/sizeof(uint32_t)];
 
         s->regs[offset/sizeof(uint32_t)] = (s->regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
 
@@ -154,7 +299,6 @@ static void tegra_gpu_priv_write(void *opaque, hwaddr offset,
         }
         else if ((offset == 0x409A10 || offset == 0x409B00) && (value & 0x1F))
             s->regs[offset>>2] &= ~0x1F;
-        #if 0 // Not needed with the workaround in host1x_channel.
         else if ((s->regs[0x2254>>2] & 0x10000000)) { // fifo_bar1_base fifo_bar1_base_valid_true_f
             uint32_t base = (s->regs[0x2254>>2] & 0xFFFFFFF)<<12;
             base+= 0x1000000;
@@ -162,22 +306,12 @@ static void tegra_gpu_priv_write(void *opaque, hwaddr offset,
             size_t entrysize = 1<<9;
             if (offset >= base && offset < base+num_channels*entrysize) {
                 if (((offset - base) & (entrysize-1)) == 35*4) { // ram_userd_gp_put_w (GPFIFO)
-                    // HACK: The GPU updates syncpts via GPFIFO. Avoid parsing GPFIFO etc and just update all syncpts where threshold is set.
-                    for (uint32_t syncpt=0; syncpt<NV_HOST1X_SYNCPT_NB_PTS; syncpt++) {
-                        //uint32_t tmp=0, tmp2;
-                        uint32_t threshold = host1x_get_syncpt_threshold(syncpt);
-                        if (threshold!=0 /*&&
-                            (tegra_dca_dev && tegra_dc_get_vblank_syncpt(tegra_dca_dev, &tmp) && syncpt!=tmp) &&
-                            (tegra_dcb_dev && tegra_dc_get_vblank_syncpt(tegra_dcb_dev, &tmp2) && syncpt!=tmp2)*/)
-                        {
-                            host1x_set_syncpt_count(syncpt, threshold);
-                            qemu_log_mask(LOG_GUEST_ERROR, "tegra.gpu: Set syncpt_count for syncpt 0x%x to 0x%x, for GPFIO handling.\n", syncpt, threshold);
-                        }
-                    }
+                    uint32_t channel_id = (offset - base) / entrysize;
+
+                    tegra_gpu_process_gpfifo(s, channel_id, original_value, value);
                 }
             }
         }
-        #endif
     }
 }
 
