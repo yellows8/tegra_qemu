@@ -66,6 +66,18 @@ static const VMStateDescription vmstate_tegra_gpu = {
     }
 };
 
+typedef union tegra_gpu_cmdhdr {
+    struct {
+        unsigned int method_address:12;
+        unsigned int reserved:1;
+        unsigned int method_subchannel:3;
+        unsigned int arg:13;
+        unsigned int sec_op:3;
+    };
+
+    uint32_t data;
+} tegra_gpu_cmdhdr;
+
 #ifdef TEGRA_GPU_DEBUG
 static void tegra_gpu_log_hexdump(const char *prefix,
                                   const void *bufptr, size_t size)
@@ -176,39 +188,79 @@ static void tegra_gpu_dump_gmmu_pages(tegra_gpu *s, dma_addr_t pdb, bool big_pag
 }
 #endif
 
+static MemTxResult tegra_gpu_read_gmmu(tegra_gpu *s,
+                                       dma_addr_t *gva, dma_addr_t *gva_tmp, dma_addr_t *ptr,
+                                       dma_addr_t pdb, bool big_page_size,
+                                       void* data, size_t size)
+{
+    MemTxResult res = MEMTX_OK;
+    if (*ptr==0 || (((*gva) & ~0xFFF) != ((*gva_tmp) & ~0xFFF))) {
+        *gva = (*gva_tmp) & ~0xFFF;
+        res = tegra_gpu_translate_gmmu(s, *gva,
+                                       ptr,
+                                       IOMMU_RO, pdb, big_page_size);
+        if (res != MEMTX_OK) return res;
+    }
+
+    res = dma_memory_read(&address_space_memory, (*ptr) | ((*gva_tmp) & 0xFFF),
+                          data, size,
+                          MEMTXATTRS_UNSPECIFIED);
+    return res;
+}
+
 static MemTxResult tegra_gpu_parse_gpfifo_cmds(tegra_gpu *s,
                                                dma_addr_t gpu_iova, size_t size, uint32_t desc_high,
                                                dma_addr_t pdb, bool big_page_size)
 {
     MemTxResult res = MEMTX_OK;
     dma_addr_t gpfifo_gva = 0, gpfifo_gva_tmp = 0, gpfifo_ptr = 0;
-    uint32_t gpfifo[2]={};
-    size_t cmdsize=0;
+    tegra_gpu_cmdhdr cmdhdr={};
+    static uint32_t gpfifo_args[0x2000>>2]={};
+    size_t argscount=0;
 
     #ifdef TEGRA_GPU_DEBUG
     qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_gpfifo_cmds: gpu_iova = 0x%lX, size = 0x%lX, desc_high = 0x%X\n", gpu_iova, size, desc_high);
     #endif
 
-    for (size_t i=0; i<size; i+=2) {
+    for (size_t i=0; i<size; i++) {
         gpfifo_gva_tmp = gpu_iova + i*4;
-        if (gpfifo_ptr==0 || ((gpfifo_gva & ~0xFFF) != (gpfifo_gva_tmp & ~0xFFF))) {
-            gpfifo_gva = gpfifo_gva_tmp & ~0xFFF;
-            res = tegra_gpu_translate_gmmu(s, gpfifo_gva,
-                                           &gpfifo_ptr,
-                                           IOMMU_RO, pdb, big_page_size);
+
+        res = tegra_gpu_read_gmmu(s,
+                                  &gpfifo_gva, &gpfifo_gva_tmp, &gpfifo_ptr,
+                                  pdb, big_page_size,
+                                  &cmdhdr, sizeof(cmdhdr));
+        if (res != MEMTX_OK) break;
+
+        argscount = 1;
+        if (cmdhdr.sec_op == 4 || cmdhdr.sec_op == 7 || cmdhdr.data == 0x0) // IMMD_DATA_METHOD, END_PB_SEGMENT
+            argscount = 0;
+        else if (cmdhdr.sec_op == 1 || cmdhdr.sec_op == 3 || cmdhdr.sec_op == 5) // INC_METHOD, NON_INC_METHOD, ONE_INC
+            argscount = cmdhdr.arg;
+
+        #ifdef TEGRA_GPU_DEBUG
+        tegra_gpu_log_hexdump("tegra_gpu_parse_gpfifo_cmds hdr", &cmdhdr.data, sizeof(cmdhdr.data));
+        #endif
+
+        for (size_t i2=0; i2<argscount; i++, i2++) {
+            if (i+1 >= size) {
+                qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_gpfifo_cmds: Aborting since argscount 0x%lX (i2=0x%lX) is larger then the remaining size.\n", argscount, i2);
+                return res;
+            }
+            gpfifo_gva_tmp = gpu_iova + (i+1)*4;
+            res = tegra_gpu_read_gmmu(s,
+                                      &gpfifo_gva, &gpfifo_gva_tmp, &gpfifo_ptr,
+                                      pdb, big_page_size,
+                                      &gpfifo_args[i2], sizeof(gpfifo_args[i2]));
             if (res != MEMTX_OK) break;
         }
-
-        memset(gpfifo, 0, sizeof(gpfifo));
-        cmdsize = i < size-1 ? sizeof(gpfifo) : sizeof(gpfifo[0]);
-        res = dma_memory_read(&address_space_memory, gpfifo_ptr | (gpfifo_gva_tmp & 0xFFF),
-                              gpfifo, cmdsize,
-                              MEMTXATTRS_UNSPECIFIED);
         if (res != MEMTX_OK) break;
 
         #ifdef TEGRA_GPU_DEBUG
-        tegra_gpu_log_hexdump("tegra_gpu_parse_gpfifo_cmds", gpfifo, cmdsize);
+        if (argscount) tegra_gpu_log_hexdump("tegra_gpu_parse_gpfifo_cmds args", gpfifo_args, argscount*sizeof(uint32_t));
         #endif
+
+        if (cmdhdr.sec_op == 7) // END_PB_SEGMENT
+            break;
     }
 
     return res;
@@ -225,17 +277,11 @@ static MemTxResult tegra_gpu_parse_gpfifo(tegra_gpu *s, uint32_t original_value,
 
     for (uint64_t i=original_value % gpfifo_entries; i!=value; i = (i+1) % gpfifo_entries) {
         gpfifo_gva_tmp = gpfifo_base + i*8;
-        if (gpfifo_ptr==0 || ((gpfifo_gva & ~0xFFF) != (gpfifo_gva_tmp & ~0xFFF))) {
-            gpfifo_gva = gpfifo_gva_tmp & ~0xFFF;
-            res = tegra_gpu_translate_gmmu(s, gpfifo_gva,
-                                           &gpfifo_ptr,
-                                           IOMMU_RO, pdb, big_page_size);
-            if (res != MEMTX_OK) break;
-        }
 
-        res = dma_memory_read(&address_space_memory, gpfifo_ptr | (gpfifo_gva_tmp & 0xFFF),
-                              gpfifo, sizeof(gpfifo),
-                              MEMTXATTRS_UNSPECIFIED);
+        res = tegra_gpu_read_gmmu(s,
+                                  &gpfifo_gva, &gpfifo_gva_tmp, &gpfifo_ptr,
+                                  pdb, big_page_size,
+                                  gpfifo, sizeof(gpfifo));
         if (res != MEMTX_OK) break;
 
         data_gva = gpfifo[0] | (((dma_addr_t)gpfifo[1] & 0xFF) << 32); // gpu_iova
@@ -406,6 +452,8 @@ static void tegra_gpu_priv_write(void *opaque, hwaddr offset,
                     uint32_t channel_id = (offset - base) / entrysize;
 
                     tegra_gpu_process_gpfifo(s, channel_id, original_value, value);
+
+	            s->regs[(base + channel_id*entrysize + 34*4)>>2] = value; // ram_userd_gp_get_w
                 }
             }
         }
