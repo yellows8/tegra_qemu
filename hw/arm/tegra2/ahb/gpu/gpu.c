@@ -79,6 +79,30 @@ typedef union tegra_gpu_cmdhdr {
     uint32_t data;
 } tegra_gpu_cmdhdr;
 
+typedef union tegra_gpu_method_syncpoint {
+    struct {
+        unsigned int operation:1;
+        unsigned int unk:3;
+        unsigned int wait_switch:1;
+        unsigned int unk2:3;
+        unsigned int syncpt_index:8;
+    };
+
+    uint32_t data;
+} tegra_gpu_method_syncpoint;
+
+typedef union tegra_gpu_method_syncptaction {
+    struct {
+        unsigned int id:12;
+        unsigned int unk:4;
+        unsigned int flush_cache:1;
+        unsigned int unk2:3;
+        unsigned int increment:1;
+    };
+
+    uint32_t data;
+} tegra_gpu_method_syncptaction;
+
 typedef union tegra_gpu_method_setreportsemaphore {
     struct {
         unsigned int operation:2;
@@ -246,7 +270,37 @@ static MemTxResult tegra_gpu_parse_pb_cmd(tegra_gpu *s,
     uint32_t addr = cmdhdr.method_address;
     dma_addr_t gva = 0, iova = 0, ptr = 0;
 
-    if (addr == 0x6C0) { // SetReportSemaphore*
+    if (addr == 0x1C) { // Syncpoint
+        if (argscount != 2) {
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_pb_cmd: The argscount for Syncpoint is 0x%lx, expected 0x%x.\n", argscount, 2);
+        }
+        else {
+            tegra_gpu_method_syncpoint *sync = (void*)&args[1];
+
+            if (sync->operation == 1) { // Incr
+                host1x_incr_syncpt(sync->syncpt_index);
+            }
+            else {
+                qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_pb_cmd: Syncpoint operation=0x%x is not supported, ignoring.\n", sync->operation);
+            }
+        }
+    }
+    else if (addr == 0xB2) { // SyncptAction
+        if (argscount != 1) {
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_pb_cmd: The argscount for SyncptAction is 0x%lx, expected 0x%x.\n", argscount, 1);
+        }
+        else {
+            tegra_gpu_method_syncptaction *action = (void*)&args[0];
+
+            if (action->increment) {
+                host1x_incr_syncpt(action->id);
+            }
+            else {
+                qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_pb_cmd: SetReportSemaphore increment=0 is not supported (flush_cache=0x%x), ignoring.\n", action->flush_cache);
+            }
+        }
+    }
+    else if (addr == 0x6C0) { // SetReportSemaphore*
         if (argscount != 4) {
             qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_pb_cmd: The argscount for SetReportSemaphore is 0x%lx, expected 0x%x.\n", argscount, 4);
         }
@@ -405,22 +459,6 @@ static void tegra_gpu_process_gpfifo(tegra_gpu *s, uint32_t channel_id, uint32_t
             if (res != MEMTX_OK) qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_process_gpfifo: tegra_gpu_parse_gpfifo(): 0x%x\n", res);
         }
     }
-
-    // Not needed with the workaround in host1x_channel.
-    // HACK: The GPU updates syncpts via GPFIFO. Avoid parsing GPFIFO etc and just update all syncpts where threshold is set.
-    #if 0
-    for (uint32_t syncpt=0; syncpt<NV_HOST1X_SYNCPT_NB_PTS; syncpt++) {
-        //uint32_t tmp=0, tmp2;
-        uint32_t threshold = host1x_get_syncpt_threshold(syncpt);
-        if (threshold!=0 /*&&
-           (tegra_dca_dev && tegra_dc_get_vblank_syncpt(tegra_dca_dev, &tmp) && syncpt!=tmp) &&
-           (tegra_dcb_dev && tegra_dc_get_vblank_syncpt(tegra_dcb_dev, &tmp2) && syncpt!=tmp2)*/)
-            {
-                host1x_set_syncpt_count(syncpt, threshold);
-                qemu_log_mask(LOG_GUEST_ERROR, "tegra.gpu: Set syncpt_count for syncpt 0x%x to 0x%x, for GPFIO handling.\n", syncpt, threshold);
-            }
-        }
-    #endif
 }
 
 static uint64_t tegra_gpu_priv_read(void *opaque, hwaddr offset,

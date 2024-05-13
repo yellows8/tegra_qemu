@@ -421,8 +421,11 @@ static void host1x_sync_write_reg(tegra_host1x_channel *s, hwaddr base, hwaddr o
             host1x_set_syncpt_threshold(id, thresh.int_thresh);
 
             // HACK: Force the syncpt to immediately trigger. This is for GPU GPFIFO: in some cases the target threshold isn't written until after GPFIFO is written.
+            // This isn't really needed anymore, unless non-GPU-GPFIFO would need it.
+            #if 0
             host1x_set_syncpt_count(id, thresh.int_thresh);
             qemu_log_mask(LOG_GUEST_ERROR, "tegra.host1x_channel: Set syncpt_count for syncpt 0x%x to 0x%x.\n", id, thresh.int_thresh);
+            #endif
         }
         break;
     }
