@@ -22,6 +22,7 @@
 // NOTE: Not intended to render anything.
 
 // Various reg names etc are from linux nvgpu.
+// Various method related names are from deko3d.
 
 #include "tegra_common.h"
 
@@ -77,6 +78,28 @@ typedef union tegra_gpu_cmdhdr {
 
     uint32_t data;
 } tegra_gpu_cmdhdr;
+
+typedef union tegra_gpu_method_setreportsemaphore {
+    struct {
+        unsigned int operation:2;
+        unsigned int flush_disable:1;
+        unsigned int reduction_enable:1;
+        unsigned int fence_enable:1;
+        unsigned int unk:4;
+        unsigned int reduction_op:3;
+        unsigned int unit:4;
+        unsigned int sync_condition:1;
+        unsigned int format:2;
+        unsigned int unk2:1;
+        unsigned int awaken_enable:1;
+        unsigned int unk3:2;
+        unsigned int counter:5;
+        unsigned int structure_size:1;
+        unsigned int unk4:3;
+    };
+
+    uint32_t data;
+} tegra_gpu_method_setreportsemaphore;
 
 #ifdef TEGRA_GPU_DEBUG
 static void tegra_gpu_log_hexdump(const char *prefix,
@@ -188,10 +211,11 @@ static void tegra_gpu_dump_gmmu_pages(tegra_gpu *s, dma_addr_t pdb, bool big_pag
 }
 #endif
 
-static MemTxResult tegra_gpu_read_gmmu(tegra_gpu *s,
-                                       dma_addr_t *gva, dma_addr_t *gva_tmp, dma_addr_t *ptr,
-                                       dma_addr_t pdb, bool big_page_size,
-                                       void* data, size_t size)
+static MemTxResult tegra_gpu_rw_gmmu(tegra_gpu *s,
+                                     dma_addr_t *gva, dma_addr_t *gva_tmp, dma_addr_t *ptr,
+                                     dma_addr_t pdb, bool big_page_size,
+                                     void* data, size_t size,
+                                     DMADirection dir)
 {
     MemTxResult res = MEMTX_OK;
     if (*ptr==0 || (((*gva) & ~0xFFF) != ((*gva_tmp) & ~0xFFF))) {
@@ -202,9 +226,54 @@ static MemTxResult tegra_gpu_read_gmmu(tegra_gpu *s,
         if (res != MEMTX_OK) return res;
     }
 
-    res = dma_memory_read(&address_space_memory, (*ptr) | ((*gva_tmp) & 0xFFF),
+    res = dma_memory_rw(&address_space_memory, (*ptr) | ((*gva_tmp) & 0xFFF),
                           data, size,
+                          dir,
                           MEMTXATTRS_UNSPECIFIED);
+    return res;
+}
+
+static dma_addr_t tegra_gpu_pb_cmd_get_iova(uint32_t *args)
+{
+    return (((dma_addr_t)args[0])<<32) | args[1];
+}
+
+static MemTxResult tegra_gpu_parse_pb_cmd(tegra_gpu *s,
+                                               tegra_gpu_cmdhdr cmdhdr, uint32_t *args, size_t argscount,
+                                               dma_addr_t pdb, bool big_page_size)
+{
+    MemTxResult res = MEMTX_OK;
+    uint32_t addr = cmdhdr.method_address;
+    dma_addr_t gva = 0, iova = 0, ptr = 0;
+
+    if (addr == 0x6C0) { // SetReportSemaphore*
+        if (argscount != 4) {
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_pb_cmd: The argscount for SetReportSemaphore is 0x%lx, expected 0x%x.\n", argscount, 4);
+        }
+        else {
+            tegra_gpu_method_setreportsemaphore *sema = (void*)&args[3];
+
+            if (sema->operation == 0) { // Release
+                if (sema->reduction_enable) {
+                    qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_pb_cmd: SetReportSemaphore ReductionEnable is not supported, ignoring.\n");
+                }
+                else {
+                    iova = tegra_gpu_pb_cmd_get_iova(&args[0]);
+
+                    // Write SetReportSemaphorePayload to the iova.
+                    res = tegra_gpu_rw_gmmu(s,
+                                            &gva, &iova, &ptr,
+                                            pdb, big_page_size,
+                                            &args[2], sizeof(args[2]),
+                                            DMA_DIRECTION_FROM_DEVICE);
+                }
+            }
+            else {
+                qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_pb_cmd: SetReportSemaphore Operation 0x%x is not supported, ignoring.\n", sema->operation);
+            }
+        }
+    }
+
     return res;
 }
 
@@ -219,16 +288,17 @@ static MemTxResult tegra_gpu_parse_gpfifo_cmds(tegra_gpu *s,
     size_t argscount=0;
 
     #ifdef TEGRA_GPU_DEBUG
-    qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_gpfifo_cmds: gpu_iova = 0x%lX, size = 0x%lX, desc_high = 0x%X\n", gpu_iova, size, desc_high);
+    qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_gpfifo_cmds: gpu_iova = 0x%lx, size = 0x%lx, desc_high = 0x%x\n", gpu_iova, size, desc_high);
     #endif
 
     for (size_t i=0; i<size; i++) {
         gpfifo_gva_tmp = gpu_iova + i*4;
 
-        res = tegra_gpu_read_gmmu(s,
-                                  &gpfifo_gva, &gpfifo_gva_tmp, &gpfifo_ptr,
-                                  pdb, big_page_size,
-                                  &cmdhdr, sizeof(cmdhdr));
+        res = tegra_gpu_rw_gmmu(s,
+                                &gpfifo_gva, &gpfifo_gva_tmp, &gpfifo_ptr,
+                                pdb, big_page_size,
+                                &cmdhdr, sizeof(cmdhdr),
+                                DMA_DIRECTION_TO_DEVICE);
         if (res != MEMTX_OK) break;
 
         argscount = 1;
@@ -238,19 +308,20 @@ static MemTxResult tegra_gpu_parse_gpfifo_cmds(tegra_gpu *s,
             argscount = cmdhdr.arg;
 
         #ifdef TEGRA_GPU_DEBUG
-        tegra_gpu_log_hexdump("tegra_gpu_parse_gpfifo_cmds hdr", &cmdhdr.data, sizeof(cmdhdr.data));
+        qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_gpfifo_cmds hdr: data = 0x%x, method_address = 0x%x, reserved = 0x%x, method_subchannel = 0x%x, arg = 0x%x, sec_op = 0x%x\n", cmdhdr.data, cmdhdr.method_address, cmdhdr.reserved, cmdhdr.method_subchannel, cmdhdr.arg, cmdhdr.sec_op);
         #endif
 
         for (size_t i2=0; i2<argscount; i++, i2++) {
             if (i+1 >= size) {
-                qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_gpfifo_cmds: Aborting since argscount 0x%lX (i2=0x%lX) is larger then the remaining size.\n", argscount, i2);
+                qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_gpfifo_cmds: Aborting since argscount 0x%lx (i2=0x%lx) is larger then the remaining size.\n", argscount, i2);
                 return res;
             }
             gpfifo_gva_tmp = gpu_iova + (i+1)*4;
-            res = tegra_gpu_read_gmmu(s,
-                                      &gpfifo_gva, &gpfifo_gva_tmp, &gpfifo_ptr,
-                                      pdb, big_page_size,
-                                      &gpfifo_args[i2], sizeof(gpfifo_args[i2]));
+            res = tegra_gpu_rw_gmmu(s,
+                                    &gpfifo_gva, &gpfifo_gva_tmp, &gpfifo_ptr,
+                                    pdb, big_page_size,
+                                    &gpfifo_args[i2], sizeof(gpfifo_args[i2]),
+                                    DMA_DIRECTION_TO_DEVICE);
             if (res != MEMTX_OK) break;
         }
         if (res != MEMTX_OK) break;
@@ -261,6 +332,11 @@ static MemTxResult tegra_gpu_parse_gpfifo_cmds(tegra_gpu *s,
 
         if (cmdhdr.sec_op == 7) // END_PB_SEGMENT
             break;
+
+        res = tegra_gpu_parse_pb_cmd(s,
+                                     cmdhdr, gpfifo_args, argscount,
+                                     pdb, big_page_size);
+        if (res != MEMTX_OK) break;
     }
 
     return res;
@@ -278,10 +354,11 @@ static MemTxResult tegra_gpu_parse_gpfifo(tegra_gpu *s, uint32_t original_value,
     for (uint64_t i=original_value % gpfifo_entries; i!=value; i = (i+1) % gpfifo_entries) {
         gpfifo_gva_tmp = gpfifo_base + i*8;
 
-        res = tegra_gpu_read_gmmu(s,
-                                  &gpfifo_gva, &gpfifo_gva_tmp, &gpfifo_ptr,
-                                  pdb, big_page_size,
-                                  gpfifo, sizeof(gpfifo));
+        res = tegra_gpu_rw_gmmu(s,
+                                &gpfifo_gva, &gpfifo_gva_tmp, &gpfifo_ptr,
+                                pdb, big_page_size,
+                                gpfifo, sizeof(gpfifo),
+                                DMA_DIRECTION_TO_DEVICE);
         if (res != MEMTX_OK) break;
 
         data_gva = gpfifo[0] | (((dma_addr_t)gpfifo[1] & 0xFF) << 32); // gpu_iova
