@@ -1352,8 +1352,10 @@ static void __tegrax1_init(MachineState *machine)
 
     // Setup APE IRQs.
     s = SYS_BUS_DEVICE(tegra_ape_dev);
-    for (i = 0; i < 8; i++)
+    for (i = 0; i < 8; i++) // AMISC mailbox
         sysbus_connect_irq(s, i, qdev_get_gpio_in(DEVICE(gicbusdev_ape), i));
+    for (i = 0; i < 22; i++) // ADMA
+        sysbus_connect_irq(s, i+8, qdev_get_gpio_in(DEVICE(gicbusdev_ape), 56-32+i));
 
     // Setup the ADSP watchdog IRQ.
     // NOTE: The watchdog can sometimes expire due to the ADSP not updating the watchdog in time. This IRQ therefore has to be disabled.

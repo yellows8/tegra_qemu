@@ -23,6 +23,8 @@
 
 #include "hw/sysbus.h"
 #include "hw/ptimer.h"
+#include "qemu/main-loop.h"
+#include "sysemu/runstate.h"
 
 #include "qapi/error.h"
 #include "qapi/qapi-commands.h"
@@ -43,6 +45,9 @@
 #define MAILBOX_INT_FULL 0
 #define MAILBOX_INT_EMPTY 1
 
+#define NUM_DMA_CHANNELS 22
+#define DMA_CHANNEL_REGSIZE 0x80
+
 #define TIMER_FREQ 19200000 // NOTE: Same as CCPLEX freq, perhaps this should be a prop?
 
 #define SCALE   1
@@ -54,8 +59,10 @@ typedef struct tegra_ape_state {
     SysBusDevice parent_obj;
 
     qemu_irq irqs[2][NUM_MAILBOX];
+    qemu_irq irqs_dma[NUM_DMA_CHANNELS];
     MemoryRegion iomem;
     ptimer_state *ptimer;
+    QEMUBH *bh;
 
     uint64_t timer_count;
     bool timer_word_flag;
@@ -80,6 +87,88 @@ static const VMStateDescription vmstate_tegra_ape = {
     }
 };
 
+static uint32_t *tegra_ape_dma_get_chanregs(tegra_ape *s, size_t channel_id)
+{
+    return &s->regs[(0x22000 + channel_id*DMA_CHANNEL_REGSIZE)>>2];
+}
+
+static void tegra_ape_dma_update_irqs(tegra_ape *s)
+{
+    uint32_t value = 0;
+    for (size_t channel_id=0; channel_id<NUM_DMA_CHANNELS; channel_id++) {
+        uint32_t *chan_regs = tegra_ape_dma_get_chanregs(s, channel_id);
+        bool flag = chan_regs[0x10>>2] != 0; // INT_STATUS_0
+
+        qemu_set_irq(s->irqs_dma[channel_id], /*flag*/ false); // NOTE: Disabled since this causes issues when the guest ignores the IRQ. TRM doesn't seem to specify an IRQ-enable reg?
+        if (flag) value |= BIT(channel_id);
+    }
+
+    s->regs[(0x22000+0xC28)>>2] = value; // ADMA_GLOBAL_CH_INT_STATUS_0
+}
+
+static bool tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id)
+{
+    uint32_t *chan_regs = tegra_ape_dma_get_chanregs(s, channel_id);
+    bool flag = false;
+
+    if (chan_regs[0x0>>2] & BIT(0)) { // CMD_0 TRANSFER_ENABLE
+        flag = true;
+
+        uint32_t ctrl = chan_regs[0x30>>2]; // CTRL_0
+        uint32_t mode = (ctrl>>8) & 0x7; // TRANSFER_MODE
+
+        // NOTE: Data-transfer would be here, but that needs MEMORY<>MEMORY transfers.
+
+        if (mode != 2) { // non-CONTINUOUS
+            flag = false;
+            chan_regs[0x0>>2] &= ~BIT(0); // CMD_0 TRANSFER_ENABLE
+            chan_regs[0xC>>2] &= ~BIT(0); // STATUS_0 TRANSFER_ENABLED
+        }
+
+        chan_regs[0x30>>2] = chan_regs[0x44>>2]; // TC_STATUS_0 = TC_0
+        chan_regs[0x54>>2] = (chan_regs[0x54>>2] & 0xFFFF) + 1; // TRANSFER_STATUS_0 TRANSFER_DONE_COUNT
+        chan_regs[0x10>>2] |= BIT(0); // INT_STATUS_0 TRANSFER_DONE
+        tegra_ape_dma_update_irqs(s);
+    }
+
+    return flag;
+}
+
+static int tegra_ape_dma_process_channels(tegra_ape *s)
+{
+    int count = 0;
+
+    if (s->regs[(0x22000+0xC00)>>2] & BIT(0)) { // ADMA_GLOBAL_CMD_0 GLOBAL_ENABLE
+        for (size_t i=0; i<NUM_DMA_CHANNELS; i++) {
+            if (tegra_ape_dma_process_channel(s, i))
+                count++;
+        }
+    }
+
+    return count;
+}
+
+// DMA transfer has to be done from here in order to support CONTINUOUS mode.
+static void tegra_ape_dma_run(void *opaque)
+{
+    tegra_ape *s = opaque;
+    int count = 1;
+
+    if (runstate_is_running())
+        count = tegra_ape_dma_process_channels(s);
+
+    if (count)
+        qemu_bh_schedule_idle(s->bh);
+}
+
+static void tegra_ape_dma_enable_channel(tegra_ape *s, size_t channel_id)
+{
+    uint32_t *chan_regs = tegra_ape_dma_get_chanregs(s, channel_id);
+
+    chan_regs[0xC>>2] |= BIT(0); // STATUS_0 TRANSFER_ENABLED
+    qemu_bh_schedule_idle(s->bh);
+}
+
 static uint64_t tegra_ape_priv_read(void *opaque, hwaddr offset,
                                     unsigned size)
 {
@@ -100,6 +189,24 @@ static uint64_t tegra_ape_priv_read(void *opaque, hwaddr offset,
         }
         else if (offset == 0x2C04C) // AMISC_AMISC_DEBUG_0
             ret = s->timer_word_flag<<31;
+        else if (offset >= 0x22000+0xC00 && offset+size <= 0x22000+0xC40) { // ADMA global regs
+            if (offset == 0x22000+0xC10) { // ADMA_GLOBAL_STATUS_0
+                ret &= ~BIT(0); // TRANSFER_ENABLED
+                for (size_t channel_id=0; channel_id<NUM_DMA_CHANNELS; channel_id++) {
+                    uint32_t *chan_regs = tegra_ape_dma_get_chanregs(s, channel_id);
+                    if (chan_regs[0xC>>2] & BIT(0)) // STATUS_0 TRANSFER_ENABLED
+                        ret |= BIT(0); // TRANSFER_ENABLED
+                }
+            }
+            else if (offset == 0x22000+0xC2C) { // ADMA_GLOBAL_CH_ENABLE_STATUS_0
+                ret = 0;
+                for (size_t channel_id=0; channel_id<NUM_DMA_CHANNELS; channel_id++) {
+                    uint32_t *chan_regs = tegra_ape_dma_get_chanregs(s, channel_id);
+                    if (chan_regs[0xC>>2] & BIT(0)) // STATUS_0 TRANSFER_ENABLED
+                        ret |= BIT(channel_id);
+                }
+            }
+        }
     }
 
     return ret;
@@ -127,6 +234,44 @@ static void tegra_ape_priv_write(void *opaque, hwaddr offset,
                 TRACE_IRQ_LOWER(s->iomem.addr, s->irqs[MAILBOX_INT_EMPTY][mailbox]);
                 TRACE_IRQ_RAISE(s->iomem.addr, s->irqs[MAILBOX_INT_FULL][mailbox]);
                 s->mailbox_irq_raised[mailbox] = true;
+            }
+        }
+        else if (offset >= 0x22000 && offset+size <= 0x24000) { // ADMA
+            if (offset+size <= 0x22000 + NUM_DMA_CHANNELS*DMA_CHANNEL_REGSIZE) { // channel regs
+                hwaddr chan_off = (offset - 0x22000) % DMA_CHANNEL_REGSIZE;
+                size_t channel_id = (offset - 0x22000) / DMA_CHANNEL_REGSIZE;
+                uint32_t *chan_regs = tegra_ape_dma_get_chanregs(s, channel_id);
+
+                if (chan_off == 0x0) { // CMD_0
+                    if (value & BIT(0)) { // TRANSFER_ENABLE
+                        tegra_ape_dma_enable_channel(s, channel_id);
+                    }
+                }
+                else if (chan_off == 0x4) { // SOFT_RESET_0
+                    if (value & BIT(0)) { // ENABLE
+                        s->regs[offset>>2] &= ~BIT(0);
+                        memset(chan_regs, 0, DMA_CHANNEL_REGSIZE);
+                    }
+                }
+                else if (chan_off == 0x18) { // INT_SET_0
+                    if (value & BIT(0)) { // TRANSFER_DONE
+                        chan_regs[0x10>>2] |= BIT(0); // INT_STATUS_0
+                        tegra_ape_dma_update_irqs(s);
+                    }
+                }
+                else if (chan_off == 0x1C) { // INT_CLEAR_0
+                    if (value & BIT(0)) { // TRANSFER_DONE
+                        chan_regs[0x10>>2] &= ~BIT(0); // INT_STATUS_0
+                        tegra_ape_dma_update_irqs(s);
+                    }
+                }
+            }
+            else if (offset >= 0x22000+0xC00 && offset+size <= 0x22000+0xC40) { // ADMA global regs
+                if (offset == 0x22000+0xC04) { // ADMA_GLOBAL_SOFT_RESET_0
+                    if (value & BIT(0)) { // ENABLE
+                        s->regs[offset>>2] &= ~BIT(0);
+                    }
+                }
             }
         }
     }
@@ -182,11 +327,15 @@ static void tegra_ape_priv_realize(DeviceState *dev, Error **errp)
             sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irqs[i][i2]);
     }
 
+    for (int i=0; i<NUM_DMA_CHANNELS; i++)
+        sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irqs_dma[i]);
+
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_ape_mem_ops, s,
                           TYPE_TEGRA_APE, (0x702F8000+0x1000)-TEGRA_APE_BASE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 
     s->ptimer = ptimer_init(tegra_ape_timer_tick, s, PTIMER_POLICY_CONTINUOUS_TRIGGER);
+    s->bh = qemu_bh_new(tegra_ape_dma_run, s);
 }
 
 static void tegra_ape_class_init(ObjectClass *klass, void *data)
