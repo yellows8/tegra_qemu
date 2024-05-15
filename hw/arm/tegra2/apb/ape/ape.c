@@ -114,8 +114,13 @@ static bool tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id)
     if (chan_regs[0x0>>2] & BIT(0)) { // CMD_0 TRANSFER_ENABLE
         flag = true;
 
-        uint32_t ctrl = chan_regs[0x30>>2]; // CTRL_0
+        uint32_t ctrl = chan_regs[0x24>>2]; // CTRL_0
+        uint32_t dir = (ctrl >> 12) & 0xF; // TRANSFER_DIRECTION
         uint32_t mode = (ctrl>>8) & 0x7; // TRANSFER_MODE
+        bool flowctrl_enable = (ctrl & BIT(1)) != 0;
+        uint32_t fifoctrl = chan_regs[0x2C>>2];
+
+        bool transfer_done = true;
 
         // NOTE: Data-transfer would be here, but that needs MEMORY<>MEMORY transfers.
 
@@ -123,12 +128,38 @@ static bool tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id)
             flag = false;
             chan_regs[0x0>>2] &= ~BIT(0); // CMD_0 TRANSFER_ENABLE
             chan_regs[0xC>>2] &= ~BIT(0); // STATUS_0 TRANSFER_ENABLED
+            chan_regs[0x30>>2] = 0; // TC_STATUS_0
+        }
+        else {
+            if (!flowctrl_enable) chan_regs[0x30>>2] = 0; // TC_STATUS_0
+            else {
+                uint64_t transfer_fifosize = 0;
+
+                if (dir==4 || dir==8) // MEMORY_TO_AHUB, AHUB_TO_AHUB
+                    transfer_fifosize = 0x40 << ((fifoctrl>>8) & 0x1F); // TX_FIFO_SIZE in bytes
+                else if (dir == 2) // AHUB_TO_MEMORY
+                    transfer_fifosize = 0x40 << (fifoctrl & 0x1F); // RX_FIFO_SIZE in bytes
+
+                if (transfer_fifosize) {
+                    if (chan_regs[0x30>>2] >= transfer_fifosize) // TC_STATUS_0
+                        chan_regs[0x30>>2] -= transfer_fifosize;
+                    else if (chan_regs[0x30>>2]) // TC_STATUS_0
+                        chan_regs[0x30>>2] = 0;
+                    else
+                        chan_regs[0x30>>2] = chan_regs[0x44>>2] - transfer_fifosize; // TC_STATUS_0 = TC_0 - transfer_fifosize
+
+                    // NOTE: Actual data-transfer would need to update src-data-addr as well.
+
+                    transfer_done = chan_regs[0x30>>2]==0;
+                }
+            }
         }
 
-        chan_regs[0x30>>2] = chan_regs[0x44>>2]; // TC_STATUS_0 = TC_0
-        chan_regs[0x54>>2] = (chan_regs[0x54>>2] & 0xFFFF) + 1; // TRANSFER_STATUS_0 TRANSFER_DONE_COUNT
-        chan_regs[0x10>>2] |= BIT(0); // INT_STATUS_0 TRANSFER_DONE
-        tegra_ape_dma_update_irqs(s);
+        if (transfer_done) {
+            chan_regs[0x54>>2] = (chan_regs[0x54>>2] & 0xFFFF) + 1; // TRANSFER_STATUS_0 TRANSFER_DONE_COUNT
+            chan_regs[0x10>>2] |= BIT(0); // INT_STATUS_0 TRANSFER_DONE
+            tegra_ape_dma_update_irqs(s);
+        }
     }
 
     return flag;
@@ -166,6 +197,7 @@ static void tegra_ape_dma_enable_channel(tegra_ape *s, size_t channel_id)
     uint32_t *chan_regs = tegra_ape_dma_get_chanregs(s, channel_id);
 
     chan_regs[0xC>>2] |= BIT(0); // STATUS_0 TRANSFER_ENABLED
+    chan_regs[0x30>>2] = chan_regs[0x44>>2]; // TC_STATUS_0 = TC_0
     qemu_bh_schedule_idle(s->bh);
 }
 
@@ -300,6 +332,14 @@ static void tegra_ape_priv_reset(DeviceState *dev)
     s->regs[0x2C008/sizeof(uint32_t)] = 0x00C00000; // AMISC_ADSP_PERIP
     s->regs[0x2C00C/sizeof(uint32_t)] = 0x02000000; // AMISC_ADSP_L2_CONFIG_0
     s->regs[0x2C010/sizeof(uint32_t)] = 0x00C02000; // AMISC_ADSP_L2_REGFILEBASE_0
+
+    for (size_t channel_id=0; channel_id<NUM_DMA_CHANNELS; channel_id++) {
+        uint32_t *chan_regs = tegra_ape_dma_get_chanregs(s, channel_id);
+
+        chan_regs[0x24>>2] = 0x11004102; // CTRL_0
+        chan_regs[0x28>>2] = 0x00500001; // CONFIG_0
+        chan_regs[0x2C>>2] = channel_id < 4 ? 0x01010303 : 0x00000202; // AHUB_FIFO_CTRL_0
+    }
 
     s->timer_count = 0;
     s->timer_word_flag = false;
