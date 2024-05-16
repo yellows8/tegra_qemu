@@ -23,8 +23,7 @@
 
 #include "hw/sysbus.h"
 #include "hw/ptimer.h"
-#include "qemu/main-loop.h"
-#include "sysemu/runstate.h"
+#include "audio/audio.h"
 
 #include "qapi/error.h"
 #include "qapi/qapi-commands.h"
@@ -55,6 +54,8 @@
 // The hardware uses 56-bits, but this is the largest bit-count which can be used with this freq without issues with ptimer.
 #define TIMER_LIMIT (BIT(35)-1)
 
+static int tegra_ape_post_load(void *opaque, int version_id);
+
 typedef struct tegra_ape_state {
     SysBusDevice parent_obj;
 
@@ -62,7 +63,10 @@ typedef struct tegra_ape_state {
     qemu_irq irqs_dma[NUM_DMA_CHANNELS];
     MemoryRegion iomem;
     ptimer_state *ptimer;
-    QEMUBH *bh;
+
+    QEMUSoundCard card;
+    SWVoiceOut *voice_out;
+    SWVoiceIn *voice_in;
 
     uint64_t timer_count;
     bool timer_word_flag;
@@ -76,6 +80,7 @@ static const VMStateDescription vmstate_tegra_ape = {
     .name = TYPE_TEGRA_APE,
     .version_id = 1,
     .minimum_version_id = 1,
+    .post_load = tegra_ape_post_load,
     .fields = (VMStateField[]) {
         VMSTATE_PTIMER(ptimer, tegra_ape),
         VMSTATE_UINT64(timer_count, tegra_ape),
@@ -106,14 +111,11 @@ static void tegra_ape_dma_update_irqs(tegra_ape *s)
     s->regs[(0x22000+0xC28)>>2] = value; // ADMA_GLOBAL_CH_INT_STATUS_0
 }
 
-static bool tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id)
+static void tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id, bool is_outin)
 {
     uint32_t *chan_regs = tegra_ape_dma_get_chanregs(s, channel_id);
-    bool flag = false;
 
     if (chan_regs[0x0>>2] & BIT(0)) { // CMD_0 TRANSFER_ENABLE
-        flag = true;
-
         uint32_t ctrl = chan_regs[0x24>>2]; // CTRL_0
         uint32_t dir = (ctrl >> 12) & 0xF; // TRANSFER_DIRECTION
         uint32_t mode = (ctrl>>8) & 0x7; // TRANSFER_MODE
@@ -125,7 +127,6 @@ static bool tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id)
         // NOTE: Data-transfer would be here, but that needs MEMORY<>MEMORY transfers.
 
         if (mode != 2) { // non-CONTINUOUS
-            flag = false;
             chan_regs[0x0>>2] &= ~BIT(0); // CMD_0 TRANSFER_ENABLE
             chan_regs[0xC>>2] &= ~BIT(0); // STATUS_0 TRANSFER_ENABLED
             chan_regs[0x30>>2] = 0; // TC_STATUS_0
@@ -135,9 +136,9 @@ static bool tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id)
             else {
                 uint64_t transfer_fifosize = 0;
 
-                if (dir==4 || dir==8) // MEMORY_TO_AHUB, AHUB_TO_AHUB
+                if (is_outin && dir==4) // MEMORY_TO_AHUB
                     transfer_fifosize = 0x40 << ((fifoctrl>>8) & 0x1F); // TX_FIFO_SIZE in bytes
-                else if (dir == 2) // AHUB_TO_MEMORY
+                else if (!is_outin && dir == 2) // AHUB_TO_MEMORY
                     transfer_fifosize = 0x40 << (fifoctrl & 0x1F); // RX_FIFO_SIZE in bytes
 
                 if (transfer_fifosize) {
@@ -161,35 +162,62 @@ static bool tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id)
             tegra_ape_dma_update_irqs(s);
         }
     }
-
-    return flag;
 }
 
-static int tegra_ape_dma_process_channels(tegra_ape *s)
+static void tegra_ape_dma_process_channels(tegra_ape *s, bool is_outin)
 {
-    int count = 0;
-
     if (s->regs[(0x22000+0xC00)>>2] & BIT(0)) { // ADMA_GLOBAL_CMD_0 GLOBAL_ENABLE
         for (size_t i=0; i<NUM_DMA_CHANNELS; i++) {
-            if (tegra_ape_dma_process_channel(s, i))
-                count++;
+            tegra_ape_dma_process_channel(s, i, is_outin);
+        }
+    }
+}
+
+static void tegra_ape_update_aud_enable(tegra_ape *s)
+{
+    int out_on = 0, in_on = 0;
+    int enabled_channels = 0;
+
+    if (s->regs[(0x22000+0xC00)>>2] & BIT(0)) { // ADMA_GLOBAL_CMD_0 GLOBAL_ENABLE
+        for (size_t channel_id=0; channel_id<NUM_DMA_CHANNELS; channel_id++) {
+            uint32_t *chan_regs = tegra_ape_dma_get_chanregs(s, channel_id);
+
+            if (chan_regs[0x0>>2] & BIT(0)) { // CMD_0 TRANSFER_ENABLE
+                uint32_t ctrl = chan_regs[0x24>>2]; // CTRL_0
+                uint32_t dir = (ctrl >> 12) & 0xF; // TRANSFER_DIRECTION
+                bool flowctrl_enable = (ctrl & BIT(1)) != 0;
+
+                enabled_channels++;
+
+                if (flowctrl_enable) {
+                    if (dir==4) // MEMORY_TO_AHUB
+                        out_on = 1;
+                    else if (dir == 2) // AHUB_TO_MEMORY
+                        in_on = 1;
+                }
+            }
         }
     }
 
-    return count;
+    if (!out_on && !in_on && enabled_channels) out_on = 1; // Processing DMA transfers requires either of the voices to be active, force-enable voice_out if there's any channels enabled which don't otherwise use the above FIFO dirs.
+
+    AUD_set_active_out(s->voice_out, out_on);
+    AUD_set_active_in(s->voice_in, in_on);
 }
 
 // DMA transfer has to be done from here in order to support CONTINUOUS mode.
-static void tegra_ape_dma_run(void *opaque)
+static void tegra_ape_audio_out_callback(void *opaque, int avail)
 {
     tegra_ape *s = opaque;
-    int count = 1;
 
-    if (runstate_is_running())
-        count = tegra_ape_dma_process_channels(s);
+    tegra_ape_dma_process_channels(s, true);
+}
 
-    if (count)
-        qemu_bh_schedule_idle(s->bh);
+static void tegra_ape_audio_in_callback(void *opaque, int avail)
+{
+    tegra_ape *s = opaque;
+
+    tegra_ape_dma_process_channels(s, false);
 }
 
 static void tegra_ape_dma_enable_channel(tegra_ape *s, size_t channel_id)
@@ -198,7 +226,8 @@ static void tegra_ape_dma_enable_channel(tegra_ape *s, size_t channel_id)
 
     chan_regs[0xC>>2] |= BIT(0); // STATUS_0 TRANSFER_ENABLED
     chan_regs[0x30>>2] = chan_regs[0x44>>2]; // TC_STATUS_0 = TC_0
-    qemu_bh_schedule_idle(s->bh);
+
+    tegra_ape_update_aud_enable(s);
 }
 
 static uint64_t tegra_ape_priv_read(void *opaque, hwaddr offset,
@@ -358,6 +387,47 @@ static void tegra_ape_timer_tick(void *opaque)
     /* Nothing to do on timer rollover */
 }
 
+static void tegra_ape_init_voices(tegra_ape *s)
+{
+    struct audsettings as={};
+
+    as.freq = 48000;
+    as.nchannels = 2;
+    as.fmt = AUDIO_FORMAT_S16;
+    as.endianness = 0;
+
+    s->voice_out = AUD_open_out(
+        &s->card,
+        s->voice_out,
+        "tegra.ape.out",
+        s,
+        tegra_ape_audio_out_callback,
+        &as
+    );
+
+    s->voice_in = AUD_open_in(
+        &s->card,
+        s->voice_in,
+        "tegra.ape.in",
+        s,
+        tegra_ape_audio_in_callback,
+        &as
+    );
+}
+
+static int tegra_ape_post_load(void *opaque, int version_id)
+{
+    tegra_ape *s = opaque;
+
+    tegra_ape_init_voices(s);
+
+    tegra_ape_update_aud_enable(s);
+
+    tegra_ape_audio_out_callback(s, AUD_get_buffer_size_out(s->voice_out));
+
+    return 0;
+}
+
 static void tegra_ape_priv_realize(DeviceState *dev, Error **errp)
 {
     tegra_ape *s = TEGRA_APE(dev);
@@ -375,16 +445,31 @@ static void tegra_ape_priv_realize(DeviceState *dev, Error **errp)
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 
     s->ptimer = ptimer_init(tegra_ape_timer_tick, s, PTIMER_POLICY_CONTINUOUS_TRIGGER);
-    s->bh = qemu_bh_new(tegra_ape_dma_run, s);
+
+    // Init audio card and the voices.
+    if (!AUD_register_card("tegra.ape", &s->card, errp)) {
+        return;
+    }
+
+    tegra_ape_init_voices(s);
+    AUD_set_active_out(s->voice_out, 0);
+    AUD_set_active_in(s->voice_in, 0);
 }
+
+static Property tegra_ape_device_properties[] = {
+    DEFINE_AUDIO_PROPERTIES(tegra_ape, card),
+    DEFINE_PROP_END_OF_LIST(),
+};
 
 static void tegra_ape_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = tegra_ape_priv_realize;
+    set_bit(DEVICE_CATEGORY_SOUND, dc->categories);
     dc->vmsd = &vmstate_tegra_ape;
     dc->reset = tegra_ape_priv_reset;
+    device_class_set_props(dc, tegra_ape_device_properties);
 }
 
 static const TypeInfo tegra_ape_info = {
