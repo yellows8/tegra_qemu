@@ -27,10 +27,12 @@
 
 #include "qapi/error.h"
 #include "qapi/qapi-commands.h"
+#include "cpu.h"
 
 #include "iomap.h"
 #include "tegra_trace.h"
 #include "devices.h"
+#include "tegra_cpu.h"
 
 #include "qemu/cutils.h"
 #include "qemu/log.h"
@@ -47,13 +49,6 @@
 #define NUM_DMA_CHANNELS 22
 #define DMA_CHANNEL_REGSIZE 0x80
 
-#define TIMER_FREQ 19200000 // NOTE: Same as CCPLEX freq, perhaps this should be a prop?
-
-#define SCALE   1
-
-// The hardware uses 56-bits, but this is the largest bit-count which can be used with this freq without issues with ptimer.
-#define TIMER_LIMIT (BIT(35)-1)
-
 static int tegra_ape_post_load(void *opaque, int version_id);
 
 typedef struct tegra_ape_state {
@@ -62,7 +57,6 @@ typedef struct tegra_ape_state {
     qemu_irq irqs[2][NUM_MAILBOX];
     qemu_irq irqs_dma[NUM_DMA_CHANNELS];
     MemoryRegion iomem;
-    ptimer_state *ptimer;
 
     QEMUSoundCard card;
     SWVoiceOut *voice_out;
@@ -82,7 +76,6 @@ static const VMStateDescription vmstate_tegra_ape = {
     .minimum_version_id = 1,
     .post_load = tegra_ape_post_load,
     .fields = (VMStateField[]) {
-        VMSTATE_PTIMER(ptimer, tegra_ape),
         VMSTATE_UINT64(timer_count, tegra_ape),
         VMSTATE_BOOL(timer_word_flag, tegra_ape),
         VMSTATE_BOOL_ARRAY(mailbox_irq_raised, tegra_ape, NUM_MAILBOX),
@@ -242,7 +235,12 @@ static uint64_t tegra_ape_priv_read(void *opaque, hwaddr offset,
         ret = s->regs[offset/sizeof(uint32_t)] & ((1ULL<<size*8)-1);
 
         if (offset == 0x2C048) { // AMISC_TSC_0
-            if (!s->timer_word_flag) s->timer_count = TIMER_LIMIT - ptimer_get_count(s->ptimer);
+            if (!s->timer_word_flag) { // This seems to mirror the CPU sys-tick, so just reuse that.
+                CPUState *cs = qemu_get_cpu(TEGRA_CCPLEX_CORE0);
+                ARMCPU *cpu = ARM_CPU(cs);
+                s->timer_count = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / gt_cntfrq_period_ns(cpu);
+            }
+
             ret = s->timer_count;
             if (!s->timer_word_flag) ret >>= 32;
             ret &= 0xFFFFFFFF;
@@ -338,18 +336,6 @@ static void tegra_ape_priv_write(void *opaque, hwaddr offset,
     }
 }
 
-static void tegra_ape_start_timer(void *opaque)
-{
-    tegra_ape *s = opaque;
-
-    ptimer_transaction_begin(s->ptimer);
-    ptimer_stop(s->ptimer);
-    ptimer_set_freq(s->ptimer, TIMER_FREQ * SCALE);
-    ptimer_set_limit(s->ptimer, TIMER_LIMIT, 1);
-    ptimer_run(s->ptimer, 0);
-    ptimer_transaction_commit(s->ptimer);
-}
-
 static void tegra_ape_priv_reset(DeviceState *dev)
 {
     tegra_ape *s = TEGRA_APE(dev);
@@ -372,8 +358,6 @@ static void tegra_ape_priv_reset(DeviceState *dev)
 
     s->timer_count = 0;
     s->timer_word_flag = false;
-
-    tegra_ape_start_timer(s);
 }
 
 static const MemoryRegionOps tegra_ape_mem_ops = {
@@ -381,11 +365,6 @@ static const MemoryRegionOps tegra_ape_mem_ops = {
     .write = tegra_ape_priv_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
-
-static void tegra_ape_timer_tick(void *opaque)
-{
-    /* Nothing to do on timer rollover */
-}
 
 static void tegra_ape_init_voices(tegra_ape *s)
 {
@@ -443,8 +422,6 @@ static void tegra_ape_priv_realize(DeviceState *dev, Error **errp)
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_ape_mem_ops, s,
                           TYPE_TEGRA_APE, (0x702F8000+0x1000)-TEGRA_APE_BASE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
-
-    s->ptimer = ptimer_init(tegra_ape_timer_tick, s, PTIMER_POLICY_CONTINUOUS_TRIGGER);
 
     // Init audio card and the voices.
     if (!AUD_register_card("tegra.ape", &s->card, errp)) {
