@@ -149,25 +149,23 @@ static void tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id, bool 
                 }
 
                 if (transfer_fifosize) {
-                    //if (chan_regs[0x30>>2]==0)
-                    //    chan_regs[0x30>>2] = chan_regs[0x44>>2]; // TC_STATUS_0 = TC_0
-                    avail = MIN(avail, /*chan_regs[0x30>>2]*/transfer_fifosize);
+                    avail = MIN(avail, chan_regs[0x44>>2] - transfer_fifosize);
+
+                    dma_addr_t tmplen = chan_regs[0x44>>2];
+                    uint8_t *databuf = dma_memory_map(&address_space_memory, data_addr, &tmplen,
+                                                      dmadir, MEMTXATTRS_UNSPECIFIED);
 
                     while (avail>0) {
                         size_t bufoff = chan_regs[0x44>>2] >= chan_regs[0x30>>2] ? chan_regs[0x44>>2] - chan_regs[0x30>>2] : 0; // TC_0, TC_STATUS_0
 
-                        data_addr+= bufoff;
+                        size_t copysize = MIN(transfer_fifosize, chan_regs[0x30>>2]);
 
-                        dma_addr_t tmplen = transfer_fifosize;
-                        void* databuf = dma_memory_map(&address_space_memory, data_addr, &tmplen,
-                                                       dmadir, MEMTXATTRS_UNSPECIFIED);
-
-                        transfer_size = transfer_fifosize;
+                        transfer_size = copysize;
                         if (databuf) {
                             if (dmadir == DMA_DIRECTION_TO_DEVICE)
-                                transfer_size = MIN(AUD_write(s->voice_out, databuf, transfer_fifosize), transfer_fifosize);
+                                transfer_size = MIN(AUD_write(s->voice_out, &databuf[bufoff], copysize), copysize);
                             else
-                                transfer_size = MIN(AUD_read(s->voice_in, databuf, transfer_fifosize), transfer_fifosize);
+                                transfer_size = MIN(AUD_read(s->voice_in, &databuf[bufoff], copysize), copysize);
                         }
 
                         if (chan_regs[0x30>>2] >= transfer_size) // TC_STATUS_0
@@ -179,10 +177,12 @@ static void tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id, bool 
 
                         transfer_done = chan_regs[0x30>>2]==0;
 
-                        if (databuf) dma_memory_unmap(&address_space_memory, databuf, tmplen, dmadir, transfer_size);
-
                         avail-= transfer_size;
+                        if (avail && chan_regs[0x30>>2]==0)
+                            chan_regs[0x30>>2] = chan_regs[0x44>>2];
                     }
+
+                    if (databuf) dma_memory_unmap(&address_space_memory, databuf, tmplen, dmadir, chan_regs[0x44>>2]);
                 }
             }
         }
