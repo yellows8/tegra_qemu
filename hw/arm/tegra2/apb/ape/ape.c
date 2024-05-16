@@ -24,6 +24,8 @@
 #include "hw/sysbus.h"
 #include "hw/ptimer.h"
 #include "audio/audio.h"
+#include "exec/address-spaces.h"
+#include "sysemu/dma.h"
 
 #include "qapi/error.h"
 #include "qapi/qapi-commands.h"
@@ -104,7 +106,7 @@ static void tegra_ape_dma_update_irqs(tegra_ape *s)
     s->regs[(0x22000+0xC28)>>2] = value; // ADMA_GLOBAL_CH_INT_STATUS_0
 }
 
-static void tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id, bool is_outin)
+static void tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id, bool is_outin, int avail)
 {
     uint32_t *chan_regs = tegra_ape_dma_get_chanregs(s, channel_id);
 
@@ -117,7 +119,12 @@ static void tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id, bool 
 
         bool transfer_done = true;
 
-        // NOTE: Data-transfer would be here, but that needs MEMORY<>MEMORY transfers.
+        dma_addr_t srcaddr = chan_regs[0x34>>2] & ~0x3; // LOWER_SOURCE_ADDR_0
+        dma_addr_t dstaddr = chan_regs[0x3C>>2] & ~0x3; // LOWER_TARGET_ADDR_0
+        dma_addr_t data_addr = 0;
+
+        // NOTE: Only the below AHUB-FIFO transfers are supported for data-transfer.
+        // NOTE: Multiple memory-buffers are also not supported. Addr wrapping is ignored as well.
 
         if (mode != 2) { // non-CONTINUOUS
             chan_regs[0x0>>2] &= ~BIT(0); // CMD_0 TRANSFER_ENABLE
@@ -127,24 +134,55 @@ static void tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id, bool 
         else {
             if (!flowctrl_enable) chan_regs[0x30>>2] = 0; // TC_STATUS_0
             else {
-                uint64_t transfer_fifosize = 0;
+                size_t transfer_fifosize = 0, transfer_size = 0;
+                DMADirection dmadir;
 
-                if (is_outin && dir==4) // MEMORY_TO_AHUB
+                if (is_outin && dir==4) { // MEMORY_TO_AHUB
                     transfer_fifosize = 0x40 << ((fifoctrl>>8) & 0x1F); // TX_FIFO_SIZE in bytes
-                else if (!is_outin && dir == 2) // AHUB_TO_MEMORY
+                    data_addr = srcaddr;
+                    dmadir = DMA_DIRECTION_TO_DEVICE;
+                }
+                else if (!is_outin && dir == 2) { // AHUB_TO_MEMORY
                     transfer_fifosize = 0x40 << (fifoctrl & 0x1F); // RX_FIFO_SIZE in bytes
+                    data_addr = dstaddr;
+                    dmadir = DMA_DIRECTION_FROM_DEVICE;
+                }
 
                 if (transfer_fifosize) {
-                    if (chan_regs[0x30>>2] >= transfer_fifosize) // TC_STATUS_0
-                        chan_regs[0x30>>2] -= transfer_fifosize;
-                    else if (chan_regs[0x30>>2]) // TC_STATUS_0
-                        chan_regs[0x30>>2] = 0;
-                    else
-                        chan_regs[0x30>>2] = chan_regs[0x44>>2] - transfer_fifosize; // TC_STATUS_0 = TC_0 - transfer_fifosize
+                    //if (chan_regs[0x30>>2]==0)
+                    //    chan_regs[0x30>>2] = chan_regs[0x44>>2]; // TC_STATUS_0 = TC_0
+                    avail = MIN(avail, /*chan_regs[0x30>>2]*/transfer_fifosize);
 
-                    // NOTE: Actual data-transfer would need to update src-data-addr as well.
+                    while (avail>0) {
+                        size_t bufoff = chan_regs[0x44>>2] >= chan_regs[0x30>>2] ? chan_regs[0x44>>2] - chan_regs[0x30>>2] : 0; // TC_0, TC_STATUS_0
 
-                    transfer_done = chan_regs[0x30>>2]==0;
+                        data_addr+= bufoff;
+
+                        dma_addr_t tmplen = transfer_fifosize;
+                        void* databuf = dma_memory_map(&address_space_memory, data_addr, &tmplen,
+                                                       dmadir, MEMTXATTRS_UNSPECIFIED);
+
+                        transfer_size = transfer_fifosize;
+                        if (databuf) {
+                            if (dmadir == DMA_DIRECTION_TO_DEVICE)
+                                transfer_size = MIN(AUD_write(s->voice_out, databuf, transfer_fifosize), transfer_fifosize);
+                            else
+                                transfer_size = MIN(AUD_read(s->voice_in, databuf, transfer_fifosize), transfer_fifosize);
+                        }
+
+                        if (chan_regs[0x30>>2] >= transfer_size) // TC_STATUS_0
+                            chan_regs[0x30>>2] -= transfer_size;
+                        else if (chan_regs[0x30>>2]) // TC_STATUS_0
+                            chan_regs[0x30>>2] = 0;
+                        else
+                            chan_regs[0x30>>2] = chan_regs[0x44>>2] - transfer_size; // TC_STATUS_0 = TC_0 - transfer_size
+
+                        transfer_done = chan_regs[0x30>>2]==0;
+
+                        if (databuf) dma_memory_unmap(&address_space_memory, databuf, tmplen, dmadir, transfer_size);
+
+                        avail-= transfer_size;
+                    }
                 }
             }
         }
@@ -157,11 +195,11 @@ static void tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id, bool 
     }
 }
 
-static void tegra_ape_dma_process_channels(tegra_ape *s, bool is_outin)
+static void tegra_ape_dma_process_channels(tegra_ape *s, bool is_outin, int avail)
 {
     if (s->regs[(0x22000+0xC00)>>2] & BIT(0)) { // ADMA_GLOBAL_CMD_0 GLOBAL_ENABLE
         for (size_t i=0; i<NUM_DMA_CHANNELS; i++) {
-            tegra_ape_dma_process_channel(s, i, is_outin);
+            tegra_ape_dma_process_channel(s, i, is_outin, avail);
         }
     }
 }
@@ -203,14 +241,14 @@ static void tegra_ape_audio_out_callback(void *opaque, int avail)
 {
     tegra_ape *s = opaque;
 
-    tegra_ape_dma_process_channels(s, true);
+    tegra_ape_dma_process_channels(s, true, avail);
 }
 
 static void tegra_ape_audio_in_callback(void *opaque, int avail)
 {
     tegra_ape *s = opaque;
 
-    tegra_ape_dma_process_channels(s, false);
+    tegra_ape_dma_process_channels(s, false, avail);
 }
 
 static void tegra_ape_dma_enable_channel(tegra_ape *s, size_t channel_id)
