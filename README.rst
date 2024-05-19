@@ -65,6 +65,8 @@ Actual GPU rendering will not be supported. Playing commercial titles with graph
 
 * The TSEC outdata can optionally be configured with (size <=0x10-bytes): ``-object secret,id=tegra.tsec.outdata,file={path}`` The key used by tsec for PK11 decryption can be set with (should not be used if PK11-decryption isn't used): ``-object secret,id=tegra.tsec.package1_key,file={path}`` tegra.tsec.outdata is also used to set the tsec_key SE keyslot during a TSEC operation. To set the tsec_root_key SE keyslot during a TSEC operation (size <=0x10-bytes): ``-object secret,id=tegra.tsec.tsec_root_key,file={path}``
 
+* The FEKs (Fuse Encryption Key) for TX1+ can optionally be specified via input secrets if needed. Repeat as needed for each key: ``-object secret,id=tegra.apb_misc.{prod|dev}_fek{decimal slot 0-7},file={path to raw keydata}``
+
 * To resume after sleep-mode is entered via the PMC reg, use ``system_wakeup`` via the QEMU monitor. This is only available when tegra.evp bpmp-reset-vector is left at the default, and when ``-bios`` is specified.
 
 * To rotate the display: ``-global driver=tegra.dc,property=rotate,value={0/90/180/270}`` Note that -rotate is not used for this since that also enables rotating the host mouse input.

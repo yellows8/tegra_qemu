@@ -1938,4 +1938,6 @@ typedef union das_dac_input_data_clk_sel_2_u {
     uint32_t reg32;
 } das_dac_input_data_clk_sel_2_t;
 
+#define FEK_OFFSET 0x1200
+
 #endif // TEGRA_APB_MISC_H

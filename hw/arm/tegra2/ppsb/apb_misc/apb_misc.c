@@ -20,6 +20,10 @@
 #include "tegra_common.h"
 
 #include "hw/sysbus.h"
+#include "crypto/secret_common.h"
+#include "qapi/error.h"
+#include "qemu/cutils.h"
+#include "qemu/log.h"
 
 #include "apb_misc.h"
 #include "iomap.h"
@@ -464,7 +468,12 @@ static uint64_t tegra_apb_misc_priv_read(void *opaque, hwaddr offset,
     case GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET ... DAS_DAP_CTRL_SEL_OFFSET-0x4:
     case 0xC14 ... DAS_DAC_INPUT_DATA_CLK_SEL_OFFSET-0x4:
     case DAS_DAC_INPUT_DATA_CLK_SEL_2_OFFSET+0x4 ... 0x2FFC:
-        if (tegra_board >= TEGRAX1_BOARD) ret = s->regs[(offset - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2];
+        if (tegra_board >= TEGRAX1_BOARD) {
+            ret = s->regs[(offset - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2];
+            if (tegra_board >= TEGRAX1PLUS_BOARD && offset >= FEK_OFFSET && offset+size <= FEK_OFFSET+0x100 &&
+                (s->pp_pullupdown_reg_a.reg32 & BIT(0)))
+                ret = ~0; // Return all 0xFF when reading FEK if it's disabled.
+        }
         break;
     case DAS_DAP_CTRL_SEL_OFFSET:
         ret = s->das_dap_ctrl_sel.reg32;
@@ -622,7 +631,10 @@ static void tegra_apb_misc_priv_write(void *opaque, hwaddr offset,
         break;
     case PP_PULLUPDOWN_REG_A_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pp_pullupdown_reg_a.reg32, value);
-        s->pp_pullupdown_reg_a.reg32 = value;
+        if (tegra_board < TEGRAX1_BOARD)
+            s->pp_pullupdown_reg_a.reg32 = value;
+        else if (tegra_board >= TEGRAX1PLUS_BOARD) // FEK disable
+            s->pp_pullupdown_reg_a.reg32 |= value;
         break;
     case PP_PULLUPDOWN_REG_B_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->pp_pullupdown_reg_b.reg32, value);
@@ -1016,6 +1028,8 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
         s->gp_owrcfgpadctrl.reg32 = GP_OWRCFGPADCTRL_TEGRAX1_RESET;
         s->gp_uadcfgpadctrl.reg32 = GP_UADCFGPADCTRL_TEGRAX1_RESET;
 
+        s->pp_pullupdown_reg_a.reg32 = 0;
+
         s->gp_hidrev.chipid = 0x21;
         s->gp_hidrev.hidfam = 0x7;
         s->gp_hidrev.majorrev = tegra_board >= TEGRAX1PLUS_BOARD ? 0x2 : 0x1;
@@ -1066,6 +1080,32 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
     s->regs[(GP_QSPI_COMP_CONTROL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_QSPI_COMP_CONTROL_RESET;
     s->regs[(GP_VGPIO_GPIO_MUX_SEL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_VGPIO_GPIO_MUX_SEL_RESET;
     s->regs[(GP_QSPI_SCK_LPBK_CONTROL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_QSPI_SCK_LPBK_CONTROL_RESET;
+
+    // Load the optional FEKs.
+    if (tegra_board >= TEGRAX1PLUS_BOARD) {
+        Error *err = NULL;
+        char tmpstr[32]={};
+        for (int i=0; i<8*2; i++) {
+            uint32_t *keyptr = &s->regs[((FEK_OFFSET + i*0x10) - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2];
+            memset(keyptr, 0x11*(i+1), 0x10);
+
+            uint8_t *data=NULL;
+            size_t datalen = 0;
+            snprintf(tmpstr, sizeof(tmpstr)-1, "tegra.apb_misc.%s_fek%d", i < 8 ? "prod" : "dev", i % 8);
+            if (qcrypto_secret_lookup(tmpstr, &data, &datalen, &err)==0) {
+                if (datalen!=0x10) error_setg(&err, "SE: Invalid datalen for secret %s, datalen=0x%lx expected 0x%x.", tmpstr, datalen, 0x10);
+                else {
+                    memcpy(keyptr, data, 0x10);
+                    qemu_hexdump(stdout, tmpstr, keyptr, 0x10);
+                }
+                g_free(data);
+            }
+            if (err) {
+                error_report_err(err);
+                err = NULL;
+            }
+        }
+    }
 }
 
 static const MemoryRegionOps tegra_apb_misc_mem_ops = {
