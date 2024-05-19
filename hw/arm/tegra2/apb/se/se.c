@@ -70,6 +70,7 @@ typedef struct tegra_se_state {
 
     qemu_irq irq;
     MemoryRegion iomem;
+    MemoryRegion iomem_pka;
     uint32_t engine;
 
     union {
@@ -132,13 +133,17 @@ typedef struct tegra_se_state {
             u32 _0x820[0x5F8];
         } regs;
 
-        u32 regs_raw[0xE18>>2];
+        u32 regs_raw[0x2000>>2];
     };
+
+    u32 regs_pka[0x10000>>2];
 
     u32 aes_keytable[0x10*0x10];
     u32 rsa_keytable[0x100];
     u32 srk[0x20>>2];
     u32 srk_iv[0x10>>2];
+
+    u32 pka_keytable[(0x800*0x4)>>2];
 
     struct {
         u32 aes_keytable[0x10*0x10];
@@ -162,11 +167,13 @@ static const VMStateDescription vmstate_tegra_se = {
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
         VMSTATE_UINT32(engine, tegra_se),
-        VMSTATE_UINT32_ARRAY(regs_raw, tegra_se, 0xE18>>2),
+        VMSTATE_UINT32_ARRAY(regs_raw, tegra_se, 0x2000>>2),
+        VMSTATE_UINT32_ARRAY(regs_pka, tegra_se, 0x10000>>2),
         VMSTATE_UINT32_ARRAY(aes_keytable, tegra_se, 0x10*0x10),
         VMSTATE_UINT32_ARRAY(rsa_keytable, tegra_se, 0x100),
         VMSTATE_UINT32_ARRAY(srk, tegra_se, 0x20>>2),
         VMSTATE_UINT32_ARRAY(srk_iv, tegra_se, 0x10>>2),
+        VMSTATE_UINT32_ARRAY(pka_keytable, tegra_se, (0x800*0x4)>>2),
 
         VMSTATE_UINT32_ARRAY(context.aes_keytable, tegra_se, 0x10*0x10),
         VMSTATE_UINT32_ARRAY(context.rsa_keytable, tegra_se, 0x100),
@@ -1299,6 +1306,48 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
     }
 }
 
+static uint64_t tegra_pka_priv_read(void *opaque, hwaddr offset,
+                                     unsigned size)
+{
+    tegra_se *s = opaque;
+    uint64_t ret = 0;
+
+    TRACE_READ(s->iomem.addr, offset, ret);
+
+    if (offset+size <= sizeof(s->regs_pka)) {
+        uint32_t *regs = s->regs_pka;
+        ret = regs[offset/sizeof(uint32_t)] & ((1ULL<<size*8)-1);
+    }
+
+    return ret;
+}
+
+static void tegra_pka_priv_write(void *opaque, hwaddr offset,
+                                  uint64_t value, unsigned size)
+{
+    tegra_se *s = opaque;
+    uint32_t keyslot=0;
+
+    TRACE_WRITE(s->iomem.addr, offset, 0, value);
+
+    if (offset+size <= sizeof(s->regs_pka)) {
+        uint32_t *regs = s->regs_pka;
+
+        switch (offset) {
+            case 0x10 ... 0x10+0xC: // keyslot keydata FIFO
+                keyslot = (offset - 0x10) >> 2;
+                uint32_t addr = regs[0x2200 + keyslot]; // byteoff 0x8800
+                addr = (addr & 0x7F) | ((addr & 0x300) >> 1);
+                s->pka_keytable[((0x800*keyslot) >> 2) + addr] = value;
+            break;
+
+            default:
+                regs[offset/sizeof(uint32_t)] = (regs[offset/sizeof(uint32_t)] & ~((1ULL<<size*8)-1)) | value;
+            break;
+        }
+    }
+}
+
 static void tegra_se_priv_reset(DeviceState *dev)
 {
     tegra_se *s = TEGRA_SE(dev);
@@ -1310,6 +1359,9 @@ static void tegra_se_priv_reset(DeviceState *dev)
     memset(s->rsa_keytable, 0, sizeof(s->rsa_keytable));
     memset(s->srk, 0, sizeof(s->srk));
     memset(s->srk_iv, 0, sizeof(s->srk_iv));
+
+    memset(&s->regs_pka, 0, sizeof(s->regs_pka));
+    memset(&s->pka_keytable, 0, sizeof(s->pka_keytable));
 
     s->regs._0x814 = 0x89040800;
 
@@ -1348,11 +1400,19 @@ static void tegra_se_priv_reset(DeviceState *dev)
 
     s->regs.SE_RSA_SECURITY_PERKEY = 0x3;
     for (int keyslot=0; keyslot<2; keyslot++) s->regs.SE_RSA_KEYTABLE_ACCESS[keyslot] = 0x7;
+
+    s->regs_pka[0x8114>>2] = 0x1;
 }
 
 static const MemoryRegionOps tegra_se_mem_ops = {
     .read = tegra_se_priv_read,
     .write = tegra_se_priv_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+};
+
+static const MemoryRegionOps tegra_pka_mem_ops = {
+    .read = tegra_pka_priv_read,
+    .write = tegra_pka_priv_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
@@ -1366,7 +1426,14 @@ static void tegra_se_priv_realize(DeviceState *dev, Error **errp)
                           "tegra.se", TEGRA_SE_SIZE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 
+    if (s->engine==2) {
+        memory_region_init_io(&s->iomem_pka, OBJECT(dev), &tegra_pka_mem_ops, s,
+                              "tegra.pka", TEGRA_PKA1_SIZE);
+        sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem_pka);
+    }
+
     memset(&s->regs, 0, sizeof(s->regs));
+    memset(&s->regs_pka, 0, sizeof(s->regs_pka));
     memset(&s->context, 0, sizeof(s->context));
 }
 

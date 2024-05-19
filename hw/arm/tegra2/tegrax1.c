@@ -579,7 +579,13 @@ static void __tegrax1_init(MachineState *machine)
     /* SE */
     tegra_se_dev = tegra_init_obj(TEGRA_SE_BASE, DIRQ(INT_SE), "tegra.se", "engine", 1);
     if (tegra_board == TEGRAX1PLUS_BOARD) {
-        tegra_se2_dev = tegra_init_obj(TEGRA_SE2_BASE, DIRQ(INT_SE), "tegra.se", "engine", 2); // NOTE: This IRQ is likely wrong?
+        tegra_se2_dev = qdev_new("tegra.se");
+        s = SYS_BUS_DEVICE(tegra_se2_dev);
+        qdev_prop_set_uint32(DEVICE(tegra_se2_dev), "engine", 2);
+        sysbus_realize_and_unref(s, &error_fatal);
+        sysbus_mmio_map(s, 0, TEGRA_SE2_BASE);
+        sysbus_mmio_map(s, 1, TEGRA_PKA1_BASE);
+        sysbus_connect_irq(s, 0, DIRQ(INT_SE)); // NOTE: This IRQ is likely wrong?
     }
 
     /* TSENSOR */
