@@ -389,11 +389,14 @@ static void __tegrax1_init(MachineState *machine)
     memory_region_add_and_init_ram(sysmem, "tegra.ppcs",
                                    0x7c000000, 0x10000, RW);
 
+    size_t tzram_size = tegra_board < TEGRAX1PLUS_BOARD ? SZ_64K : SZ_256K;
+    hwaddr tzram_end = 0x7c010000+tzram_size;
+
     memory_region_add_and_init_ram(sysmem, "tegra.tzram",
-                                   0x7c010000, SZ_64K, RW);
+                                   0x7c010000, tzram_size, RW);
 
     memory_region_add_and_init_ram(sysmem, "tegra.ahb_a2",
-                                   0x7c020000, 0x7d000000-0x7c020000, RW);
+                                   tzram_end, 0x7d000000-tzram_end, RW);
 
     memory_region_add_and_init_ram(sysmem, "tegra.ahb_a2_upper",
                                    0x7d005800, 0x7e000000-0x7d005800, RW);
