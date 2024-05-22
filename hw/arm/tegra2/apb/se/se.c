@@ -36,6 +36,7 @@
 #include "qemu/guest-random.h"
 #include "qapi/error.h"
 #include "qemu/bswap.h"
+#include "qemu/bitmap.h"
 #include "qapi/qapi-commands.h"
 
 #include "exec/address-spaces.h"
@@ -57,6 +58,8 @@
 #define DEFINE_REG32(reg) reg##_t reg
 #define WR_MASKED(r, d, m)  r = (r & ~m##_WRMASK) | (d & m##_WRMASK)
 
+//#define TEGRA_SE_RSA_DEBUG
+
 typedef uint32_t u32;
 
 typedef struct {
@@ -64,6 +67,16 @@ typedef struct {
     u32 address;
     u32 size;
 } LinkedListEntry;
+
+typedef struct {
+    u32 rand[0x4];
+    u32 sticky_bits[0x8];
+
+    u32 aes_keytable[0x10*0x10];
+    u32 rsa_keytable[0x100];
+
+    u32 fixed_pattern[0x10>>2];
+} tegra_se_context;
 
 typedef struct tegra_se_state {
     SysBusDevice parent_obj;
@@ -144,21 +157,6 @@ typedef struct tegra_se_state {
     u32 srk_iv[0x10>>2];
 
     u32 pka_keytable[(0x800*0x4)>>2];
-
-    struct {
-        u32 aes_keytable[0x10*0x10];
-        u32 rsa_keytable[0x100];
-
-        u32 SE_SE_SECURITY;
-        u32 SE_TZRAM_SECURITY;
-
-        u32 SE_CRYPTO_SECURITY_PERKEY;
-        uint8_t SE_CRYPTO_KEYTABLE_ACCESS[0x10];
-
-        u32 SE_RSA_SECURITY_PERKEY;
-        uint8_t SE_RSA_KEYTABLE_ACCESS[0x2];
-    } context;
-
 } tegra_se;
 
 static const VMStateDescription vmstate_tegra_se = {
@@ -174,16 +172,6 @@ static const VMStateDescription vmstate_tegra_se = {
         VMSTATE_UINT32_ARRAY(srk, tegra_se, 0x20>>2),
         VMSTATE_UINT32_ARRAY(srk_iv, tegra_se, 0x10>>2),
         VMSTATE_UINT32_ARRAY(pka_keytable, tegra_se, (0x800*0x4)>>2),
-
-        VMSTATE_UINT32_ARRAY(context.aes_keytable, tegra_se, 0x10*0x10),
-        VMSTATE_UINT32_ARRAY(context.rsa_keytable, tegra_se, 0x100),
-        VMSTATE_UINT32(context.SE_SE_SECURITY, tegra_se),
-        VMSTATE_UINT32(context.SE_TZRAM_SECURITY, tegra_se),
-        VMSTATE_UINT32(context.SE_CRYPTO_SECURITY_PERKEY, tegra_se),
-        VMSTATE_UINT8_ARRAY(context.SE_CRYPTO_KEYTABLE_ACCESS, tegra_se, 0x10),
-        VMSTATE_UINT32(context.SE_RSA_SECURITY_PERKEY, tegra_se),
-        VMSTATE_UINT8_ARRAY(context.SE_RSA_KEYTABLE_ACCESS, tegra_se, 0x2),
-
         VMSTATE_END_OF_LIST()
     }
 };
@@ -685,7 +673,7 @@ static QCryptoCipher *qcrypto_cipher_ctx_new(QCryptoCipherAlgorithm alg,
     return NULL;
 }
 
-int tegra_se_crypto_operation(void* key, void* iv, QCryptoCipherAlgorithm cipher_alg, QCryptoCipherMode mode, bool encrypt, hwaddr inbuf_addr, void* outbuf, dma_addr_t databuf_size)
+int tegra_se_crypto_operation(void* key, void* iv, QCryptoCipherAlgorithm cipher_alg, QCryptoCipherMode mode, bool encrypt, uintptr_t inbuf, uintptr_t outbuf, dma_addr_t databuf_size, bool inbuf_host, bool outbuf_host)
 {
     Error *err = NULL;
     int tmpret=0;
@@ -695,15 +683,20 @@ int tegra_se_crypto_operation(void* key, void* iv, QCryptoCipherAlgorithm cipher
     dma_addr_t tmplen_in=databuf_size, tmplen_out=databuf_size;
     QCryptoCipher *cipher = qcrypto_cipher_ctx_new(cipher_alg, mode, key, qcrypto_cipher_get_key_len(cipher_alg), &err);
 
-    databuf_in = dma_memory_map(&address_space_memory, inbuf_addr, &tmplen_in, DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
-    if (outbuf==NULL) databuf_out = dma_memory_map(&address_space_memory, inbuf_addr, &tmplen_out, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
+    if (!inbuf_host)
+        databuf_in = dma_memory_map(&address_space_memory, inbuf, &tmplen_in, DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
+    else
+        databuf_in = (void*)inbuf;
+    if (!outbuf_host)
+        databuf_out = dma_memory_map(&address_space_memory, outbuf, &tmplen_out, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
+    else
+        databuf_out = (void*)outbuf;
 
     if (cipher) {
-        if (databuf_in==NULL || (outbuf==NULL && databuf_out==NULL))
+        if (databuf_in==NULL || databuf_out==NULL)
             qemu_log_mask(LOG_GUEST_ERROR, "tegra.se: Failed to DMA map input/output buffer.\n");
         else {
             datasize = databuf_size;
-            if (outbuf==NULL) outbuf = databuf_out;
 
             if (mode != QCRYPTO_CIPHER_MODE_ECB) {
                 tmpret = qcrypto_cipher_setiv(cipher, iv, 0x10, &err);
@@ -712,10 +705,10 @@ int tegra_se_crypto_operation(void* key, void* iv, QCryptoCipherAlgorithm cipher
 
             if (tmpret==0) {
                 if (encrypt) {
-                    if (qcrypto_cipher_encrypt(cipher, databuf_in, outbuf, datasize, &err)!=0) datasize=0;
+                    if (qcrypto_cipher_encrypt(cipher, databuf_in, databuf_out, datasize, &err)!=0) datasize=0;
                 }
                 else {
-                    if (qcrypto_cipher_decrypt(cipher, databuf_in, outbuf, datasize, &err)!=0) datasize=0;
+                    if (qcrypto_cipher_decrypt(cipher, databuf_in, databuf_out, datasize, &err)!=0) datasize=0;
                 }
                 if (datasize==0) tmpret = -1;
             }
@@ -725,8 +718,8 @@ int tegra_se_crypto_operation(void* key, void* iv, QCryptoCipherAlgorithm cipher
     }
     else tmpret = -1;
 
-    if (databuf_in) dma_memory_unmap(&address_space_memory, databuf_in, databuf_size, DMA_DIRECTION_TO_DEVICE, databuf_size);
-    if (databuf_out) dma_memory_unmap(&address_space_memory, databuf_out, databuf_size, DMA_DIRECTION_FROM_DEVICE, datasize);
+    if (databuf_in && !inbuf_host) dma_memory_unmap(&address_space_memory, databuf_in, databuf_size, DMA_DIRECTION_TO_DEVICE, databuf_size);
+    if (databuf_out && !outbuf_host) dma_memory_unmap(&address_space_memory, databuf_out, databuf_size, DMA_DIRECTION_FROM_DEVICE, datasize);
     if (err) error_report_err(err);
 
     return tmpret;
@@ -748,44 +741,98 @@ void tegra_se_set_aes_keyslot(uint32_t slot, void* key, size_t key_size) {
     memcpy(&s->aes_keytable[slot*0x10], key, key_size);
 }
 
+static void tegra_se_copy_bitmap(void* dst, unsigned long data,
+                                 unsigned long *shift, unsigned long nbits)
+{
+    bitmap_copy_with_dst_offset(dst, &data,
+                                *shift, nbits);
+    *shift += nbits;
+}
+
 // Extract sticky-bits state into the packed context data.
 static void tegra_se_get_context_sticky_bits(tegra_se *s, uint32_t *out)
 {
-    out[0] = s->regs.SE_SE_SECURITY & 0x7;
-    if (s->regs.SE_SE_SECURITY & (1<<16)) out[0] |= 1<<3; // SECURITY_SOFT_SETTING
-    out[0] |= (s->regs.SE_TZRAM_SECURITY & 0x3) << 4;
-    out[0] |= s->regs.SE_CRYPTO_SECURITY_PERKEY << 6;
+   unsigned long bitpos = 0;
 
-    uint32_t bitpos = 22, bitcount=0;
-    for (uint32_t i=0; i<0x10; i++, bitpos+=7) {
-        bitcount = 7;
-        if ((bitpos % 32) + bitcount > 32) bitcount -= ((bitpos % 32) + bitcount) - 32;
-        out[bitpos/32] |= (s->regs.SE_CRYPTO_KEYTABLE_ACCESS[i] & ((1<<bitcount)-1)) << (bitpos % 32);
-        if (bitcount < 7)
-            out[(bitpos+bitcount)/32] |= (s->regs.SE_CRYPTO_KEYTABLE_ACCESS[i]>>bitcount & ((1<<(7-bitcount))-1)) << ((bitpos+bitcount) % 32);
+   tegra_se_copy_bitmap(out, (s->regs.SE_SE_SECURITY & 0x7) | (((s->regs.SE_SE_SECURITY>>16) & 0x1)<<3), &bitpos, 4);
+   tegra_se_copy_bitmap(out, s->regs.SE_TZRAM_SECURITY, &bitpos, 2);
+   tegra_se_copy_bitmap(out, s->regs.SE_CRYPTO_SECURITY_PERKEY, &bitpos, 16);
+
+    unsigned long bitnum = 7;
+    if (tegra_board >= TEGRAX1PLUS_BOARD) bitnum++;
+
+    for (int i=0; i<0x10; i++) {
+        tegra_se_copy_bitmap(out, s->regs.SE_CRYPTO_KEYTABLE_ACCESS[i], &bitpos, bitnum);
     }
 
-    out[4] |= (s->regs.SE_RSA_SECURITY_PERKEY & 0x3) << 6;
-    out[4] |= (s->regs.SE_RSA_KEYTABLE_ACCESS[0] & 0x7) << 8;
-    out[4] |= (s->regs.SE_RSA_KEYTABLE_ACCESS[1] & 0x7) << 11;
+   tegra_se_copy_bitmap(out, s->regs.SE_RSA_SECURITY_PERKEY, &bitpos, 2);
+   tegra_se_copy_bitmap(out, s->regs.SE_RSA_KEYTABLE_ACCESS[0], &bitpos, 3);
+   tegra_se_copy_bitmap(out, s->regs.SE_RSA_KEYTABLE_ACCESS[1], &bitpos, 3);
+
+   if (tegra_board >= TEGRAX1PLUS_BOARD)
+       tegra_se_copy_bitmap(out, (s->regs.SE_SE_SECURITY >> 4) & 0x1, &bitpos, 1);
 }
 
-static void tegra_se_load_context(tegra_se *s)
+// Extract PKA sticky-bits state into the packed context data.
+static void tegra_se_get_context_pka_sticky_bits(tegra_se *s, uint32_t *out)
 {
-    memcpy(s->aes_keytable, s->context.aes_keytable, sizeof(s->context.aes_keytable));
-    memcpy(s->rsa_keytable, s->context.rsa_keytable, sizeof(s->context.rsa_keytable));
+   unsigned long bitpos = 0;
+   unsigned long unk=0;
 
-    s->regs.SE_SE_SECURITY = s->context.SE_SE_SECURITY;
-    s->regs.SE_TZRAM_SECURITY = s->context.SE_TZRAM_SECURITY;
-    s->regs.SE_CRYPTO_SECURITY_PERKEY = s->context.SE_CRYPTO_SECURITY_PERKEY;
-    s->regs.SE_RSA_SECURITY_PERKEY = s->context.SE_RSA_SECURITY_PERKEY;
+    for (int i=0; i<0x4*2; i++) {
+        tegra_se_copy_bitmap(out, s->regs_pka[(0x8860>>2) + i], &bitpos, 3);
+    }
 
-    for (size_t i=0; i<0x10; i++)
-        s->regs.SE_CRYPTO_KEYTABLE_ACCESS[i] = s->context.SE_CRYPTO_KEYTABLE_ACCESS[i];
-    for (size_t i=0; i<0x2; i++)
-        s->regs.SE_RSA_KEYTABLE_ACCESS[i] = s->context.SE_RSA_KEYTABLE_ACCESS[i];
+   tegra_se_copy_bitmap(out, (s->regs_pka[0x8850>>2] & 0x7) | (((s->regs_pka[0x8850>>2]>>16) & 0x1)<<3), &bitpos, 4);
+   tegra_se_copy_bitmap(out, ((s->regs_pka[0x8120>>2]>>31) & 0x1) | ((s->regs_pka[0x8120>>2] & 0xFFFFF)<<1), &bitpos, 21);
+   tegra_se_copy_bitmap(out, unk, &bitpos, 32);
+}
 
-    memset(&s->context, 0, sizeof(s->context));
+// Save the context.
+static void tegra_se_auto_save_context(tegra_se *s)
+{
+    Error *err = NULL;
+    size_t size = s->engine == 1 ? 0x840 : 0x2850;
+    uint32_t data[0x2850>>2]={};
+    tegra_se_context *context = (tegra_se_context*)data;
+    static uint8_t fixed_pattern[0x10] = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F };
+
+    dma_addr_t context_addr = s->engine == 1 ? 0x7c04c000 : 0x7c04c000+0x1000;
+    uint32_t key[4]={};
+    uint32_t iv[4]={};
+
+    s->regs.SE_CTX_SAVE_AUTO &= ~(0x3FF<<16); // CTX_SAVE_AUTO_CURR_CNT
+    s->regs.SE_CTX_SAVE_AUTO |= ((size>>4)+1)<<16;
+
+    qemu_guest_getrandom(key, sizeof(key), &err);
+    if (err) {
+        error_report_err(err);
+        err = NULL;
+    }
+    tegra_pmc_set_srk(s->engine, key);
+
+    qemu_guest_getrandom(context->rand, sizeof(context->rand), &err);
+    if (err) {
+        error_report_err(err);
+        err = NULL;
+    }
+
+    tegra_se_get_context_sticky_bits(s, context->sticky_bits);
+
+    memcpy(context->aes_keytable, s->aes_keytable, sizeof(s->aes_keytable));
+    memcpy(context->rsa_keytable, s->rsa_keytable, sizeof(s->rsa_keytable));
+
+    if (s->engine != 1) { // SE2, PKA
+        tegra_se_get_context_pka_sticky_bits(s, context->fixed_pattern); // PKA sticky-bits are located where fixed_pattern was with SE1.
+        memcpy(context+1, s->pka_keytable, sizeof(s->pka_keytable));
+    }
+
+    memcpy(&data[(size-0x10)>>2], fixed_pattern, sizeof(fixed_pattern));
+
+    tegra_se_crypto_operation(key, iv, QCRYPTO_CIPHER_ALG_AES_128,
+                              QCRYPTO_CIPHER_MODE_CBC, true,
+                              (uintptr_t)data, context_addr,
+                              size, true, false);
 }
 
 static uint64_t tegra_se_priv_read(void *opaque, hwaddr offset,
@@ -822,6 +869,8 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
     uint32_t n_buf[0x40]={};
     uint32_t e_buf[0x40]={};
 
+    uint32_t iv[4]={};
+
     uint32_t sticky_bits[0x20>>2]={};
 
     uint32_t cfg_dst = (s->regs.SE_CONFIG >> 2) & 0x7;
@@ -840,13 +889,13 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
         case SE_INT_STATUS_OFFSET:
             tmp = s->regs.SE_INT_ENABLE & s->regs.SE_INT_STATUS;
             s->regs.SE_INT_STATUS &= ~value;
-            if (tmp != (s->regs.SE_INT_ENABLE & s->regs.SE_INT_STATUS)) TRACE_IRQ_LOWER(s->iomem.addr, s->irq);
+            if (tmp != 0 && ((s->regs.SE_INT_ENABLE & s->regs.SE_INT_STATUS) == 0)) TRACE_IRQ_LOWER(s->iomem.addr, s->irq);
         break;
 
         case SE_OPERATION_OFFSET:
         case SE_OUT_LL_ADDR_OFFSET:
             regs[offset/sizeof(uint32_t)] = value;
-            s->regs.SE_INT_STATUS |= 1<<4; // INT_STATUS_SE_OP_DONE
+            if (offset == SE_OPERATION_OFFSET) s->regs.SE_INT_STATUS |= 1<<4; // INT_STATUS_SE_OP_DONE
             if (s->regs.SE_INT_ENABLE & s->regs.SE_INT_STATUS) TRACE_IRQ_RAISE(s->iomem.addr, s->irq);
 
             bool ctxsave = false;
@@ -865,25 +914,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                         qemu_log_mask(LOG_GUEST_ERROR, "tegra.se: Ignoring attempt to use automatic/original context save since the current board doesn't support it.\n");
                     }
                     else if (ctx_save_auto_enable) { // Automatic context save
-                        uint32_t cnt = s->engine == 1 ? 133 : 646;
-
-                        s->regs.SE_CTX_SAVE_AUTO &= ~(0x3FF<<16); // CTX_SAVE_AUTO_CURR_CNT
-                        s->regs.SE_CTX_SAVE_AUTO |= cnt<<16;
-
-                        // Save the context.
-
-                        memcpy(s->context.aes_keytable, s->aes_keytable, sizeof(s->aes_keytable));
-                        memcpy(s->context.rsa_keytable, s->rsa_keytable, sizeof(s->rsa_keytable));
-
-                        s->context.SE_SE_SECURITY = s->regs.SE_SE_SECURITY;
-                        s->context.SE_TZRAM_SECURITY = s->regs.SE_TZRAM_SECURITY;
-                        s->context.SE_CRYPTO_SECURITY_PERKEY = s->regs.SE_CRYPTO_SECURITY_PERKEY;
-                        s->context.SE_RSA_SECURITY_PERKEY = s->regs.SE_RSA_SECURITY_PERKEY;
-
-                        for (size_t i=0; i<0x10; i++)
-                            s->context.SE_CRYPTO_KEYTABLE_ACCESS[i] = s->regs.SE_CRYPTO_KEYTABLE_ACCESS[i];
-                        for (size_t i=0; i<0x2; i++)
-                            s->context.SE_RSA_KEYTABLE_ACCESS[i] = s->regs.SE_RSA_KEYTABLE_ACCESS[i];
+                        tegra_se_auto_save_context(s);
                     }
                     else { // Original context save.
                         ctxsave = true;
@@ -910,7 +941,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                            // 3: PKA1_STICKY_BITS, not impl'd
                            // 4: MEM, handled below.
                            else if (ctxsave_src==6) { // SRK
-                               tegra_pmc_set_srk(s->srk);
+                               tegra_pmc_set_srk(s->engine, s->srk);
                                break;
                            }
                            else {
@@ -1047,7 +1078,6 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                     datasize = 0;
                                 }
                                 else {
-                                    uint32_t iv[4]={};
                                     if (mode == QCRYPTO_CIPHER_MODE_CTR) {
                                         for (size_t i=0; i<4; i++) {
                                             iv[i] = s->regs.SE_CRYPTO_LINEAR_CTR[i];
@@ -1210,9 +1240,11 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     byteswap_rsa(&s->rsa_keytable[0x80*slot + 0x40], n_buf, n_size);
                     byteswap_rsa(&s->rsa_keytable[0x80*slot], e_buf, e_size);
 
-                    /*se_log_hexdump("tegra_se_rsa_indata", indata, sizeof(indata));
+                    #ifdef TEGRA_SE_RSA_DEBUG
+                    se_log_hexdump("tegra_se_rsa_indata", indata, sizeof(indata));
                     se_log_hexdump("tegra_se_rsa_n_buf", n_buf, n_size);
-                    se_log_hexdump("tegra_se_rsa_e_buf", e_buf, e_size);*/
+                    se_log_hexdump("tegra_se_rsa_e_buf", e_buf, e_size);
+                    #endif
 
                     QCryptoAkCipherOptions opts = { .alg = QCRYPTO_AKCIPHER_ALG_RSA };
                     opts.u.rsa.hash_alg = QCRYPTO_HASH_ALG__MAX;
@@ -1233,7 +1265,9 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                             datasize = databuf_outsize;
                             if (datasize > sizeof(s->regs.SE_RSA_OUTPUT)) datasize = sizeof(s->regs.SE_RSA_OUTPUT);
                             byteswap_rsa(s->regs.SE_RSA_OUTPUT, databuf_out, datasize);
-                            //se_log_hexdump("tegra_se_rsa_outdata", databuf_out, datasize);
+                            #ifdef TEGRA_SE_RSA_DEBUG
+                            se_log_hexdump("tegra_se_rsa_outdata", databuf_out, datasize);
+                            #endif
                         }
                         qcrypto_akcipher_free(akcipher);
                     }
@@ -1352,8 +1386,6 @@ static void tegra_se_priv_reset(DeviceState *dev)
 {
     tegra_se *s = TEGRA_SE(dev);
 
-    bool ctx_save_auto_enable = s->regs.SE_CTX_SAVE_AUTO & 0x1;
-
     memset(&s->regs, 0, sizeof(s->regs));
     memset(s->aes_keytable, 0, sizeof(s->aes_keytable));
     memset(s->rsa_keytable, 0, sizeof(s->rsa_keytable));
@@ -1365,13 +1397,8 @@ static void tegra_se_priv_reset(DeviceState *dev)
 
     s->regs._0x814 = 0x89040800;
 
-    if (tegra_board >= TEGRAX1PLUS_BOARD && ctx_save_auto_enable) { // TODO: Move elsewhere if not correct.
-        tegra_se_load_context(s);
-        return;
-    }
-
     s->regs.SE_SE_SECURITY = 0x00010005; // SECURITY_HARD_SETTING = NONSECURE, SECURITY_PERKEY_SETTING = NONSECURE, SECURITY_SOFT_SETTING = NONSECURE
-    if (tegra_board == TEGRAX1PLUS_BOARD) s->regs.SE_SE_SECURITY |= 1<<5; // SE_SECURITY TX1+ sticky bit
+    if (tegra_board >= TEGRAX1PLUS_BOARD) s->regs.SE_SE_SECURITY |= 1<<5; // SE_SECURITY TX1+ sticky bit
     s->regs.SE_TZRAM_SECURITY = 0x1; // NONSECURE
     s->regs.SE_CRYPTO_SECURITY_PERKEY = 0xFFFF;
 
@@ -1434,7 +1461,6 @@ static void tegra_se_priv_realize(DeviceState *dev, Error **errp)
 
     memset(&s->regs, 0, sizeof(s->regs));
     memset(&s->regs_pka, 0, sizeof(s->regs_pka));
-    memset(&s->context, 0, sizeof(s->context));
 }
 
 static Property tegra_se_properties[] = {

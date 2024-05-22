@@ -1126,14 +1126,19 @@ void tegra_pmc_set_rst_status(uint32_t value)
     s->regs[(RST_STATUS_OFFSET-0x160)>>2] = value;
 }
 
-void tegra_pmc_set_srk(uint32_t *key)
+void tegra_pmc_set_srk(uint32_t engine, uint32_t *key)
 {
     tegra_pmc *s = tegra_pmc_dev;
 
-    s->secure_scratch4.reg32 = key[0];
-    s->secure_scratch5.reg32 = key[1];
-    s->regs[(SECURE_SCRATCH6_OFFSET-0x160)>>2] = key[2];
-    s->regs[(SECURE_SCRATCH7_OFFSET-0x160)>>2] = key[3];
+    if (engine==1) {
+        s->secure_scratch4.reg32 = key[0];
+        s->secure_scratch5.reg32 = key[1];
+        s->regs[(SECURE_SCRATCH6_OFFSET-0x160)>>2] = key[2];
+        s->regs[(SECURE_SCRATCH7_OFFSET-0x160)>>2] = key[3];
+    }
+    else {
+        memcpy(&s->regs[(SECURE_SCRATCH120_OFFSET-0x160)>>2], key, 0x10);
+    }
 }
 
 void tegra_pmc_set_crypto_op(uint32_t value)

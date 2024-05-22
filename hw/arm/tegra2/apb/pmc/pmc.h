@@ -1207,9 +1207,11 @@ typedef union gate_u {
 #define SCRATCH56_OFFSET 0x600
 #define SCRATCH56_RESET 0x00000000
 
+#define SECURE_SCRATCH120_OFFSET 0xB38
+
 void tegra_pmc_set_rst_status(uint32_t value);
 
-void tegra_pmc_set_srk(uint32_t *key);
+void tegra_pmc_set_srk(uint32_t engine, uint32_t *key);
 
 void tegra_pmc_set_crypto_op(uint32_t value);
 
