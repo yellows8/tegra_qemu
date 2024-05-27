@@ -24,20 +24,29 @@
 #include "qapi/error.h"
 #include "qemu/cutils.h"
 #include "qemu/log.h"
+#include "hw/misc/tz-ppc.h"
 
 #include "apb_misc.h"
 #include "iomap.h"
 #include "tegra_trace.h"
+#include "devices.h"
 
 #define TYPE_TEGRA_APB_MISC "tegra.apb_misc"
 #define TEGRA_APB_MISC(obj) OBJECT_CHECK(tegra_apb_misc, (obj), TYPE_TEGRA_APB_MISC)
 #define DEFINE_REG32(reg) reg##_t reg
 #define WR_MASKED(r, d, m)  r = (r & ~m##_WRMASK) | (d & m##_WRMASK)
 
+#define NUM_IRQS (3*32 + 16)
+
 typedef struct tegra_apb_misc_state {
     SysBusDevice parent_obj;
 
     MemoryRegion iomem;
+    qemu_irq cfg_sec_resp[NUM_IRQS/16];
+    qemu_irq cfg_nonsec[NUM_IRQS];
+    qemu_irq cfg_ap[NUM_IRQS];
+    uint32_t slave_sec_extra;
+
     DEFINE_REG32(pp_strapping_opt_a);
     DEFINE_REG32(pp_tristate_reg_a);
     DEFINE_REG32(pp_tristate_reg_b);
@@ -239,11 +248,64 @@ static const VMStateDescription vmstate_tegra_apb_misc = {
     }
 };
 
-static uint64_t tegra_apb_misc_priv_read(void *opaque, hwaddr offset,
-                                         unsigned size)
+uint32_t tegra_apb_misc_get_slave_sec(void *opaque, uint32_t index)
+{
+    tegra_apb_misc *s = opaque;
+    uint32_t regval=0;
+
+    if (index==0) regval = s->das_dap_ctrl_sel.reg32; // APB_MISC_SECURE_REGS_APB_SLAVE_SECURITY_ENABLE_REG{0-2}_0
+    else if (index==1) regval = s->das_dap_ctrl_sel_1.reg32;
+    else if (index==2) regval = s->das_dap_ctrl_sel_2.reg32;
+    else if (index==3) regval = s->slave_sec_extra;
+
+    return regval;
+}
+
+// Update the GPIOs/state for tz-ppc.
+static void tegra_apb_misc_update_slave_sec(tegra_apb_misc *s)
+{
+    uint32_t regval=0;
+
+    for (int index=0; index<NUM_IRQS/16; index++) {
+        regval = tegra_apb_misc_get_slave_sec(s, index/2);
+
+        for (int i=0; i<16; i++) { // Update the output for tz-ppc cfg_nonsec.
+            qemu_set_irq(s->cfg_nonsec[index*16 + i], (regval & BIT(i)) == 0);
+        }
+
+        // tz-ppc doesn't support allowing both insecure and secure at the same time, via the GPIOs. Update the nonsec_mask prop to disable secure attr validation for bits which allow insecure access.
+        if (tegra_tz_ppc_devs[index]) {
+            TZPPC *tz = TZ_PPC(tegra_tz_ppc_devs[index]);
+            tz->nonsec_mask = ((~regval) >> ((index & 1)*16)) & 0xFFFF;
+        }
+    }
+}
+
+void tegra_apb_misc_set_slave_sec_extra(void *opaque, uint32_t value)
+{
+    tegra_apb_misc *s = opaque;
+
+    s->slave_sec_extra = value;
+    tegra_apb_misc_update_slave_sec(s);
+}
+
+static MemTxResult tegra_apb_misc_priv_read(void *opaque, hwaddr offset, uint64_t *pdata,
+                                            unsigned size, MemTxAttrs attrs)
 {
     tegra_apb_misc *s = opaque;
     uint64_t ret = 0;
+
+    // When APB_MISC_SECURE_REGS_APB_SLAVE_SECURITY_ENABLE_REG0_0 MISC_REGS/SATA_AUX requires secure, block insecure access.
+    if (tegra_board >= TEGRAX1_BOARD && !attrs.secure && (
+        ((s->das_dap_ctrl_sel.reg32 & BIT(1)) && offset < 0xC00) ||
+        ((s->das_dap_ctrl_sel.reg32 & BIT(2)) && offset >= 0x1100 && offset+size <= 0x1200))) {
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: Blocked insecure device read "
+                      "(size %d, offset 0x%0*" HWADDR_PRIx ")\n",
+                      "tegra.apb_misc", size, 4, offset);
+        TRACE_READ(s->iomem.addr, offset, ret);
+        *pdata = 0;
+        return MEMTX_OK;
+    }
 
     switch (offset) {
     case PP_STRAPPING_OPT_A_OFFSET:
@@ -471,12 +533,14 @@ static uint64_t tegra_apb_misc_priv_read(void *opaque, hwaddr offset,
         if (tegra_board >= TEGRAX1_BOARD) {
             ret = s->regs[(offset - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2];
             if (tegra_board >= TEGRAX1PLUS_BOARD && offset >= FEK_OFFSET && offset+size <= FEK_OFFSET+0x100 &&
-                (s->pp_pullupdown_reg_a.reg32 & BIT(0)))
-                ret = ~0; // Return all 0xFF when reading FEK if it's disabled.
+                ((s->pp_pullupdown_reg_a.reg32 & BIT(0)) ||
+                ((s->das_dap_ctrl_sel_2.reg32 & BIT(21)) && !attrs.secure)))
+                ret = 0; // Return 0 when reading FEK if it's disabled, or when FEK is secure-only with an insecure access.
         }
         break;
     case DAS_DAP_CTRL_SEL_OFFSET:
-        ret = s->das_dap_ctrl_sel.reg32;
+        if (tegra_board < TEGRAX1_BOARD || attrs.secure) // APB_MISC_SECURE_REGS_APB_SLAVE_SECURITY_ENABLE_REG0_0
+            ret = s->das_dap_ctrl_sel.reg32;
         break;
     case DAS_DAC_INPUT_DATA_CLK_SEL_OFFSET:
         ret = s->das_dac_input_data_clk_sel.reg32;
@@ -521,10 +585,12 @@ static uint64_t tegra_apb_misc_priv_read(void *opaque, hwaddr offset,
         ret = s->async_int_type_select.reg32;
         break;
     case DAS_DAP_CTRL_SEL_1_OFFSET:
-        ret = s->das_dap_ctrl_sel_1.reg32;
+        if (tegra_board < TEGRAX1_BOARD || attrs.secure) // APB_MISC_SECURE_REGS_APB_SLAVE_SECURITY_ENABLE_REG1_0
+            ret = s->das_dap_ctrl_sel_1.reg32;
         break;
     case DAS_DAP_CTRL_SEL_2_OFFSET:
-        ret = s->das_dap_ctrl_sel_2.reg32;
+        if (tegra_board < TEGRAX1_BOARD || attrs.secure) // APB_MISC_SECURE_REGS_APB_SLAVE_SECURITY_ENABLE_REG2_0
+            ret = s->das_dap_ctrl_sel_2.reg32;
         break;
     case DAS_DAP_CTRL_SEL_3_OFFSET:
         ret = s->das_dap_ctrl_sel_3.reg32;
@@ -544,13 +610,25 @@ static uint64_t tegra_apb_misc_priv_read(void *opaque, hwaddr offset,
 
     TRACE_READ(s->iomem.addr, offset, ret);
 
-    return ret;
+    *pdata = ret;
+    return MEMTX_OK;
 }
 
-static void tegra_apb_misc_priv_write(void *opaque, hwaddr offset,
-                                      uint64_t value, unsigned size)
+static MemTxResult tegra_apb_misc_priv_write(void *opaque, hwaddr offset,
+                                             uint64_t value, unsigned size, MemTxAttrs attrs)
 {
     tegra_apb_misc *s = opaque;
+
+    // When APB_MISC_SECURE_REGS_APB_SLAVE_SECURITY_ENABLE_REG0_0 MISC_REGS/SATA_AUX requires secure, block insecure access.
+    if (tegra_board >= TEGRAX1_BOARD && !attrs.secure && (
+        ((s->das_dap_ctrl_sel.reg32 & BIT(1)) && offset < 0xC00) ||
+        ((s->das_dap_ctrl_sel.reg32 & BIT(2)) && offset >= 0x1100 && offset+size <= 0x1200))) {
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: Blocked insecure device write "
+                      "(size %d, offset 0x%0*" HWADDR_PRIx
+                      ", value 0x%0*" PRIx64 ")\n",
+                      "tegra.apb_misc", size, 4, offset, size << 1, value);
+        return MEMTX_OK;
+    }
 
     switch (offset) {
     case PP_STRAPPING_OPT_A_OFFSET:
@@ -840,7 +918,10 @@ static void tegra_apb_misc_priv_write(void *opaque, hwaddr offset,
         break;
     case DAS_DAP_CTRL_SEL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->das_dap_ctrl_sel.reg32, value);
-        s->das_dap_ctrl_sel.reg32 = value;
+        if (tegra_board < TEGRAX1_BOARD || attrs.secure) { // APB_MISC_SECURE_REGS_APB_SLAVE_SECURITY_ENABLE_REG0_0
+            s->das_dap_ctrl_sel.reg32 = value;
+            if (tegra_board >= TEGRAX1_BOARD) tegra_apb_misc_update_slave_sec(s);
+        }
         break;
     case DAS_DAC_INPUT_DATA_CLK_SEL_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->das_dac_input_data_clk_sel.reg32, value);
@@ -900,11 +981,17 @@ static void tegra_apb_misc_priv_write(void *opaque, hwaddr offset,
         break;
     case DAS_DAP_CTRL_SEL_1_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->das_dap_ctrl_sel_1.reg32, value);
-        s->das_dap_ctrl_sel_1.reg32 = value;
+        if (tegra_board < TEGRAX1_BOARD || attrs.secure) { // APB_MISC_SECURE_REGS_APB_SLAVE_SECURITY_ENABLE_REG1_0
+            s->das_dap_ctrl_sel_1.reg32 = value;
+            if (tegra_board >= TEGRAX1_BOARD) tegra_apb_misc_update_slave_sec(s);
+        }
         break;
     case DAS_DAP_CTRL_SEL_2_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->das_dap_ctrl_sel_2.reg32, value);
-        s->das_dap_ctrl_sel_2.reg32 = value;
+        if (tegra_board < TEGRAX1_BOARD || attrs.secure) { // APB_MISC_SECURE_REGS_APB_SLAVE_SECURITY_ENABLE_REG2_0
+            s->das_dap_ctrl_sel_2.reg32 = value;
+            if (tegra_board >= TEGRAX1_BOARD) tegra_apb_misc_update_slave_sec(s);
+        }
         break;
     case DAS_DAP_CTRL_SEL_3_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->das_dap_ctrl_sel_3.reg32, value);
@@ -926,6 +1013,8 @@ static void tegra_apb_misc_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, 0, value);
         break;
     }
+
+    return MEMTX_OK;
 }
 
 static void tegra_apb_misc_priv_reset(DeviceState *dev)
@@ -1081,6 +1170,20 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
     s->regs[(GP_VGPIO_GPIO_MUX_SEL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_VGPIO_GPIO_MUX_SEL_RESET;
     s->regs[(GP_QSPI_SCK_LPBK_CONTROL_OFFSET-GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2] = GP_QSPI_SCK_LPBK_CONTROL_RESET;
 
+    s->slave_sec_extra = 0;
+
+    // Configure the output cfg_sec_resp for tz-pcc to not throw transaction error when access is blocked.
+    for (int i=0; i<ARRAY_SIZE(s->cfg_sec_resp); i++) {
+        qemu_set_irq(s->cfg_sec_resp[i], 0);
+    }
+
+    tegra_apb_misc_update_slave_sec(s);
+
+    // Configure the output cfg_ap for tz-pcc to allow userspace access.
+    for (int i=0; i<NUM_IRQS; i++) {
+        qemu_set_irq(s->cfg_ap[i], 1);
+    }
+
     // Load the optional FEKs.
     if (tegra_board >= TEGRAX1PLUS_BOARD) {
         Error *err = NULL;
@@ -1109,8 +1212,8 @@ static void tegra_apb_misc_priv_reset(DeviceState *dev)
 }
 
 static const MemoryRegionOps tegra_apb_misc_mem_ops = {
-    .read = tegra_apb_misc_priv_read,
-    .write = tegra_apb_misc_priv_write,
+    .read_with_attrs = tegra_apb_misc_priv_read,
+    .write_with_attrs = tegra_apb_misc_priv_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
@@ -1121,6 +1224,10 @@ static void tegra_apb_misc_priv_realize(DeviceState *dev, Error **errp)
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_apb_misc_mem_ops, s,
                           "tegra.apb_misc", TEGRA_APB_MISC_SIZE + 0x2000);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
+
+    qdev_init_gpio_out(dev, s->cfg_sec_resp, ARRAY_SIZE(s->cfg_sec_resp));
+    qdev_init_gpio_out(dev, s->cfg_nonsec, NUM_IRQS);
+    qdev_init_gpio_out(dev, s->cfg_ap, NUM_IRQS);
 }
 
 static Property tegra_apb_misc_properties[] = {

@@ -23,12 +23,16 @@
 #include "hw/sysbus.h"
 #include "sysemu/runstate.h"
 
+#include "crypto/secret_common.h"
+#include "qapi/error.h"
+#include "qemu/log.h"
+
 #include "fuse.h"
 #include "iomap.h"
 #include "tegra_trace.h"
+#include "devices.h"
 
-#include "crypto/secret_common.h"
-#include "qapi/error.h"
+#include "../ppsb/apb_misc/apb_misc.h"
 
 #define TYPE_TEGRA_FUSE "tegra.fuse"
 #define TEGRA_FUSE(obj) OBJECT_CHECK(tegra_fuse, (obj), TYPE_TEGRA_FUSE)
@@ -266,11 +270,21 @@ static const VMStateDescription vmstate_tegra_fuse = {
     }
 };
 
-static uint64_t tegra_fuse_priv_read(void *opaque, hwaddr offset,
-                                     unsigned size)
+static MemTxResult tegra_fuse_priv_read(void *opaque, hwaddr offset, uint64_t *pdata,
+                                        unsigned size, MemTxAttrs attrs)
 {
     tegra_fuse *s = opaque;
     uint64_t ret = 0;
+
+    // When APB_MISC_SECURE_REGS_APB_SLAVE_SECURITY_ENABLE_REG0_0 KFUSE_SECURITY_EN requires secure, block insecure access.
+    if (tegra_board >= TEGRAX1_BOARD && (tegra_apb_misc_get_slave_sec(tegra_apb_misc_dev, 0) & BIT(16)) && !attrs.secure && offset >= TEGRA_FUSE_SIZE) {
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: Blocked insecure device read "
+                      "(size %d, offset 0x%0*" HWADDR_PRIx ")\n",
+                      "tegra.fuse", size, 4, offset);
+        TRACE_READ(s->iomem.addr, offset, ret);
+        *pdata = 0;
+        return MEMTX_OK;
+    }
 
     switch (offset) {
     case FUSE_FUSECTRL_OFFSET:
@@ -590,13 +604,23 @@ static uint64_t tegra_fuse_priv_read(void *opaque, hwaddr offset,
 
     TRACE_READ(s->iomem.addr, offset, ret);
 
-    return ret;
+    *pdata = ret;
+    return MEMTX_OK;
 }
 
-static void tegra_fuse_priv_write(void *opaque, hwaddr offset,
-                                  uint64_t value, unsigned size)
+static MemTxResult tegra_fuse_priv_write(void *opaque, hwaddr offset,
+                                         uint64_t value, unsigned size, MemTxAttrs attrs)
 {
     tegra_fuse *s = opaque;
+
+    // When APB_MISC_SECURE_REGS_APB_SLAVE_SECURITY_ENABLE_REG0_0 KFUSE_SECURITY_EN requires secure, block insecure access.
+    if (tegra_board >= TEGRAX1_BOARD && (tegra_apb_misc_get_slave_sec(tegra_apb_misc_dev, 0) & BIT(16)) && !attrs.secure && offset >= TEGRA_FUSE_SIZE) {
+        qemu_log_mask(LOG_GUEST_ERROR, "%s: Blocked insecure device write "
+                      "(size %d, offset 0x%0*" HWADDR_PRIx
+                      ", value 0x%0*" PRIx64 ")\n",
+                      "tegra.fuse", size, 4, offset, size << 1, value);
+        return MEMTX_OK;
+    }
 
     switch (offset) {
     case FUSE_FUSECTRL_OFFSET:
@@ -1010,6 +1034,8 @@ static void tegra_fuse_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, 0, value);
         break;
     }
+
+    return MEMTX_OK;
 }
 
 void tegra_fuse_reset(DeviceState *dev, ShutdownCause cause)
@@ -1138,7 +1164,7 @@ void tegra_fuse_reset(DeviceState *dev, ShutdownCause cause)
                 hwaddr hwoff = offset*4;
                 if (datalen!=0x1000) hwoff = 0x400-datalen+offset*4;
                 else hwoff-= 0x800;
-                tegra_fuse_priv_write(s, hwoff, dataptr[offset], 4);
+                tegra_fuse_priv_write(s, hwoff, dataptr[offset], 4, MEMTXATTRS_UNSPECIFIED);
             }
         }
         g_free(data);
@@ -1176,8 +1202,8 @@ void tegra_fuse_reset(DeviceState *dev, ShutdownCause cause)
 }
 
 static const MemoryRegionOps tegra_fuse_mem_ops = {
-    .read = tegra_fuse_priv_read,
-    .write = tegra_fuse_priv_write,
+    .read_with_attrs = tegra_fuse_priv_read,
+    .write_with_attrs = tegra_fuse_priv_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 

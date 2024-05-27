@@ -46,6 +46,7 @@
 #include "hw/intc/arm_gic.h"
 #include "hw/intc/arm_gicv3_common.h"
 #include "hw/intc/arm_gicv3_its_common.h"
+#include "hw/misc/tz-ppc.h"
 #include "hw/arm/bsa.h"
 #include "hw/arm/fdt.h"
 #include "sysemu/device_tree.h"
@@ -94,6 +95,259 @@ struct CPUAddressSpace {
     AddressSpace *as;
     struct AddressSpaceDispatch *memory_dispatch;
     MemoryListener tcg_as_listener;
+};
+
+typedef struct PPCPortInfo {
+    const char *name;
+    enum tegra_board_type board;
+    hwaddr addr;
+    size_t ram_size;
+    int mmio_id;
+    void **opaque;
+} PPCPortInfo;
+
+typedef struct PPCInfo {
+    PPCPortInfo ports[TZ_NUM_PORTS];
+} PPCInfo;
+
+// These devices/memory are mapped via tz-ppc, which if access is not blocked forwards them to the actual memregion.
+static PPCInfo ppcinfo_table[7] = {
+    { // REG0 0-15
+        .ports = {
+            { }, // 0, undocumented
+            { }, // 1, MISC_REGS (ignored since it's part of apb_misc)
+            { }, // 2, SATA_AUX (ignored since it's part of apb_misc)
+            { // 3, PINMUX_AUX
+                .addr = TEGRA_PINMUX_AUX_BASE, .opaque = &tegra_pinmuxaux_dev,
+            },
+            { // 4, APE (excludes AGIC)
+                .addr = TEGRA_APE_BASE, .opaque = &tegra_ape_dev,
+            },
+            { }, // 5, undocumented
+            { }, // 6, DTV
+            { }, // 7, undocumented
+            { // 8, PWM
+                .addr = TEGRA_PWFM_BASE, .opaque = &tegra_pwm_dev,
+            },
+            { // 9, QSPI
+                .addr = TEGRA_QSPI_BASE, .opaque = &tegra_qspi_dev,
+            },
+            { // 10, CSITE
+                .name = "tegra.csite",
+                .addr = 0x72000000, .ram_size = SZ_32M,
+            },
+            { // 11, RTC
+                .addr = TEGRA_RTC_BASE, .opaque = &tegra_rtc_dev,
+            },
+            { }, // 12, undocumented
+            { // 13, PMC
+                .addr = TEGRA_PMC_BASE, .opaque = &tegra_pmc_dev,
+            },
+            { // 14, SE
+                .addr = TEGRA_SE_BASE, .opaque = &tegra_se_dev,
+            },
+            { // 15, FUSE
+                .addr = TEGRA_FUSE_BASE, .opaque = &tegra_fuse_dev,
+            },
+        },
+    },
+    { // REG0 16-31
+        .ports = {
+            { }, // 16, KFUSE (ignored here since it's part of fuse)
+            { }, // 17, undocumented
+            { }, // 18, reserved
+            { }, // 19, undocumented
+            { // 20, SATA
+                .addr = TEGRA_SATA_BASE, .opaque = &tegra_sata_dev,
+            },
+            { // 21, HDA
+                .addr = TEGRA_HDA_BASE, .opaque = &tegra_hda_dev,
+            },
+            { }, // 22, LA
+            { }, // 23, ATOMICS
+            { // 24, CEC
+                .addr = TEGRA_CEC_BASE, .opaque = &tegra_cec_dev,
+            },
+            { }, // 25, undocumented
+            { }, // 26, undocumented
+            { }, // 27, undocumented
+            { }, // 28, undocumented
+            { // 29, STM
+                .name = "tegra.stm",
+                .addr = 0x71000000, .ram_size = SZ_16M,
+            },
+            { }, // 30, undocumented
+            { }, // 31, undocumented
+        },
+    },
+    { // REG1 0-15
+        .ports = {
+            { }, // 0, undocumented
+            { }, // 1, undocumented
+            { }, // 2, undocumented
+            { }, // 3, undocumented
+            { // 4, MC0
+                .addr = TEGRA_MC0_BASE, .opaque = &tegra_mc0_dev,
+            },
+            { // 5, EMC0
+                .addr = TEGRA_EMC0_BASE, .opaque = &tegra_emc0_dev,
+            },
+            { }, // 6, undocumented
+            { }, // 7, undocumented
+            { // 8, MC1
+                .addr = TEGRA_MC1_BASE, .opaque = &tegra_mc1_dev,
+            },
+            { // 9, EMC1
+                .addr = TEGRA_EMC1_BASE, .opaque = &tegra_emc1_dev,
+            },
+            { // 10, MCB
+                .addr = TEGRA_MC_BASE, .opaque = &tegra_mc_dev,
+            },
+            { // 11, EMCB
+                .addr = TEGRA_EMC_BASE, .opaque = &tegra_emc_dev,
+            },
+            { // 12, UART_A. These are disabled since serial_mm_init is used for these. Vendor regions are also not handled with these.
+                //.addr = TEGRA_UARTA_BASE, .opaque = &tegra_uarta_dev,
+            },
+            { // 13, UART_B
+                //.addr = TEGRA_UARTB_BASE, .opaque = &tegra_uartb_dev,
+            },
+            { // 14, UART_C
+                //.addr = TEGRA_UARTC_BASE, .opaque = &tegra_uartc_dev,
+            },
+            { // 15, UART_D
+                //.addr = TEGRA_UARTD_BASE, .opaque = &tegra_uartd_dev,
+            },
+        },
+    },
+    { // REG1 16-31
+        .ports = {
+            { }, // 16, undocumented
+            { }, // 17, undocumented
+            { }, // 18, undocumented
+            { }, // 19, undocumented
+            { // 20, SPI1
+                .addr = TEGRA_SPI1_BASE, .opaque = &tegra_spi_devs[0],
+            },
+            { // 21, SPI2
+                .addr = TEGRA_SPI2_BASE, .opaque = &tegra_spi_devs[1],
+            },
+            { // 22, SPI3
+                .addr = TEGRA_SPI3_BASE, .opaque = &tegra_spi_devs[2],
+            },
+            { // 23, SPI4
+                .addr = TEGRA_SPI4_BASE, .opaque = &tegra_spi_devs[3],
+            },
+            { // 24, SPI5
+                .addr = TEGRA_SPI5_BASE, .opaque = &tegra_spi_devs[4],
+            },
+            { // 25, SPI6
+                .addr = TEGRA_SPI6_BASE, .opaque = &tegra_spi_devs[5],
+            },
+            { // 26, I2C1
+                .addr = TEGRA_I2C_BASE, .opaque = &tegra_idc1_dev,
+            },
+            { // 27, I2C2
+                .addr = TEGRA_I2C2_BASE, .opaque = &tegra_idc2_dev,
+            },
+            { // 28, I2C3
+                .addr = TEGRA_I2C3_BASE, .opaque = &tegra_idc3_dev,
+            },
+            { // 29, I2C4
+                .addr = TEGRA_I2C4_BASE, .opaque = &tegra_idc4_dev,
+            },
+            { // 30, DVC I2C5
+                .addr = TEGRA_I2C5_BASE, .opaque = &tegra_idc5_dev,
+            },
+            { // 31, I2C6
+                .addr = TEGRA_I2C6_BASE, .opaque = &tegra_idc6_dev,
+            },
+        },
+    },
+    { // REG2 0-15
+        .ports = {
+            { // 0, SDMMC1 (vendor regs are not handled for these)
+                .addr = TEGRA_SDMMC1_BASE, .opaque = &tegra_sdmmc1_dev,
+            },
+            { // 1, SDMMC2
+                .addr = TEGRA_SDMMC2_BASE, .opaque = &tegra_sdmmc2_dev,
+            },
+            { // 2, SDMMC3
+                .addr = TEGRA_SDMMC3_BASE, .opaque = &tegra_sdmmc3_dev,
+            },
+            { // 3, SDMMC4
+                .addr = TEGRA_SDMMC4_BASE, .opaque = &tegra_sdmmc4_dev,
+            },
+            { }, // 4, undocumented
+            { }, // 5, undocumented
+            { }, // 6, undocumented
+            { }, // 7, MIPIBIF
+            { // 8, DDS
+                .addr = TEGRA_DDS_BASE, .opaque = &tegra_dds_dev,
+            },
+            { // 9, DP2
+                .addr = TEGRA_DP2_BASE, .opaque = &tegra_dp2_dev,
+            },
+            { // 10, SOC_THERM
+                .addr = TEGRA_SOCTHERM_BASE, .opaque = &tegra_soctherm_dev,
+            },
+            { // 11, APB2JTAG
+                .addr = TEGRA_APB2JTAG_BASE, .opaque = &tegra_apb2jtag_dev,
+            },
+            { // 12, XUSB_HOST
+                .addr = TEGRA_XUSB_HOST_BASE, .opaque = &tegra_xusb_dev,
+                .mmio_id = 2,
+            },
+            { // 13, XUSB_DEV
+                .addr = TEGRA_XUSB_DEV_BASE, .opaque = &tegra_xusb_dev,
+                .mmio_id = 1,
+            },
+            { // 14, XUSB_PADCTL
+                .addr = TEGRA_XUSB_PADCTL_BASE, .opaque = &tegra_xusb_dev,
+                .mmio_id = 0,
+            },
+            { // 15, MIPI_CAL
+                .addr = TEGRA_MIPI_CAL_BASE, .opaque = &tegra_mipical_dev,
+            },
+        },
+    },
+    { // REG2 16-31
+        .ports = {
+            { // 16, DVFS
+                .addr = TEGRA_CL_DVFS_BASE, .opaque = &tegra_dvfs_dev,
+            },
+            { }, // 17, undocumented
+            { }, // 18, undocumented
+            { // 19, TX1+ SE2
+                .board = TEGRAX1PLUS_BOARD,
+                .addr = TEGRA_SE2_BASE, .opaque = &tegra_se2_dev,
+            },
+            { // 20, TX1+ PKA1
+                .board = TEGRAX1PLUS_BOARD,
+                .addr = TEGRA_PKA1_BASE, .opaque = &tegra_se2_dev,
+                .mmio_id = 1,
+            },
+            { }, // 21, TX1+ FEK
+            { }, // 22, undocumented
+            { }, // 23, undocumented
+            { }, // 24, undocumented
+            { }, // 25, undocumented
+            { }, // 26, undocumented
+            { }, // 27, undocumented
+            { }, // 28, undocumented
+            { }, // 29, undocumented
+            { }, // 30, undocumented
+            { }, // 31, undocumented
+        },
+    },
+    { // Extra device
+        .ports = {
+            /*{ // 0, TZRAM. It's not possible to actually use this since DMA can't use IO mappings.
+                .name = "tegra.tzram",
+                .addr = 0x7c010000, .ram_size = SZ_64K, // ram_size is updated by __tegrax1_init.
+            },*/
+        },
+    },
 };
 
 static uint32_t tegra_bootrom[] = {
@@ -274,7 +528,7 @@ static void* tegra_init_sdmmc(int index, hwaddr base, qemu_irq irq, bool emmc, u
     qdev_prop_set_uint32(tmpdev, "capareg", 0x376c0c8c); // Value from hardware is 0x376cd08c. Workaround qemu BASECLKFREQ validation.
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tmpdev), &error_fatal);
 
-    sysbus_mmio_map(SYS_BUS_DEVICE(tmpdev), 0, base);
+    //sysbus_mmio_map(SYS_BUS_DEVICE(tmpdev), 0, base);
     sysbus_connect_irq(SYS_BUS_DEVICE(tmpdev), 0, irq);
     *vendor_dev = sysbus_create_simple("tegra.sdmmcvendor", base+0x100, NULL);
 
@@ -289,31 +543,41 @@ static void* tegra_init_sdmmc(int index, hwaddr base, qemu_irq irq, bool emmc, u
     return tmpdev;
 }
 
-static void* tegra_init_dummyio(hwaddr base, uint32_t size, const char *name)
+static void* tegra_init_dummyio(hwaddr base, uint32_t size, const char *name, bool skip_map)
 {
     void* tmpdev = qdev_new("tegra.dummyio");
     qdev_prop_set_uint32(tmpdev, "size", size);
     qdev_prop_set_string(tmpdev, "name", name);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tmpdev), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(tmpdev), 0, base);
+    if (!skip_map) sysbus_mmio_map(SYS_BUS_DEVICE(tmpdev), 0, base);
 
     return tmpdev;
 }
 
-static void* tegra_init_obj(hwaddr base, qemu_irq irq, const char *name, const char *prop_name, uint32_t value)
+static void* tegra_init_obj(hwaddr base, qemu_irq irq, const char *name, const char *prop_name, uint32_t value, bool skip_map)
 {
     void* tmpdev = qdev_new(name);
     qdev_prop_set_uint32(tmpdev, prop_name, value);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tmpdev), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(tmpdev), 0, base);
+    if (!skip_map) sysbus_mmio_map(SYS_BUS_DEVICE(tmpdev), 0, base);
     sysbus_connect_irq(SYS_BUS_DEVICE(tmpdev), 0, irq);
+
+    return tmpdev;
+}
+
+static void* tegra_init_obj_simple(hwaddr base, qemu_irq irq, const char *name, bool skip_map)
+{
+    void* tmpdev = qdev_new(name);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(tmpdev), &error_fatal);
+    if (!skip_map) sysbus_mmio_map(SYS_BUS_DEVICE(tmpdev), 0, base);
+    if (irq) sysbus_connect_irq(SYS_BUS_DEVICE(tmpdev), 0, irq);
 
     return tmpdev;
 }
 
 static void* tegra_init_timer(hwaddr base, qemu_irq irq, uint32_t id)
 {
-    return tegra_init_obj(base, irq, "tegra.timer", "id", id);
+    return tegra_init_obj(base, irq, "tegra.timer", "id", id, false);
 }
 
 // TODO: Doesn't work with CPU MMU, use memregions for now.
@@ -377,12 +641,6 @@ static void __tegrax1_init(MachineState *machine)
     /*memory_region_add_and_init_ram(sysmem, "tegra.irom",
                                    TEGRA_IROM_BASE, TEGRA_IROM_SIZE, RO);*/
 
-    memory_region_add_and_init_ram(sysmem, "tegra.stm",
-                                   0x71000000, SZ_16M, RW);
-
-    memory_region_add_and_init_ram(sysmem, "tegra.csite",
-                                   0x72000000, SZ_32M, RW);
-
     memory_region_add_and_init_ram(sysmem, "tegra.ahb_a1",
                                    0x78000000, SZ_16M, RW);
 
@@ -394,6 +652,7 @@ static void __tegrax1_init(MachineState *machine)
 
     memory_region_add_and_init_ram(sysmem, "tegra.tzram",
                                    0x7c010000, tzram_size, RW);
+    //ppcinfo_table[6].ports[0].ram_size = tzram_size;
 
     memory_region_add_and_init_ram(sysmem, "tegra.ahb_a2",
                                    tzram_end, 0x7d000000-tzram_end, RW);
@@ -523,46 +782,44 @@ static void __tegrax1_init(MachineState *machine)
     sysbus_mmio_map(SYS_BUS_DEVICE(tegra_sb_dev), 2, TEGRA_IROM_BASE);
 
     /* Activity Monitor */
-    tegra_actmon_dev = tegra_init_dummyio(TEGRA_ACTMON_BASE, TEGRA_ACTMON_SIZE, "tegra.actmon");
+    tegra_actmon_dev = tegra_init_dummyio(TEGRA_ACTMON_BASE, TEGRA_ACTMON_SIZE, "tegra.actmon", false);
 
     /* Embedded memory controller */
-    tegra_emc_dev = sysbus_create_simple("tegra.emc", TEGRA_EMC_BASE, NULL);
-    tegra_emc0_dev = sysbus_create_simple("tegra.emc", TEGRA_EMC0_BASE, NULL);
-    tegra_emc1_dev = sysbus_create_simple("tegra.emc", TEGRA_EMC1_BASE, NULL);
+    tegra_emc_dev = tegra_init_obj_simple(TEGRA_EMC_BASE, NULL, "tegra.emc", true);
+    tegra_emc0_dev = tegra_init_obj_simple(TEGRA_EMC0_BASE, NULL, "tegra.emc", true);
+    tegra_emc1_dev = tegra_init_obj_simple(TEGRA_EMC1_BASE, NULL, "tegra.emc", true);
 
     /* Memory controller */
     tegra_mc_dev = qdev_new("tegra.mc");
     qdev_prop_set_uint32(tegra_mc_dev, "ram_size_kb", machine->ram_size / SZ_1K);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_mc_dev), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_mc_dev), 0, TEGRA_MC_BASE);
+    //sysbus_mmio_map(SYS_BUS_DEVICE(tegra_mc_dev), 0, TEGRA_MC_BASE);
 
     tegra_mc0_dev = qdev_new("tegra.mc");
     qdev_prop_set_uint32(tegra_mc0_dev, "ram_size_kb", machine->ram_size / SZ_1K);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_mc0_dev), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_mc0_dev), 0, TEGRA_MC0_BASE);
+    //sysbus_mmio_map(SYS_BUS_DEVICE(tegra_mc0_dev), 0, TEGRA_MC0_BASE);
 
     tegra_mc1_dev = qdev_new("tegra.mc");
     qdev_prop_set_uint32(tegra_mc1_dev, "ram_size_kb", machine->ram_size / SZ_1K);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_mc1_dev), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_mc1_dev), 0, TEGRA_MC1_BASE);
+    //sysbus_mmio_map(SYS_BUS_DEVICE(tegra_mc1_dev), 0, TEGRA_MC1_BASE);
 
     /* PCIE */
-    tegra_pcie_dev = tegra_init_dummyio(IO_PCIE_PHYS, SZ_256K, "tegra.pcie");
+    tegra_pcie_dev = tegra_init_dummyio(IO_PCIE_PHYS, SZ_256K, "tegra.pcie", false);
 
     /* SATA */
-    tegra_sata_dev = tegra_init_dummyio(TEGRA_SATA_BASE, TEGRA_SATA_SIZE, "tegra.sata");
+    tegra_sata_dev = tegra_init_dummyio(TEGRA_SATA_BASE, TEGRA_SATA_SIZE, "tegra.sata", true);
 
-    /* Audio*/
-    tegra_hda_dev = sysbus_create_simple("tegra.hda",
-                                         TEGRA_HDA_BASE,
-                                         DIRQ(INT_HDA));
+    /* Audio */
+    tegra_hda_dev = tegra_init_obj_simple(TEGRA_HDA_BASE, DIRQ(INT_HDA), "tegra.hda", true);
 
     tegra_ape_dev = qdev_new("tegra.ape");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_ape_dev), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_ape_dev), 0, TEGRA_APE_BASE);
+    //sysbus_mmio_map(SYS_BUS_DEVICE(tegra_ape_dev), 0, TEGRA_APE_BASE);
 
     /* DDS */
-    tegra_dds_dev = tegra_init_dummyio(TEGRA_DDS_BASE, TEGRA_DDS_SIZE, "tegra.dds");
+    tegra_dds_dev = tegra_init_dummyio(TEGRA_DDS_BASE, TEGRA_DDS_SIZE, "tegra.dds", true);
 
     /* AHB DMA controller */
     tegra_ahb_dma_dev = sysbus_create_simple("tegra.ahb_dma",
@@ -574,35 +831,35 @@ static void __tegrax1_init(MachineState *machine)
                                                TEGRA_AHB_GIZMO_BASE, NULL);
 
     /* AHB/APB Debug Bus */
-    tegra_ahbapb_debugbus_dev = tegra_init_dummyio(TEGRA_AHBAPB_DEBUGBUS_BASE, TEGRA_AHBAPB_DEBUGBUS_SIZE, "tegra.ahbapb_debugbus");
+    tegra_ahbapb_debugbus_dev = tegra_init_dummyio(TEGRA_AHBAPB_DEBUGBUS_BASE, TEGRA_AHBAPB_DEBUGBUS_SIZE, "tegra.ahbapb_debugbus", false);
 
     /* APB FUSE controller */
-    tegra_fuse_dev = sysbus_create_simple("tegra.fuse", TEGRA_FUSE_BASE, NULL);
+    tegra_fuse_dev = tegra_init_obj_simple(TEGRA_FUSE_BASE, NULL, "tegra.fuse", true);
 
     /* SE */
-    tegra_se_dev = tegra_init_obj(TEGRA_SE_BASE, DIRQ(INT_SE), "tegra.se", "engine", 1);
+    tegra_se_dev = tegra_init_obj(TEGRA_SE_BASE, DIRQ(INT_SE), "tegra.se", "engine", 1, true);
     if (tegra_board == TEGRAX1PLUS_BOARD) {
         tegra_se2_dev = qdev_new("tegra.se");
         s = SYS_BUS_DEVICE(tegra_se2_dev);
         qdev_prop_set_uint32(DEVICE(tegra_se2_dev), "engine", 2);
         sysbus_realize_and_unref(s, &error_fatal);
-        sysbus_mmio_map(s, 0, TEGRA_SE2_BASE);
-        sysbus_mmio_map(s, 1, TEGRA_PKA1_BASE);
+        //sysbus_mmio_map(s, 0, TEGRA_SE2_BASE);
+        //sysbus_mmio_map(s, 1, TEGRA_PKA1_BASE);
         sysbus_connect_irq(s, 0, DIRQ(INT_SE)); // NOTE: This IRQ is likely wrong?
     }
 
     /* TSENSOR */
-    tegra_tsensor_dev = tegra_init_dummyio(TEGRA_TSENSOR_BASE, TEGRA_TSENSOR_SIZE, "tegra.tsensor");
+    tegra_tsensor_dev = tegra_init_dummyio(TEGRA_TSENSOR_BASE, TEGRA_TSENSOR_SIZE, "tegra.tsensor", false);
 
     /* CEC */
-    tegra_cec_dev = tegra_init_dummyio(TEGRA_CEC_BASE, TEGRA_CEC_SIZE, "tegra.cec");
+    tegra_cec_dev = tegra_init_dummyio(TEGRA_CEC_BASE, TEGRA_CEC_SIZE, "tegra.cec", true);
 
     /* SYSCTR */
     tegra_sysctr0_dev = sysbus_create_simple("tegra.sysctr", TEGRA_TSC_BASE, NULL);
     tegra_sysctr1_dev = sysbus_create_simple("tegra.sysctr", TEGRA_TSC_BASE + TEGRA_TSC_SIZE, NULL);
 
     /* SOC_THERM */
-    tegra_soctherm_dev = tegra_init_dummyio(TEGRA_SOCTHERM_BASE, TEGRA_SOCTHERM_SIZE, "tegra.soctherm");
+    tegra_soctherm_dev = tegra_init_dummyio(TEGRA_SOCTHERM_BASE, TEGRA_SOCTHERM_SIZE, "tegra.soctherm", true);
 
     /* AVPCACHE */
     tegra_avpcache_dev = sysbus_create_simple("tegra.avpcache", TEGRA_ARM_PERIF_BASE, NULL);
@@ -624,8 +881,7 @@ static void __tegrax1_init(MachineState *machine)
                                               TEGRA_APB_MISC_BASE, NULL);
 
     /* PINMUX_AUX */
-    tegra_pinmuxaux_dev = sysbus_create_simple("tegra.pinmuxaux",
-                                              TEGRA_PINMUX_AUX_BASE, NULL);
+    tegra_pinmuxaux_dev = tegra_init_obj_simple(TEGRA_PINMUX_AUX_BASE, NULL, "tegra.pinmuxaux", true);
 
     /* Clock and reset controller */
     tegra_car_dev = sysbus_create_simple("tegra.car",
@@ -649,11 +905,10 @@ static void __tegrax1_init(MachineState *machine)
                                             NULL);
 
     /* Power managment controller */
-    tegra_pmc_dev = sysbus_create_simple("tegra.pmc", TEGRA_PMC_BASE, NULL);
+    tegra_pmc_dev = tegra_init_obj_simple(TEGRA_PMC_BASE, NULL, "tegra.pmc", true);
 
     /* Real time clock */
-    tegra_rtc_dev = sysbus_create_simple("tegra.rtc",
-                                         TEGRA_RTC_BASE, DIRQ(INT_RTC));
+    tegra_rtc_dev = tegra_init_obj_simple(TEGRA_RTC_BASE, DIRQ(INT_RTC), "tegra.rtc", true);
 
     /* SDMMC */
     tegra_sdmmc1_dev = tegra_init_sdmmc(0, TEGRA_SDMMC1_BASE, DIRQ(INT_SDMMC1), false, 0, &tegra_sdmmc1_vendor_dev);
@@ -662,13 +917,13 @@ static void __tegrax1_init(MachineState *machine)
     tegra_sdmmc4_dev = tegra_init_sdmmc(3, TEGRA_SDMMC4_BASE, DIRQ(INT_SDMMC4), true, 0x400000, &tegra_sdmmc4_vendor_dev);
 
     /* SPEEDO */
-    tegra_speedo_dev = tegra_init_dummyio(TEGRA_SPEEDO_BASE, TEGRA_SPEEDO_SIZE, "tegra.speedo");
+    tegra_speedo_dev = tegra_init_dummyio(TEGRA_SPEEDO_BASE, TEGRA_SPEEDO_SIZE, "tegra.speedo", false);
 
     /* DP2 */
-    tegra_dp2_dev = tegra_init_dummyio(TEGRA_DP2_BASE, TEGRA_DP2_SIZE, "tegra.dp2");
+    tegra_dp2_dev = tegra_init_dummyio(TEGRA_DP2_BASE, TEGRA_DP2_SIZE, "tegra.dp2", true);
 
     /* APB2JTAG */
-    tegra_apb2jtag_dev = tegra_init_dummyio(TEGRA_APB2JTAG_BASE, TEGRA_APB2JTAG_SIZE, "tegra.apb2jtag");
+    tegra_apb2jtag_dev = tegra_init_dummyio(TEGRA_APB2JTAG_BASE, TEGRA_APB2JTAG_SIZE, "tegra.apb2jtag", true);
 
     /* Timer0 */
     tegra_timer_devs[0] = tegra_init_timer(TEGRA_TMR0_BASE, DIRQ(INT_TMR0), 0);
@@ -765,21 +1020,19 @@ static void __tegrax1_init(MachineState *machine)
     tegra_uartd_vendor_dev = sysbus_create_simple("tegra.uart", TEGRA_UARTD_BASE+0x20, NULL);
 
     /* IOBIST */
-    tegra_iobist_dev = tegra_init_dummyio(TEGRA_IOBIST_BASE, TEGRA_IOBIST_SIZE, "tegra.iobist");
+    tegra_iobist_dev = tegra_init_dummyio(TEGRA_IOBIST_BASE, TEGRA_IOBIST_SIZE, "tegra.iobist", false);
 
     /* PWM */
-    tegra_pwm_dev = tegra_init_dummyio(TEGRA_PWFM_BASE, TEGRA_PWFM_SIZE, "tegra.pwm");
+    tegra_pwm_dev = tegra_init_dummyio(TEGRA_PWFM_BASE, TEGRA_PWFM_SIZE, "tegra.pwm", true);
 
     /* MIPI_CAL */
-    tegra_mipical_dev = sysbus_create_simple("tegra.mipical",
-                                             TEGRA_MIPI_CAL_BASE, NULL);
+    tegra_mipical_dev = tegra_init_obj_simple(TEGRA_MIPI_CAL_BASE, NULL, "tegra.mipical", true);
 
     /* DVFS */
-    tegra_dvfs_dev = sysbus_create_simple("tegra.dvfs",
-                                           TEGRA_CL_DVFS_BASE, NULL);
+    tegra_dvfs_dev = tegra_init_obj_simple(TEGRA_CL_DVFS_BASE, NULL, "tegra.dvfs", true);
 
     /* CLUSTER_CLOCK */
-    tegra_cluster_clock_dev = tegra_init_dummyio(TEGRA_CLK13_RESET_BASE, SZ_256K, "tegra.cluster_clock");
+    tegra_cluster_clock_dev = tegra_init_dummyio(TEGRA_CLK13_RESET_BASE, SZ_256K, "tegra.cluster_clock", false);
 
     /* USB2 controllers */
     tegra_ehci1_dev = sysbus_create_simple("tegra.usb",
@@ -790,10 +1043,11 @@ static void __tegrax1_init(MachineState *machine)
     sysbus_mmio_map(SYS_BUS_DEVICE(tegra_ehci2_dev), 1, TEGRA_USB2_BASE+0x1000);
 
     /* XUSB controllers */
-    tegra_xusb_dev = sysbus_create_simple("tegra.xusb",
+    /*tegra_xusb_dev = sysbus_create_simple("tegra.xusb",
                                            TEGRA_XUSB_PADCTL_BASE, DIRQ(INT_USB3_HOST_INT));
     sysbus_mmio_map(SYS_BUS_DEVICE(tegra_xusb_dev), 1, TEGRA_XUSB_DEV_BASE);
-    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_xusb_dev), 2, TEGRA_XUSB_HOST_BASE);
+    sysbus_mmio_map(SYS_BUS_DEVICE(tegra_xusb_dev), 2, TEGRA_XUSB_HOST_BASE);*/
+    tegra_xusb_dev = tegra_init_obj_simple(TEGRA_XUSB_PADCTL_BASE, DIRQ(INT_USB3_HOST_INT), "tegra.xusb", true);
 
     /* Unified Command Queue */
     //tegra_ucq_dev = sysbus_create_simple("tegra.dummy256", 0x60010000, NULL);
@@ -844,31 +1098,21 @@ static void __tegrax1_init(MachineState *machine)
 //                           DIRQ(INT_VDE_SXE), NULL);
 
     /* I2C controllers */
-    tegra_idc1_dev = sysbus_create_simple("tegra-i2c",
-                                          TEGRA_I2C_BASE, DIRQ(INT_I2C));
-    tegra_idc2_dev = sysbus_create_simple("tegra-i2c",
-                                          TEGRA_I2C2_BASE, DIRQ(INT_I2C2));
-    tegra_idc3_dev = sysbus_create_simple("tegra-i2c",
-                                          TEGRA_I2C3_BASE, DIRQ(INT_I2C3));
-    tegra_idc4_dev = sysbus_create_simple("tegra-i2c",
-                                          TEGRA_I2C4_BASE, DIRQ(INT_I2C4));
-    tegra_idc5_dev = sysbus_create_simple("tegra-i2c",
-                                          TEGRA_I2C5_BASE, DIRQ(INT_I2C5));
-    tegra_idc6_dev = sysbus_create_simple("tegra-i2c",
-                                          TEGRA_I2C6_BASE, DIRQ(INT_I2C6));
+    tegra_idc1_dev = tegra_init_obj_simple(TEGRA_I2C_BASE, DIRQ(INT_I2C), "tegra-i2c", true);
+    tegra_idc2_dev = tegra_init_obj_simple(TEGRA_I2C2_BASE, DIRQ(INT_I2C2), "tegra-i2c", true);
+    tegra_idc3_dev = tegra_init_obj_simple(TEGRA_I2C3_BASE, DIRQ(INT_I2C3), "tegra-i2c", true);
+    tegra_idc4_dev = tegra_init_obj_simple(TEGRA_I2C4_BASE, DIRQ(INT_I2C4), "tegra-i2c", true);
+    tegra_idc5_dev = tegra_init_obj_simple(TEGRA_I2C5_BASE, DIRQ(INT_I2C5), "tegra-i2c", true);
+    tegra_idc6_dev = tegra_init_obj_simple(TEGRA_I2C6_BASE, DIRQ(INT_I2C6), "tegra-i2c", true);
 
     /* SPI controllers */
-    tegra_spi_devs[0] = sysbus_create_simple("tegra.spi",
-                                          TEGRA_SPI1_BASE, DIRQ(INT_SPI_1));
-    tegra_spi_devs[1] = sysbus_create_simple("tegra.spi",
-                                          TEGRA_SPI2_BASE, DIRQ(INT_SPI_2));
-    tegra_spi_devs[2] = sysbus_create_simple("tegra.spi",
-                                          TEGRA_SPI3_BASE, DIRQ(INT_SPI_3));
-    tegra_spi_devs[3] = sysbus_create_simple("tegra.spi",
-                                          TEGRA_SPI4_BASE, DIRQ(INT_SPI_4));
+    tegra_spi_devs[0] = tegra_init_obj_simple(TEGRA_SPI1_BASE, DIRQ(INT_SPI_1), "tegra.spi", true);
+    tegra_spi_devs[1] = tegra_init_obj_simple(TEGRA_SPI2_BASE, DIRQ(INT_SPI_2), "tegra.spi", true);
+    tegra_spi_devs[2] = tegra_init_obj_simple(TEGRA_SPI3_BASE, DIRQ(INT_SPI_3), "tegra.spi", true);
+    tegra_spi_devs[3] = tegra_init_obj_simple(TEGRA_SPI4_BASE, DIRQ(INT_SPI_4), "tegra.spi", true);
 
     /* QSPI */
-    tegra_qspi_dev = tegra_init_dummyio(TEGRA_QSPI_BASE, TEGRA_QSPI_SIZE, "tegra.qspi");
+    tegra_qspi_dev = tegra_init_dummyio(TEGRA_QSPI_BASE, TEGRA_QSPI_SIZE, "tegra.qspi", true);
 
     /* TouchPanel */
     tegra_i2c_touch_panel_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc3_dev), "ftm3bd56", 0x49);
@@ -1195,6 +1439,67 @@ static void __tegrax1_init(MachineState *machine)
                                                DIRQ(INT_SHR_SEM_OUTBOX_IBF),
                                                DIRQ(INT_SHR_SEM_OUTBOX_IBE),
                                                NULL);
+
+    // Setup the tz-ppc devices.
+    int numppc = ARRAY_SIZE(tegra_tz_ppc_devs);
+    for (i=0; i<numppc; i++) {
+        void* tmpdev = qdev_new(TYPE_TZ_PPC);
+        s = SYS_BUS_DEVICE(tmpdev);
+
+        for (int port = 0; port < TZ_NUM_PORTS; port++) {
+            const PPCPortInfo *pinfo = &ppcinfo_table[i].ports[port];
+
+            if ((pinfo->board && tegra_board < pinfo->board) ||
+                ((!pinfo->opaque || *pinfo->opaque == NULL) && !pinfo->ram_size)) {
+                continue;
+            }
+
+            MemoryRegion *mr = NULL;
+
+            if (!pinfo->ram_size)
+                mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(*pinfo->opaque), pinfo->mmio_id);
+            else {
+                mr = g_new0(MemoryRegion, 1);
+                memory_region_init_ram(mr, NULL, pinfo->name, pinfo->ram_size, &error_abort);
+                memory_region_set_readonly(mr, RW);
+            }
+
+            char *portname = g_strdup_printf("port[%d]", port);
+            object_property_set_link(OBJECT(tmpdev), portname, OBJECT(mr),
+                                     &error_fatal);
+            g_free(portname);
+        }
+
+        sysbus_realize_and_unref(s, &error_fatal);
+
+        qdev_connect_gpio_out(DEVICE(tegra_apb_misc_dev), i,
+                              qdev_get_gpio_in_named(DEVICE(tmpdev),
+                                                     "cfg_nonsec",
+                                                     i));
+
+        for (int port = 0; port < TZ_NUM_PORTS; port++) {
+            const PPCPortInfo *pinfo = &ppcinfo_table[i].ports[port];
+
+            if ((pinfo->board && tegra_board < pinfo->board) ||
+                ((!pinfo->opaque || *pinfo->opaque == NULL) && !pinfo->ram_size)) {
+                continue;
+            }
+
+            sysbus_mmio_map(SYS_BUS_DEVICE(tmpdev), port, pinfo->addr);
+
+            qdev_connect_gpio_out(DEVICE(tegra_apb_misc_dev), numppc + i*TZ_NUM_PORTS + port,
+                                  qdev_get_gpio_in_named(DEVICE(tmpdev),
+                                                         "cfg_nonsec",
+                                                         port));
+
+            qdev_connect_gpio_out(DEVICE(tegra_apb_misc_dev), numppc + numppc*16 + i*TZ_NUM_PORTS + port,
+                                  qdev_get_gpio_in_named(DEVICE(tmpdev),
+                                                         "cfg_ap",
+                                                         port));
+        }
+
+        tegra_tz_ppc_devs[i] = tmpdev;
+    }
 
     /* AVP "MMU" TLB controls.  */
     //tegra_cop_mmu_dev = sysbus_create_simple("tegra.cop_mmu", 0xF0000000, NULL);

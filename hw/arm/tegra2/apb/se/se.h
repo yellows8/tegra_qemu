@@ -22,6 +22,7 @@
 #ifndef TEGRA_SE_H
 #define TEGRA_SE_H
 
+#define SE_TZRAM_SECURITY_OFFSET 0x4
 #define SE_OPERATION_OFFSET 0x8
 #define SE_INT_ENABLE_OFFSET 0xC
 #define SE_INT_STATUS_OFFSET 0x10
@@ -47,7 +48,7 @@ enum SE_CONFIG_ENC_MODE {
     SE_CONFIG_ENC_MODE_SHA512 = 7,
 };
 
-int tegra_se_crypto_operation(void* key, void* iv, QCryptoCipherAlgorithm cipher_alg, QCryptoCipherMode mode, bool encrypt, uintptr_t inbuf, uintptr_t outbuf, dma_addr_t databuf_size, bool inbuf_host, bool outbuf_host);
+int tegra_se_crypto_operation(void *opaque, void* key, void* iv, QCryptoCipherAlgorithm cipher_alg, QCryptoCipherMode mode, bool encrypt, uintptr_t inbuf, uintptr_t outbuf, dma_addr_t databuf_size, bool inbuf_host, bool outbuf_host);
 
 void tegra_se_lock_aes_keyslot(uint32_t slot, uint32_t flags);
 

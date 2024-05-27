@@ -52,6 +52,7 @@
 #include "se.h"
 
 #include "../apb/pmc/pmc.h"
+#include "../ppsb/apb_misc/apb_misc.h"
 
 #define TYPE_TEGRA_SE "tegra.se"
 #define TEGRA_SE(obj) OBJECT_CHECK(tegra_se, (obj), TYPE_TEGRA_SE)
@@ -673,8 +674,14 @@ static QCryptoCipher *qcrypto_cipher_ctx_new(QCryptoCipherAlgorithm alg,
     return NULL;
 }
 
-int tegra_se_crypto_operation(void* key, void* iv, QCryptoCipherAlgorithm cipher_alg, QCryptoCipherMode mode, bool encrypt, uintptr_t inbuf, uintptr_t outbuf, dma_addr_t databuf_size, bool inbuf_host, bool outbuf_host)
+static MemTxAttrs tegra_se_get_memattrs(tegra_se *s)
 {
+    return (MemTxAttrs){ .secure = 1 };
+}
+
+int tegra_se_crypto_operation(void *opaque, void* key, void* iv, QCryptoCipherAlgorithm cipher_alg, QCryptoCipherMode mode, bool encrypt, uintptr_t inbuf, uintptr_t outbuf, dma_addr_t databuf_size, bool inbuf_host, bool outbuf_host)
+{
+    tegra_se *s = opaque;
     Error *err = NULL;
     int tmpret=0;
     size_t datasize=0;
@@ -684,11 +691,11 @@ int tegra_se_crypto_operation(void* key, void* iv, QCryptoCipherAlgorithm cipher
     QCryptoCipher *cipher = qcrypto_cipher_ctx_new(cipher_alg, mode, key, qcrypto_cipher_get_key_len(cipher_alg), &err);
 
     if (!inbuf_host)
-        databuf_in = dma_memory_map(&address_space_memory, inbuf, &tmplen_in, DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
+        databuf_in = dma_memory_map(&address_space_memory, inbuf, &tmplen_in, DMA_DIRECTION_TO_DEVICE, tegra_se_get_memattrs(s));
     else
         databuf_in = (void*)inbuf;
     if (!outbuf_host)
-        databuf_out = dma_memory_map(&address_space_memory, outbuf, &tmplen_out, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
+        databuf_out = dma_memory_map(&address_space_memory, outbuf, &tmplen_out, DMA_DIRECTION_FROM_DEVICE, tegra_se_get_memattrs(s));
     else
         databuf_out = (void*)outbuf;
 
@@ -829,7 +836,7 @@ static void tegra_se_auto_save_context(tegra_se *s)
 
     memcpy(&data[(size-0x10)>>2], fixed_pattern, sizeof(fixed_pattern));
 
-    tegra_se_crypto_operation(key, iv, QCRYPTO_CIPHER_ALG_AES_128,
+    tegra_se_crypto_operation(s, key, iv, QCRYPTO_CIPHER_ALG_AES_128,
                               QCRYPTO_CIPHER_MODE_CBC, true,
                               (uintptr_t)data, context_addr,
                               size, true, false);
@@ -876,10 +883,15 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
     uint32_t cfg_dst = (s->regs.SE_CONFIG >> 2) & 0x7;
 
     if (offset == SE_OPERATION_OFFSET || (offset == SE_RSA_KEYTABLE_ADDR_OFFSET && cfg_dst==0)) {
-        dma_memory_read(&address_space_memory, s->regs.SE_IN_LL_ADDR, &in_entry, sizeof(in_entry), MEMTXATTRS_UNSPECIFIED);
+        dma_memory_read(&address_space_memory, s->regs.SE_IN_LL_ADDR, &in_entry, sizeof(in_entry), tegra_se_get_memattrs(s));
     }
 
     switch (offset) {
+        case SE_TZRAM_SECURITY_OFFSET:
+            s->regs.SE_TZRAM_SECURITY = value;
+            tegra_apb_misc_set_slave_sec_extra(tegra_apb_misc_dev, (~s->regs.SE_TZRAM_SECURITY) & 0x1);
+        break;
+
         case SE_INT_ENABLE_OFFSET:
             tmp = s->regs.SE_INT_ENABLE & s->regs.SE_INT_STATUS;
             s->regs.SE_INT_ENABLE = value;
@@ -959,9 +971,9 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     break;
                 }
 
-                if (op==1 || (ctxsave && ctxsave_src==4)) databuf_in = dma_memory_map(&address_space_memory, in_entry.address, &tmplen_in, DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
+                if (op==1 || (ctxsave && ctxsave_src==4)) databuf_in = dma_memory_map(&address_space_memory, in_entry.address, &tmplen_in, DMA_DIRECTION_TO_DEVICE, tegra_se_get_memattrs(s));
 
-                if (cfg_dst==0) dma_memory_read(&address_space_memory, s->regs.SE_OUT_LL_ADDR, &out_entry, sizeof(out_entry), MEMTXATTRS_UNSPECIFIED);
+                if (cfg_dst==0) dma_memory_read(&address_space_memory, s->regs.SE_OUT_LL_ADDR, &out_entry, sizeof(out_entry), tegra_se_get_memattrs(s));
                 //printf("se in: 0x%x, 0x%x, 0x%x\n", in_entry.zero, in_entry.address, in_entry.size);
                 //printf("se out: 0x%x, 0x%x, 0x%x\n", out_entry.zero, out_entry.address, out_entry.size);
 
@@ -978,7 +990,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 
                 if (cfg_dst==0) { // MEMORY
                     databuf_outsize = out_entry.size;
-                    databuf_out = dma_memory_map(&address_space_memory, out_entry.address, &databuf_outsize, DMA_DIRECTION_FROM_DEVICE, MEMTXATTRS_UNSPECIFIED);
+                    databuf_out = dma_memory_map(&address_space_memory, out_entry.address, &databuf_outsize, DMA_DIRECTION_FROM_DEVICE, tegra_se_get_memattrs(s));
                 }
                 else if (cfg_dst==1) { // HASH_REG
                     databuf_out = &s->regs.SE_HASH_RESULT;
@@ -1193,7 +1205,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 
                    if (hash_alg!=QCRYPTO_HASH_ALG__MAX) {
                        dma_addr_t tmplen = in_entry.size;
-                       void* databuf = dma_memory_map(&address_space_memory, in_entry.address, &tmplen, DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
+                       void* databuf = dma_memory_map(&address_space_memory, in_entry.address, &tmplen, DMA_DIRECTION_TO_DEVICE, tegra_se_get_memattrs(s));
 
                        uint8_t *result=NULL;
                        size_t resultlen=0;
@@ -1225,7 +1237,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 
                     datasize = in_entry.size;
                     if (datasize > sizeof(indata)) datasize = sizeof(indata);
-                    dma_memory_read(&address_space_memory, in_entry.address, indata, datasize, MEMTXATTRS_UNSPECIFIED);
+                    dma_memory_read(&address_space_memory, in_entry.address, indata, datasize, tegra_se_get_memattrs(s));
                     if (datasize > databuf_outsize) datasize = databuf_outsize;
 
                     s->regs.SE_INT_STATUS |= 1<<1; // INT_STATUS_IN_DONE
@@ -1293,8 +1305,8 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 
                 uint32_t rsa_tableoffset = s->regs.SE_RSA_KEYTABLE_ADDR & 0xff;
                 memset(&s->rsa_keytable[rsa_tableoffset], 0, 0x200);
-                dma_memory_read(&address_space_memory, in_entry.address, &s->rsa_keytable[rsa_tableoffset + 0x40], n_size, MEMTXATTRS_UNSPECIFIED);
-                dma_memory_read(&address_space_memory, in_entry.address + 0x100, &s->rsa_keytable[rsa_tableoffset], e_size, MEMTXATTRS_UNSPECIFIED);
+                dma_memory_read(&address_space_memory, in_entry.address, &s->rsa_keytable[rsa_tableoffset + 0x40], n_size, tegra_se_get_memattrs(s));
+                dma_memory_read(&address_space_memory, in_entry.address + 0x100, &s->rsa_keytable[rsa_tableoffset], e_size, tegra_se_get_memattrs(s));
             }
         break;
 

@@ -160,7 +160,7 @@ static void tegra_tsec_priv_write(void *opaque, hwaddr offset,
 
                     pk11_t header={};
 
-                    if(tegra_se_crypto_operation(s->package1_key, pk11_info.iv, QCRYPTO_CIPHER_ALG_AES_128, QCRYPTO_CIPHER_MODE_CBC, false, inbuf, (uintptr_t)&header, sizeof(header), false, true)==0) {
+                    if(tegra_se_crypto_operation(tegra_se_dev, s->package1_key, pk11_info.iv, QCRYPTO_CIPHER_ALG_AES_128, QCRYPTO_CIPHER_MODE_CBC, false, inbuf, (uintptr_t)&header, sizeof(header), false, true)==0) {
                         if (tswap32(header.magic) != 0x31314B50) { // PK11
                             Error *err = NULL;
                             error_setg(&err, "tegra.tsec: Decryption failed, invalid PK11 magicnum.");
@@ -170,7 +170,7 @@ static void tegra_tsec_priv_write(void *opaque, hwaddr offset,
                             uint32_t pk11_size = tswap32(pk11_info.pk11_size);
                             uint32_t bl_ep = tswap32(header.bl_ep);
 
-                            tegra_se_crypto_operation(s->package1_key, pk11_info.iv, QCRYPTO_CIPHER_ALG_AES_128, QCRYPTO_CIPHER_MODE_CBC, false, inbuf, inbuf, pk11_size, false, false);
+                            tegra_se_crypto_operation(tegra_se_dev, s->package1_key, pk11_info.iv, QCRYPTO_CIPHER_ALG_AES_128, QCRYPTO_CIPHER_MODE_CBC, false, inbuf, inbuf, pk11_size, false, false);
 
                             tegra_se_lock_aes_keyslot(13, 0x100);
 

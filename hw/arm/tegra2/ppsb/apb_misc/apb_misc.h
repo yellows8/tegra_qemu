@@ -1940,4 +1940,7 @@ typedef union das_dac_input_data_clk_sel_2_u {
 
 #define FEK_OFFSET 0x1200
 
+uint32_t tegra_apb_misc_get_slave_sec(void *opaque, uint32_t index);
+void tegra_apb_misc_set_slave_sec_extra(void *opaque, uint32_t value);
+
 #endif // TEGRA_APB_MISC_H

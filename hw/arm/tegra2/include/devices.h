@@ -22,6 +22,7 @@
 
 extern void * tegra_a9mpcore_dev;
 extern void * gic_dev;
+extern void * tegra_tz_ppc_devs[7];
 extern void * tegra_apb_dma_dev;
 extern void * tegra_ahb_gizmo_dev;
 extern void * tegra_ahbapb_debugbus_dev;

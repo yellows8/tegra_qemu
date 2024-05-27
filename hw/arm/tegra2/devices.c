@@ -28,6 +28,7 @@
 
 void *tegra_a9mpcore_dev = NULL;
 void *gic_dev = NULL;
+void * tegra_tz_ppc_devs[7] = {};
 void *tegra_apb_dma_dev = NULL;
 void *tegra_ahb_gizmo_dev = NULL;
 void *tegra_ahbapb_debugbus_dev = NULL;
