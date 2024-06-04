@@ -349,6 +349,11 @@ static MemTxResult tegra_fuse_priv_read(void *opaque, hwaddr offset, uint64_t *p
         break;
     case FUSE_RESERVED_ODM8_OFFSET ... FUSE_JTAG_SECUREID_VALID_OFFSET:
         ret = s->fuse_cache_x98[(offset-0x98)>>2];
+        // Return all-FF if accessing a fuse which is disabled.
+        if (tegra_board >= TEGRAX1PLUS_BOARD && offset >= FUSE_KEK00_OFFSET && offset+size <= FUSE_BEK03_OFFSET+4) {
+            if (s->fuse_privatekeydisable.reg32 & 0x1)
+                ret = ~0;
+        }
         break;
     case FUSE_OPT_FT_REV_OFFSET ... FUSE_FA_OFFSET:
         ret = s->fuse_cache_x128[(offset-0x128)>>2];
@@ -393,19 +398,19 @@ static MemTxResult tegra_fuse_priv_read(void *opaque, hwaddr offset, uint64_t *p
         ret = s->fuse_reserved_production.reg32;
         break;
     case FUSE_PRIVATE_KEY0_OFFSET:
-        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key0.reg32;
+        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? ~0 : s->fuse_private_key0.reg32;
         break;
     case FUSE_PRIVATE_KEY1_OFFSET:
-        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key1.reg32;
+        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? ~0 : s->fuse_private_key1.reg32;
         break;
     case FUSE_PRIVATE_KEY2_OFFSET:
-        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key2.reg32;
+        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? ~0 : s->fuse_private_key2.reg32;
         break;
     case FUSE_PRIVATE_KEY3_OFFSET:
-        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key3.reg32;
+        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? ~0 : s->fuse_private_key3.reg32;
         break;
     case FUSE_PRIVATE_KEY4_OFFSET:
-        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? 0xFFFFFFFF : s->fuse_private_key4.reg32;
+        ret = s->fuse_privatekeydisable.reg32 & 0x1 ? ~0 : s->fuse_private_key4.reg32;
         break;
     case FUSE_RESERVED_ODM0_OFFSET ... FUSE_RESERVED_ODM7_OFFSET:
         ret = s->fuse_reserved_odm[(offset - FUSE_RESERVED_ODM0_OFFSET)>>2];

@@ -196,6 +196,10 @@ typedef union fuse_private_key4_nonzero_u {
 
 #define FUSE_RESERVED_ODM8_OFFSET 0x98
 
+#define FUSE_KEK00_OFFSET 0xD0
+
+#define FUSE_BEK03_OFFSET 0xEC
+
 #define FUSE_JTAG_SECUREID_VALID_OFFSET 0x104
 
 #define FUSE_JTAG_SECUREID_0_OFFSET 0x108
