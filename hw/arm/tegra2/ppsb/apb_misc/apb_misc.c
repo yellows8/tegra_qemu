@@ -532,10 +532,14 @@ static MemTxResult tegra_apb_misc_priv_read(void *opaque, hwaddr offset, uint64_
     case DAS_DAC_INPUT_DATA_CLK_SEL_2_OFFSET+0x4 ... 0x2FFC:
         if (tegra_board >= TEGRAX1_BOARD) {
             ret = s->regs[(offset - GP_BUTTON_VOL_DOWN_CFGPADCTRL_OFFSET)>>2];
-            if (tegra_board >= TEGRAX1PLUS_BOARD && offset >= FEK_OFFSET && offset+size <= FEK_OFFSET+0x100 &&
-                ((s->pp_pullupdown_reg_a.reg32 & BIT(0)) ||
-                ((s->das_dap_ctrl_sel_2.reg32 & BIT(21)) && !attrs.secure)))
-                ret = 0; // Return 0 when reading FEK if it's disabled, or when FEK is secure-only with an insecure access.
+            if (tegra_board >= TEGRAX1PLUS_BOARD && offset >= FEK_OFFSET && offset+size <= FEK_OFFSET+0x100) {
+                // Return 0 when FEK is secure-only with an insecure access.
+                // Return all-FF when reading FEK if it's disabled.
+                if ((s->das_dap_ctrl_sel_2.reg32 & BIT(21)) && !attrs.secure)
+                    ret = 0;
+                else if (s->pp_pullupdown_reg_a.reg32 & BIT(0))
+                    ret = ~0;
+            }
         }
         break;
     case DAS_DAP_CTRL_SEL_OFFSET:
