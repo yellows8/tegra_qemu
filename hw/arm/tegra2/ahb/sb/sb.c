@@ -26,6 +26,14 @@
 #include "hw/sysbus.h"
 #include "exec/address-spaces.h"
 #include "hw/loader.h"
+#include "sysemu/runstate.h"
+#include "qapi/qmp/qdict.h"
+#include "qapi/qmp/qnum.h"
+#include "qapi/visitor.h"
+#include "qemu/log.h"
+#include "qemu/cutils.h"
+#include "qapi/error.h"
+#include "qemu/error-report.h"
 
 #include "iomap.h"
 #include "tegra_cpu.h"
@@ -45,6 +53,8 @@
 
 typedef struct tegra_sb_state {
     SysBusDevice parent_obj;
+
+    QDict cold_reset_ipatches;
 
     MemoryRegion iomem;
     MemoryRegion ipatch_iomem;
@@ -185,6 +195,42 @@ static void tegra_irom_priv_write(void *opaque, hwaddr offset,
     // This is read-only.
 }
 
+static void tegra_ipatch_set_cold_reset_ipatches(Object *obj, Visitor *v, const char *name,
+                                                 void *opaque, Error **errp)
+{
+    tegra_sb *s = TEGRA_SB(obj);
+    uint64_t value=0;
+    char *keyname = NULL;
+    char *strvalue = NULL;
+    char *strptr = NULL;
+    char tmpstr[256]={};
+
+    if (!visit_type_str(v, name, &strvalue, errp)) {
+        return;
+    }
+
+    strptr = tmpstr;
+    keyname = tmpstr;
+    pstrcpy(tmpstr, sizeof(tmpstr), strvalue);
+    qemu_strsep(&strptr, ":");
+    strvalue = strptr;
+
+    if (strvalue == NULL) {
+        error_setg(errp, "error reading %s '%s'", name, tmpstr);
+        return;
+    }
+
+    if (qemu_strtoul(strvalue, NULL, 16, &value)) {
+        error_setg(errp, "error reading %s '%s'", name, strvalue);
+        return;
+    }
+
+    QNum *num = qnum_from_uint(value);
+    if (num) {
+        qdict_put(&s->cold_reset_ipatches, keyname, num);
+    }
+}
+
 ssize_t tegra_sb_load_irom_file(void *opaque, const char *path)
 {
     tegra_sb *s = opaque;
@@ -202,7 +248,7 @@ void tegra_sb_load_irom_fixed(void *opaque, const void* buffer, size_t size)
     memcpy(s->irom, buffer, size < sizeof(s->irom) ? size : sizeof(s->irom));
 }
 
-static void tegra_sb_priv_reset(DeviceState *dev)
+void tegra_sb_priv_reset(DeviceState *dev, ShutdownCause cause)
 {
     tegra_sb *s = TEGRA_SB(dev);
 
@@ -211,6 +257,28 @@ static void tegra_sb_priv_reset(DeviceState *dev)
     s->regs[PIROM_START_OFFSET>>2] = PIROM_START_RESET;
 
     cpu_flush_icache_range(TEGRA_IROM_BASE, TEGRA_IROM_SIZE);
+
+    // Write the input prop reg values if needed.
+    if (cause != SHUTDOWN_CAUSE_GUEST_RESET) {
+        for (const QDictEntry *ent = qdict_first(&s->cold_reset_ipatches); ent; ent = qdict_next(&s->cold_reset_ipatches, ent)) {
+            const char *keyname = qdict_entry_key(ent);
+            QObject *keyobj = qdict_entry_value(ent);
+
+            if (keyname && keyobj) {
+                QNum *num = qobject_to(QNum, keyobj);
+
+                if (num) {
+                    uint64_t id=0, value=0;
+                    if (!qemu_strtoul(keyname, NULL, 16, &id) && id < IPATCH_MAX) {
+                        value = qnum_get_uint(num);
+                        qemu_log_mask(LOG_GUEST_ERROR, "tegra.sb: Writing ipatch for cold-reset-ipatches: ipatch id 0x%lx = reg value 0x%lx.\n", id, value);
+                        s->ipatch_regs[1+id] = value;
+                        s->ipatch_regs[0] |= BIT(id);
+                    }
+                }
+            }
+        }
+    }
 }
 
 static const MemoryRegionOps tegra_sb_mem_ops = {
@@ -254,7 +322,10 @@ static void tegra_sb_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_sb_priv_realize;
     dc->vmsd = &vmstate_tegra_sb;
-    dc->reset = tegra_sb_priv_reset;
+
+    object_class_property_add(klass, "cold-reset-ipatches", "uint",
+                              NULL,
+                              tegra_ipatch_set_cold_reset_ipatches, NULL, NULL);
 }
 
 static const TypeInfo tegra_sb_info = {

@@ -1727,6 +1727,8 @@ static void tegrax1_reset(MachineState *state, ShutdownCause cause)
 
     tegra_fuse_reset(tegra_fuse_dev, cause);
 
+    tegra_sb_priv_reset(tegra_sb_dev, cause);
+
     int cpu_id = state->firmware != NULL || state->bootloader != NULL ? TEGRA_BPMP : TEGRA_CCPLEX_CORE0;
     tegra_cpu_unpowergate(cpu_id);
     tegra_cpu_reset_deassert(cpu_id, 1);

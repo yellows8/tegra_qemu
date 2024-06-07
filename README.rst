@@ -67,6 +67,8 @@ Actual GPU rendering will not be supported. Playing commercial titles with graph
 
 * The FEKs (Fuse Encryption Key) for TX1+ can optionally be specified via input secrets if needed. Repeat as needed for each key: ``-object secret,id=tegra.apb_misc.{prod|dev}_fek{decimal slot 0-7},file={path to raw keydata}``
 
+* To configure IPATCH regs during cold-boot (non-guest-reset), repeating as needed for each register: ``-global driver=tegra.sb,property=cold-reset-ipatches,value={ipatch_id}:{reg_value}`` This is for using custom ipatches with the BPMP IROM, so the id should be different from what the IROM loads. reg_value lower 16bits is the data-value, while the upper 16bits is ``offset>>1``.
+
 * To resume after sleep-mode is entered via the PMC reg, use ``system_wakeup`` via the QEMU monitor. This is only available when tegra.evp bpmp-reset-vector is left at the default, and when ``-bios`` is specified.
 
 * To rotate the display: ``-global driver=tegra.dc,property=rotate,value={0/90/180/270}`` Note that -rotate is not used for this since that also enables rotating the host mouse input.

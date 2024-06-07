@@ -34,4 +34,6 @@ uint64_t tegra_sb_get_cpu_reset_vector(void);
 ssize_t tegra_sb_load_irom_file(void *opaque, const char *path);
 void tegra_sb_load_irom_fixed(void *opaque, const void* buffer, size_t size);
 
+void tegra_sb_priv_reset(DeviceState *dev, ShutdownCause cause);
+
 #endif // TEGRA_SB_H
