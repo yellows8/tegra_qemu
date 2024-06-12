@@ -228,7 +228,7 @@ static void tegra_tsec_load_key(const char *name, void* outdata, size_t maxsize,
     *flag = false;
     if (qcrypto_secret_lookup(name, &data, &datalen, &err)==0) {
         if (datalen > maxsize) {
-            error_setg(&err, "tegra.tsec: Invalid datalen for secret %s, datalen=0x%lx expected <=0x%lx.", name, datalen, maxsize);
+            error_setg(&err, "tegra.tsec: Invalid datalen for secret %s, datalen=0x%zx expected <=0x%zx.", name, datalen, maxsize);
         }
         else {
             memcpy(outdata, data, datalen);

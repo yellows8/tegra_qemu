@@ -1154,7 +1154,7 @@ void tegra_fuse_reset(DeviceState *dev, ShutdownCause cause)
     size_t datalen = 0;
     if (qcrypto_secret_lookup("tegra.fuse.cache", &data, &datalen, &err)==0) {
         if (datalen > 0x368 && datalen!=0x1000) {
-            error_setg(&err, "tegra.fuse: Invalid datalen for secret tegra.fuse.cache, datalen=0x%lx expected <=0x368/0x1000.", datalen);
+            error_setg(&err, "tegra.fuse: Invalid datalen for secret tegra.fuse.cache, datalen=0x%zx expected <=0x368/0x1000.", datalen);
         }
         else {
             uint32_t *dataptr = (uint32_t*)data;
@@ -1186,7 +1186,7 @@ void tegra_fuse_reset(DeviceState *dev, ShutdownCause cause)
         datalen = 0;
         if (qcrypto_secret_lookup("tegra.fuse.array", &data, &datalen, &err)==0) {
             if (datalen > sizeof(s->fuse_array)) {
-                error_setg(&err, "tegra.fuse: Invalid datalen for secret tegra.fuse.array, datalen=0x%lx expected <=0x%lx.", datalen, sizeof(s->fuse_array));
+                error_setg(&err, "tegra.fuse: Invalid datalen for secret tegra.fuse.array, datalen=0x%zx expected <=0x%zx.", datalen, sizeof(s->fuse_array));
             }
             else {
                 memcpy(s->fuse_array, data, datalen);

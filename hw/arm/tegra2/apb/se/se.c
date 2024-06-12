@@ -1424,7 +1424,7 @@ static void tegra_se_priv_reset(DeviceState *dev)
         size_t datalen = 0;
         snprintf(tmpstr, sizeof(tmpstr)-1, "se.aeskeyslot%d", keyslot);
         if (qcrypto_secret_lookup(tmpstr, &data, &datalen, &err)==0) {
-            if (datalen!=0x10) error_setg(&err, "SE: Invalid datalen for secret %s, datalen=0x%lx expected 0x%x.", tmpstr, datalen, 0x10);
+            if (datalen!=0x10) error_setg(&err, "SE: Invalid datalen for secret %s, datalen=0x%zx expected 0x%x.", tmpstr, datalen, 0x10);
             else {
                 memcpy(&s->aes_keytable[keyslot*0x10], data, 0x10);
                 qemu_hexdump(stdout, tmpstr, &s->aes_keytable[keyslot*0x10], 0x10);

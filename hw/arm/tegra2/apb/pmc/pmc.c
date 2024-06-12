@@ -1080,10 +1080,12 @@ static void tegra_pmc_set_cold_reset_regs(Object *obj, Visitor *v, const char *n
         return;
     }
 
-    if (qemu_strtoul(strvalue, NULL, 16, &value)) {
+    unsigned long _value=0;
+    if (qemu_strtoul(strvalue, NULL, 16, &_value)) {
         error_setg(errp, "error reading %s '%s'", name, strvalue);
         return;
     }
+    value = _value;
 
     QNum *num = qnum_from_uint(value);
     if (num) {
@@ -1307,10 +1309,12 @@ void tegra_pmc_reset(DeviceState *dev, ShutdownCause cause)
                 QNum *num = qobject_to(QNum, keyobj);
 
                 if (num) {
+                    unsigned long _regoff=0;
                     uint64_t regoff=0, regval=0;
-                    if (!qemu_strtoul(keyname, NULL, 16, &regoff)) {
+                    if (!qemu_strtoul(keyname, NULL, 16, &_regoff)) {
+                        regoff = _regoff;
                         regval = qnum_get_uint(num);
-                        qemu_log_mask(LOG_GUEST_ERROR, "tegra.pmc: Writing reg for cold-reset-regs: 0x%lx = 0x%lx.\n", regoff, regval);
+                        qemu_log_mask(LOG_GUEST_ERROR, "tegra.pmc: Writing reg for cold-reset-regs: 0x%" PRIx64 " = 0x%" PRIx64 ".\n", regoff, regval);
                         tegra_pmc_priv_write(s, regoff, regval, 4);
                     }
                 }

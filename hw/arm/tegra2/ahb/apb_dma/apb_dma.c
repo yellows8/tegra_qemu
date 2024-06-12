@@ -402,7 +402,7 @@ static void tegra_apb_dma_priv_write(void *opaque, hwaddr offset,
                 MemTxResult memres = MEMTX_OK;
 
                 if (ahb_addr_wrap)
-                    qemu_log_mask(LOG_GUEST_ERROR, "tegra.apb_dma: Ignoring ahb_addr_wrap = 0x%lX.\n", ahb_addr_wrap);
+                    qemu_log_mask(LOG_GUEST_ERROR, "tegra.apb_dma: Ignoring ahb_addr_wrap = 0x%zX.\n", ahb_addr_wrap);
 
                 if (channel->channel_ahb_seq.ahb_data_swap || channel->channel_apb_seq.apb_data_swap)
                     qemu_log_mask(LOG_GUEST_ERROR, "tegra.apb_dma: Ignoring ahb_data_swap = %d / apb_data_swap = %d.\n",

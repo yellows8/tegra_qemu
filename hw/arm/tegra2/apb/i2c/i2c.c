@@ -308,7 +308,7 @@ static uint64_t tegra_i2c_read(void *opaque, hwaddr offset, unsigned size)
         if (tegra_board >= TEGRAX1_BOARD) return s->regs[(offset - 0x94)>>2];
         break;
     default:
-        qemu_log_mask(LOG_UNIMP, "tegra_i2c_read: Bad offset 0x%lx\n", offset);
+        qemu_log_mask(LOG_UNIMP, "tegra_i2c_read: Bad offset 0x%" PRIx64 "\n", offset);
         return 0;
     }
 
@@ -489,7 +489,7 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
         if (tegra_board >= TEGRAX1_BOARD) s->regs[(offset - 0x94)>>2] = value;
         break;
     default:
-        qemu_log_mask(LOG_UNIMP, "tegra_i2c_write: Bad offset 0x%lx\n", offset);
+        qemu_log_mask(LOG_UNIMP, "tegra_i2c_write: Bad offset 0x%" PRIx64 "\n", offset);
         break;
     }
 }

@@ -220,10 +220,12 @@ static void tegra_ipatch_set_cold_reset_ipatches(Object *obj, Visitor *v, const 
         return;
     }
 
-    if (qemu_strtoul(strvalue, NULL, 16, &value)) {
+    unsigned long _value=0;
+    if (qemu_strtoul(strvalue, NULL, 16, &_value)) {
         error_setg(errp, "error reading %s '%s'", name, strvalue);
         return;
     }
+    value = _value;
 
     QNum *num = qnum_from_uint(value);
     if (num) {
@@ -268,10 +270,11 @@ void tegra_sb_priv_reset(DeviceState *dev, ShutdownCause cause)
                 QNum *num = qobject_to(QNum, keyobj);
 
                 if (num) {
+                    unsigned long _id=0;
                     uint64_t id=0, value=0;
-                    if (!qemu_strtoul(keyname, NULL, 16, &id) && id < IPATCH_MAX) {
+                    if (!qemu_strtoul(keyname, NULL, 16, &_id) && (id = _id) < IPATCH_MAX) {
                         value = qnum_get_uint(num);
-                        qemu_log_mask(LOG_GUEST_ERROR, "tegra.sb: Writing ipatch for cold-reset-ipatches: ipatch id 0x%lx = reg value 0x%lx.\n", id, value);
+                        qemu_log_mask(LOG_GUEST_ERROR, "tegra.sb: Writing ipatch for cold-reset-ipatches: ipatch id 0x%" PRIx64 " = reg value 0x%" PRIx64 ".\n", id, value);
                         s->ipatch_regs[1+id] = value;
                         s->ipatch_regs[0] |= BIT(id);
                     }

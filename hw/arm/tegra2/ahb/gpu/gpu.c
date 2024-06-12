@@ -145,7 +145,7 @@ static MemTxResult tegra_gpu_translate_gmmu(tegra_gpu *s, dma_addr_t addr,
 
     *out_addr = 0;
 
-    pdb &= (1UL<<34)-1; // TODO: handle properly?
+    pdb &= (1ULL<<34)-1; // TODO: handle properly?
 
     size_t pde_lowbit = big_page_size ? 27 : 26;
     size_t pte_lowbit = 12;
@@ -153,8 +153,8 @@ static MemTxResult tegra_gpu_translate_gmmu(tegra_gpu *s, dma_addr_t addr,
     if (addr >= SZ_1G*16) // big pages range
         pte_lowbit = big_page_size ? 17 : 16;
 
-    uint64_t pde_i = (addr & ((1UL<<NV_GMMU_VA_RANGE)-1)) >> pde_lowbit;
-    uint64_t pte_i = (addr & ((1UL<<pde_lowbit)-1)) >> pte_lowbit;
+    uint64_t pde_i = (addr & ((1ULL<<NV_GMMU_VA_RANGE)-1)) >> pde_lowbit;
+    uint64_t pte_i = (addr & ((1ULL<<pde_lowbit)-1)) >> pte_lowbit;
 
     uint32_t pde[2]={};
     uint32_t pte[2]={};
@@ -177,7 +177,7 @@ static MemTxResult tegra_gpu_translate_gmmu(tegra_gpu *s, dma_addr_t addr,
     }
 
     if (res == MEMTX_OK) {
-        pte_base &= (1UL<<34)-1;
+        pte_base &= (1ULL<<34)-1;
 
         res = dma_memory_read(&address_space_memory, pte_base + pte_i*8,
                               pte, sizeof(pte),
@@ -196,8 +196,8 @@ static MemTxResult tegra_gpu_translate_gmmu(tegra_gpu *s, dma_addr_t addr,
 
     if (res == MEMTX_OK) {
         *out_addr = ((dma_addr_t)pte[0]>>4) << 12;
-        *out_addr &= (1UL<<34)-1;
-        *out_addr |= addr & ((1UL<<pte_lowbit)-1);
+        *out_addr &= (1ULL<<34)-1;
+        *out_addr |= addr & ((1ULL<<pte_lowbit)-1);
     }
 
     return res;
@@ -216,20 +216,20 @@ static void tegra_gpu_dump_gmmu_pages(tegra_gpu *s, dma_addr_t pdb, bool big_pag
                                        &ptr,
                                        IOMMU_RO, pdb, big_page_size);
         if (res != MEMTX_OK) {
-            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_dump_gmmu_pages: tegra_gpu_translate_gmmu(0x%lX) failed: 0x%x.\n", gva + i, res);
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_dump_gmmu_pages: tegra_gpu_translate_gmmu(0x%" PRIX64 ") failed: 0x%x.\n", gva + i, res);
             continue;
         }
 
         void* databuf = dma_memory_map(&address_space_memory, ptr, &tmplen_in, DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
 
         if (databuf) {
-            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_dump_gmmu_pages: Dumping gva 0x%lX:\n", gva + i);
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_dump_gmmu_pages: Dumping gva 0x%" PRIX64 ":\n", gva + i);
             tegra_gpu_log_hexdump("tegra_gpu_dump_gmmu_pages", databuf, databuf_size);
 
             dma_memory_unmap(&address_space_memory, databuf, databuf_size, DMA_DIRECTION_TO_DEVICE, databuf_size);
         }
         else {
-            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_dump_gmmu_pages: dma_memory_map(0x%lX) failed.\n", ptr);
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_dump_gmmu_pages: dma_memory_map(0x%" PRIX64 ") failed.\n", ptr);
         }
     }
 }
@@ -272,7 +272,7 @@ static MemTxResult tegra_gpu_parse_pb_cmd(tegra_gpu *s,
 
     if (addr == 0x1C) { // Syncpoint
         if (argscount != 2) {
-            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_pb_cmd: The argscount for Syncpoint is 0x%lx, expected 0x%x.\n", argscount, 2);
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_pb_cmd: The argscount for Syncpoint is 0x%zx, expected 0x%x.\n", argscount, 2);
         }
         else {
             tegra_gpu_method_syncpoint *sync = (void*)&args[1];
@@ -287,7 +287,7 @@ static MemTxResult tegra_gpu_parse_pb_cmd(tegra_gpu *s,
     }
     else if (addr == 0xB2) { // SyncptAction
         if (argscount != 1) {
-            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_pb_cmd: The argscount for SyncptAction is 0x%lx, expected 0x%x.\n", argscount, 1);
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_pb_cmd: The argscount for SyncptAction is 0x%zx, expected 0x%x.\n", argscount, 1);
         }
         else {
             tegra_gpu_method_syncptaction *action = (void*)&args[0];
@@ -302,7 +302,7 @@ static MemTxResult tegra_gpu_parse_pb_cmd(tegra_gpu *s,
     }
     else if (addr == 0x6C0) { // SetReportSemaphore*
         if (argscount != 4) {
-            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_pb_cmd: The argscount for SetReportSemaphore is 0x%lx, expected 0x%x.\n", argscount, 4);
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_pb_cmd: The argscount for SetReportSemaphore is 0x%zx, expected 0x%x.\n", argscount, 4);
         }
         else {
             tegra_gpu_method_setreportsemaphore *sema = (void*)&args[3];
@@ -342,7 +342,7 @@ static MemTxResult tegra_gpu_parse_gpfifo_cmds(tegra_gpu *s,
     size_t argscount=0;
 
     #ifdef TEGRA_GPU_DEBUG
-    qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_gpfifo_cmds: gpu_iova = 0x%lx, size = 0x%lx, desc_high = 0x%x\n", gpu_iova, size, desc_high);
+    qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_gpfifo_cmds: gpu_iova = 0x%" PRIx64 ", size = 0x%zx, desc_high = 0x%x\n", gpu_iova, size, desc_high);
     #endif
 
     for (size_t i=0; i<size; i++) {
@@ -367,7 +367,7 @@ static MemTxResult tegra_gpu_parse_gpfifo_cmds(tegra_gpu *s,
 
         for (size_t i2=0; i2<argscount; i++, i2++) {
             if (i+1 >= size) {
-                qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_gpfifo_cmds: Aborting since argscount 0x%lx (i2=0x%lx) is larger then the remaining size.\n", argscount, i2);
+                qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_parse_gpfifo_cmds: Aborting since argscount 0x%zx (i2=0x%zx) is larger then the remaining size.\n", argscount, i2);
                 return res;
             }
             gpfifo_gva_tmp = gpu_iova + (i+1)*4;
@@ -431,7 +431,7 @@ static void tegra_gpu_process_gpfifo(tegra_gpu *s, uint32_t channel_id, uint32_t
 
     if (ccsr & 0x80000000) { // ccsr_channel_inst_bind_true_f
         dma_addr_t inst_ptr = (((dma_addr_t)ccsr) & 0xFFFFFFF) << 12;
-        inst_ptr &= (1UL<<34)-1;
+        inst_ptr &= (1ULL<<34)-1;
 
         uint32_t inst[134]={};
         uint32_t *gp_base = &inst[18]; // ram_fc_gp_base/ram_fc_gp_base_hi_w
@@ -452,7 +452,7 @@ static void tegra_gpu_process_gpfifo(tegra_gpu *s, uint32_t channel_id, uint32_t
             bool big_page_size = (page_dir_base[0] & 0x800) == 0; // big_page_size. Bit clear for 128kb, set for 64kb.
 
             #ifdef TEGRA_GPU_DEBUG
-            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_process_gpfifo: gpfifo_base = 0x%lx, gpfifo_entries = 0x%lx, pdb = 0x%lx, big_page_size = %d\n", gpfifo_base, gpfifo_entries, pdb, big_page_size);
+            qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_process_gpfifo: gpfifo_base = 0x%" PRIx64 ", gpfifo_entries = 0x%" PRIx64 ", pdb = 0x%" PRIx64 ", big_page_size = %d\n", gpfifo_base, gpfifo_entries, pdb, big_page_size);
             #endif
 
             MemTxResult res = tegra_gpu_parse_gpfifo(s, original_value, value, gpfifo_base, gpfifo_entries, pdb, big_page_size);
