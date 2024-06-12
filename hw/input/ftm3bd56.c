@@ -402,7 +402,7 @@ static int ftm3bd56_send(I2CSlave *i2c, uint8_t data)
             else if (addr == STMFTS_VENDOR && s->num_args == 1) {
                 if (s->cmd_args[0] == STMFTS_VENDOR_GPIO_STATE) {
                     // GPIOs for "NISSHA NFT-K12D":
-                    uint8_t event_data[3] = {1, 1, 1};
+                    uint8_t event_data[6] = {1, 1, 1};
                     ftm3bd56_write_event(s, STMFTS_EV_VENDOR, STMFTS_VENDOR_GPIO_STATE, event_data);
                 }
             }
