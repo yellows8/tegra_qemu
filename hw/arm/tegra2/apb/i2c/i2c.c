@@ -65,6 +65,7 @@ do { qemu_log_mask(LOG_GUEST_ERROR, "tegra_i2c: " fmt , ## __VA_ARGS__); } while
 #define I2C_FIFO_STATUS_RX_SHIFT                0
 #define I2C_INT_MASK                            0x064
 #define I2C_INT_STATUS                          0x068
+#define I2C_INT_BUS_CLEAR_DONE                  (1<<11)
 #define I2C_INT_PACKET_XFER_COMPLETE            (1<<7)
 #define I2C_INT_ALL_PACKETS_XFER_COMPLETE       (1<<6)
 #define I2C_INT_TX_FIFO_OVERFLOW                (1<<5)
@@ -474,7 +475,13 @@ static void tegra_i2c_write(void *opaque, hwaddr offset,
         if (tegra_board >= TEGRAX1_BOARD) s->int_status |= value;
         break;
     case 0x84 /* I2C_I2C_BUS_CLEAR_CONFIG */:
-        if (tegra_board >= TEGRAX1_BOARD) s->bus_clear_config = value;
+        if (tegra_board >= TEGRAX1_BOARD) {
+            if (value & BIT(0)) { // BC_ENABLE, bus clear operation
+                value &= ~BIT(0);
+                tegra_i2c_update(s, I2C_INT_BUS_CLEAR_DONE, 1);
+            }
+            s->bus_clear_config = value;
+        }
         break;
     case 0x88 /* I2C_I2C_BUS_CLEAR_STATUS */:
         qemu_log_mask(LOG_GUEST_ERROR, "tegra_i2c_write: I2C_BUS_CLEAR_STATUS is read only\n");
