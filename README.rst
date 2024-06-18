@@ -63,6 +63,8 @@ Actual GPU rendering will not be supported. Playing commercial titles with graph
 
 * SE AES keys can optionally be specified via input secrets if needed. Repeat as needed for each keyslot: ``-object secret,id=se.aeskeyslot{decimal keyslot 0-15},file={path to raw keydata}``
 
+* To configure SE AES keyslot locking, repeating as needed for each keyslot: ``-global driver=tegra.se,property=aes-keyslots-lock,value={keyslot}:{value}`` This is masked with the SE_CRYPTO_KEYTABLE_ACCESS registers when checking access control, the prop value is not exposed to the guest via SE_CRYPTO_KEYTABLE_ACCESS. For example, to force block writes to the key so that only the keydata loaded during reset is used (such as from loaded secrets): ``value={keyslot}:0xfd``
+
 * The TSEC outdata can optionally be configured with (size <=0x10-bytes): ``-object secret,id=tegra.tsec.outdata,file={path}`` The key used by tsec for PK11 decryption can be set with (should not be used if PK11-decryption isn't used): ``-object secret,id=tegra.tsec.package1_key,file={path}`` tegra.tsec.outdata is also used to set the tsec_key SE keyslot during a TSEC operation. To set the tsec_root_key SE keyslot during a TSEC operation (size <=0x10-bytes): ``-object secret,id=tegra.tsec.tsec_root_key,file={path}``
 
 * The FEKs (Fuse Encryption Key) for TX1+ can optionally be specified via input secrets if needed. Repeat as needed for each key: ``-object secret,id=tegra.apb_misc.{prod|dev}_fek{decimal slot 0-7},file={path to raw keydata}``

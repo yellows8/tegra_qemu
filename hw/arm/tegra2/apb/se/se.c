@@ -38,6 +38,7 @@
 #include "qemu/bswap.h"
 #include "qemu/bitmap.h"
 #include "qapi/qapi-commands.h"
+#include "qapi/visitor.h"
 
 #include "exec/address-spaces.h"
 #include "sysemu/dma.h"
@@ -158,6 +159,8 @@ typedef struct tegra_se_state {
     u32 srk_iv[0x10>>2];
 
     u32 pka_keytable[(0x800*0x4)>>2];
+
+    u32 aes_keyslots_lock[0x10];
 } tegra_se;
 
 static const VMStateDescription vmstate_tegra_se = {
@@ -173,6 +176,7 @@ static const VMStateDescription vmstate_tegra_se = {
         VMSTATE_UINT32_ARRAY(srk, tegra_se, 0x20>>2),
         VMSTATE_UINT32_ARRAY(srk_iv, tegra_se, 0x10>>2),
         VMSTATE_UINT32_ARRAY(pka_keytable, tegra_se, (0x800*0x4)>>2),
+        VMSTATE_UINT32_ARRAY(aes_keyslots_lock, tegra_se, 0x10),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -732,6 +736,69 @@ int tegra_se_crypto_operation(void *opaque, void* key, void* iv, QCryptoCipherAl
     return tmpret;
 }
 
+static void tegra_se_set_aes_keyslots_lock(Object *obj, Visitor *v, const char *name,
+                                           void *opaque, Error **errp)
+{
+    tegra_se *s = TEGRA_SE(obj);
+    uint64_t value=0;
+    char *keyname = NULL;
+    char *strvalue = NULL;
+    char *strptr = NULL;
+    char tmpstr[256]={};
+
+    if (!visit_type_str(v, name, &strvalue, errp)) {
+        return;
+    }
+
+    strptr = tmpstr;
+    keyname = tmpstr;
+    pstrcpy(tmpstr, sizeof(tmpstr), strvalue);
+    qemu_strsep(&strptr, ":");
+    strvalue = strptr;
+
+    if (strvalue == NULL) {
+        error_setg(errp, "error reading %s '%s'", name, tmpstr);
+        return;
+    }
+
+    unsigned long _value=0;
+    if (qemu_strtoul(strvalue, NULL, 16, &_value)) {
+        error_setg(errp, "error reading %s '%s'", name, strvalue);
+        return;
+    }
+    value = _value;
+
+    if (qemu_strtoul(keyname, NULL, 16, &_value)) {
+        error_setg(errp, "error reading %s '%s'", name, keyname);
+        return;
+    }
+
+    if (_value < ARRAY_SIZE(s->aes_keyslots_lock)) {
+        s->aes_keyslots_lock[_value] = value;
+    }
+    else
+        error_setg(errp, "error reading %s '%s': id 0x%" PRIx64 " is too large.", name, keyname, _value);
+}
+
+static uint32_t tegra_se_get_aes_keyslot_access(tegra_se *s, uint32_t slot)
+{
+    if (slot < ARRAY_SIZE(s->aes_keyslots_lock)) {
+        return s->regs.SE_CRYPTO_KEYTABLE_ACCESS[slot] & s->aes_keyslots_lock[slot];
+    }
+    else
+        return 0x7F;
+}
+
+static bool tegra_se_check_aes_keyslot_write(tegra_se *s, uint32_t aes_tableoffset)
+{
+    uint32_t keyslot = aes_tableoffset>>4;
+    uint32_t keytable_type = (aes_tableoffset & 0xF) >> 2;
+    keytable_type = keytable_type < 2 ? 0 : keytable_type - 1;
+    uint32_t access = tegra_se_get_aes_keyslot_access(s, keyslot);
+
+    return access & BIT(1 + 2*keytable_type); // *Write
+}
+
 void tegra_se_lock_aes_keyslot(uint32_t slot, uint32_t flags) {
     tegra_se *s = tegra_se_dev;
 
@@ -1007,6 +1074,11 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     size_t keyoff = dst_keyindex*0x10 + dst_word*0x4;
                     databuf_out = &s->aes_keytable[keyoff];
                     databuf_outsize = sizeof(s->aes_keytable) - (keyoff<<2);
+
+                    if (!tegra_se_check_aes_keyslot_write(s, keyoff)) { // *Write
+                        databuf_out = NULL;
+                        qemu_log_mask(LOG_GUEST_ERROR, "tegra.se: Ignoring operation with dst AES keytable for keyslot %"PRIu32" since *Write is locked.\n", dst_keyindex);
+                    }
                 }
                 else if (cfg_dst==3) { // SRK
                     databuf_out = &s->srk;
@@ -1042,6 +1114,9 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     }
                     else if (cfg_dst!=0 && cfg_dst>4) {
                         qemu_log_mask(LOG_UNIMP, "tegra.se: SE_CONFIG DST>4 is not supported: %u.\n", cfg_dst);
+                    }
+                    else if (tegra_board >= TEGRAX1PLUS_BOARD && (tegra_se_get_aes_keyslot_access(s, keyindex) & BIT(7)) && cfg_dst!=2) {
+                        qemu_log_mask(LOG_GUEST_ERROR, "tegra.se: Ignoring operation with cfg_dst=%"PRIu32" for keyslot %"PRIu32" since DstKeyTableOnly is locked.\n", cfg_dst, keyindex);
                     }
                     else {
                         uint32_t tmpmode = encrypt ? enc_mode : dec_mode;
@@ -1297,7 +1372,11 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 
         case SE_CRYPTO_KEYTABLE_DATA_OFFSET:
             uint32_t aes_tableoffset = s->regs.SE_CRYPTO_KEYTABLE_ADDR & 0xff;
-            s->aes_keytable[aes_tableoffset] = value;
+            uint32_t keyslot = aes_tableoffset>>4;
+            if (tegra_se_check_aes_keyslot_write(s, aes_tableoffset)) // *Write
+                s->aes_keytable[aes_tableoffset] = value;
+            else
+                qemu_log_mask(LOG_GUEST_ERROR, "tegra.se: Ignoring attempt to write AES keytable for keyslot %"PRIu32" since *Write is locked.\n", keyslot);
         break;
 
         case SE_RSA_KEYTABLE_ADDR_OFFSET:
@@ -1480,6 +1559,13 @@ static void tegra_se_priv_realize(DeviceState *dev, Error **errp)
     memset(&s->regs_pka, 0, sizeof(s->regs_pka));
 }
 
+static void tegra_se_init(Object *obj)
+{
+    tegra_se *s = TEGRA_SE(obj);
+
+    for (int keyslot=0; keyslot<16; keyslot++) s->aes_keyslots_lock[keyslot] = 0xFF;
+}
+
 static Property tegra_se_properties[] = {
     DEFINE_PROP_UINT32("engine", tegra_se, engine, 1), \
     DEFINE_PROP_END_OF_LIST(),
@@ -1493,6 +1579,10 @@ static void tegra_se_class_init(ObjectClass *klass, void *data)
     dc->realize = tegra_se_priv_realize;
     dc->vmsd = &vmstate_tegra_se;
     dc->reset = tegra_se_priv_reset;
+
+    object_class_property_add(klass, "aes-keyslots-lock", "uint",
+                              NULL,
+                              tegra_se_set_aes_keyslots_lock, NULL, NULL);
 }
 
 static const TypeInfo tegra_se_info = {
@@ -1500,6 +1590,7 @@ static const TypeInfo tegra_se_info = {
     .parent = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(tegra_se),
     .class_init = tegra_se_class_init,
+    .instance_init = tegra_se_init,
 };
 
 static void tegra_se_register_types(void)
