@@ -1143,6 +1143,16 @@ void tegra_pmc_set_srk(uint32_t engine, uint32_t *key)
     }
 }
 
+uint32_t tegra_pmc_get_se_context_addr(uint32_t engine)
+{
+    tegra_pmc *s = tegra_pmc_dev;
+
+    if (engine==1)
+        return s->regs[(SECURE_SCRATCH117_OFFSET-0x160)>>2];
+    else
+        return s->regs[(SECURE_SCRATCH116_OFFSET-0x160)>>2];
+}
+
 void tegra_pmc_set_crypto_op(uint32_t value)
 {
     tegra_pmc *s = tegra_pmc_dev;

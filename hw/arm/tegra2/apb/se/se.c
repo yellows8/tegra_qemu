@@ -804,12 +804,17 @@ static void tegra_se_auto_save_context(tegra_se *s)
     tegra_se_context *context = (tegra_se_context*)data;
     static uint8_t fixed_pattern[0x10] = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F };
 
-    dma_addr_t context_addr = s->engine == 1 ? 0x7c04c000 : 0x7c04c000+0x1000;
+    dma_addr_t context_addr = tegra_pmc_get_se_context_addr(s->engine);
     uint32_t key[4]={};
     uint32_t iv[4]={};
 
     s->regs.SE_CTX_SAVE_AUTO &= ~(0x3FF<<16); // CTX_SAVE_AUTO_CURR_CNT
     s->regs.SE_CTX_SAVE_AUTO |= ((size>>4)+1)<<16;
+
+    if (!context_addr) {
+        qemu_log_mask(LOG_GUEST_ERROR, "tegra.se: Skipping the rest of the auto-context-save for engine %d since the PMC scratch reg for the context_addr is not set.\n", s->engine);
+        return;
+    }
 
     qemu_guest_getrandom(key, sizeof(key), &err);
     if (err) {
