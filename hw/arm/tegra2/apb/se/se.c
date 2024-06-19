@@ -161,6 +161,9 @@ typedef struct tegra_se_state {
     u32 pka_keytable[(0x800*0x4)>>2];
 
     u32 aes_keyslots_lock[0x10];
+
+    u32 aes_dataoverride[0x10*0x8];
+    bool aes_dataoverride_enable[0x10];
 } tegra_se;
 
 static const VMStateDescription vmstate_tegra_se = {
@@ -177,6 +180,8 @@ static const VMStateDescription vmstate_tegra_se = {
         VMSTATE_UINT32_ARRAY(srk_iv, tegra_se, 0x10>>2),
         VMSTATE_UINT32_ARRAY(pka_keytable, tegra_se, (0x800*0x4)>>2),
         VMSTATE_UINT32_ARRAY(aes_keyslots_lock, tegra_se, 0x10),
+        VMSTATE_UINT32_ARRAY(aes_dataoverride, tegra_se, 0x10*0x8),
+        VMSTATE_BOOL_ARRAY(aes_dataoverride_enable, tegra_se, 0x10),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -1195,7 +1200,16 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                         se_log_hexdump("tegra_se_crypto_iv", iv, sizeof(iv));
                                         tmpret = qcrypto_cipher_setiv(cipher, (uint8_t*)iv, sizeof(iv), &err);
                                     }
-                                    if (tmpret==0) {
+
+                                    // If this is a single block and the input matches the override, use the override data for output instead.
+                                    if (datasize==blocklen &&
+                                        s->aes_dataoverride_enable[keyindex] &&
+                                        memcmp(databuf_in, &s->aes_dataoverride[keyindex*0x8], 0x10)==0) {
+
+                                        memcpy(databuf_out, &s->aes_dataoverride[keyindex*0x8 + 0x4], 0x10);
+                                        se_log_hexdump("tegra_se_crypto_output_overridden", databuf_out, 0x10);
+                                    }
+                                    else if (tmpret==0) {
                                         if (encrypt) {
                                             if (!hash_enable) {
                                                 if (qcrypto_cipher_encrypt(cipher, databuf_in, databuf_out, datasize, &err)!=0) datasize=0;
@@ -1237,9 +1251,9 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                                 }
                                             }
                                         }
-                                    }
 
-                                    se_log_hexdump("tegra_se_crypto_output", databuf_out, 0x10);
+                                        se_log_hexdump("tegra_se_crypto_output", databuf_out, 0x10);
+                                    }
                                 }
 
                                 qcrypto_cipher_free(cipher);
@@ -1498,6 +1512,9 @@ static void tegra_se_priv_reset(DeviceState *dev)
     s->regs.SE_TZRAM_SECURITY = 0x1; // NONSECURE
     s->regs.SE_CRYPTO_SECURITY_PERKEY = 0xFFFF;
 
+    memset(s->aes_dataoverride, 0, sizeof(s->aes_dataoverride));
+    memset(s->aes_dataoverride_enable, 0, sizeof(s->aes_dataoverride_enable));
+
     Error *err = NULL;
     char tmpstr[17]={};
     for (int keyslot=0; keyslot<16; keyslot++) { // Specifying an input secret for every keyslot is not required, it will use the memset data below if not specified. These secrets are only needed when starting emulation post-bootrom.
@@ -1506,12 +1523,18 @@ static void tegra_se_priv_reset(DeviceState *dev)
 
         uint8_t *data=NULL;
         size_t datalen = 0;
+        size_t keylen = 0;
         snprintf(tmpstr, sizeof(tmpstr)-1, "se.aeskeyslot%d", keyslot);
         if (qcrypto_secret_lookup(tmpstr, &data, &datalen, &err)==0) {
-            if (datalen!=0x10) error_setg(&err, "SE: Invalid datalen for secret %s, datalen=0x%zx expected 0x%x.", tmpstr, datalen, 0x10);
+            if (datalen<0x10 || datalen>0x40) error_setg(&err, "SE: Invalid datalen for secret %s, datalen=0x%zx expected 0x10-0x40.", tmpstr, datalen);
             else {
-                memcpy(&s->aes_keytable[keyslot*0x10], data, 0x10);
-                qemu_hexdump(stdout, tmpstr, &s->aes_keytable[keyslot*0x10], 0x10);
+                keylen = MIN(datalen, 0x20);
+                memcpy(&s->aes_keytable[keyslot*0x10], data, keylen);
+                qemu_hexdump(stdout, tmpstr, &s->aes_keytable[keyslot*0x10], keylen);
+                if (datalen==0x40) {
+                    s->aes_dataoverride_enable[keyslot] = 1;
+                    memcpy(&s->aes_dataoverride[keyslot*0x8], &data[0x20], 0x20);
+                }
             }
             g_free(data);
         }
