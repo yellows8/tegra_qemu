@@ -1197,8 +1197,11 @@ static void tegra_emc_priv_write(void *opaque, hwaddr offset,
         s->dll_xform_quse.reg32 = value;
         break;
     case CTT_TERM_CTRL_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->ctt_term_ctrl.reg32, value & CTT_TERM_CTRL_WRMASK);
-        WR_MASKED(s->ctt_term_ctrl.reg32, value, CTT_TERM_CTRL);
+        //TRACE_WRITE(s->iomem.addr, offset, s->ctt_term_ctrl.reg32, value & CTT_TERM_CTRL_WRMASK);
+        if (tegra_board < TEGRAX1_BOARD)
+            WR_MASKED(s->ctt_term_ctrl.reg32, value, CTT_TERM_CTRL);
+        else
+            s->ctt_term_ctrl.reg32 = value;
         break;
     case ZCAL_REF_CNT_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->zcal_ref_cnt.reg32, value);
