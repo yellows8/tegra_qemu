@@ -1378,8 +1378,11 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         s->plle_base.reg32 = value;
         break;
     case PLLE_MISC_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->plle_misc.reg32, value & PLLE_MISC_WRMASK);
-        WR_MASKED(s->plle_misc.reg32, value, PLLE_MISC);
+        //TRACE_WRITE(s->iomem.addr, offset, s->plle_misc.reg32, value & PLLE_MISC);
+        if (tegra_board < TEGRAX1_BOARD)
+            WR_MASKED(s->plle_misc.reg32, value, PLLE_MISC_TEGRA2);
+        else
+            WR_MASKED(s->plle_misc.reg32, value, PLLE_MISC_TEGRAX1);
         break;
     case PLLE_SS_CNTL1_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->plle_ss_cntl1.reg32, value);

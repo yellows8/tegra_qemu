@@ -958,7 +958,8 @@ typedef union plle_base_u {
 
 #define PLLE_MISC_OFFSET 0xEC
 #define PLLE_MISC_RESET  0x00000000
-#define PLLE_MISC_WRMASK 0xFFFF07FF
+#define PLLE_MISC_TEGRA2_WRMASK 0xFFFF07FF
+#define PLLE_MISC_TEGRAX1_WRMASK 0xFFFFE7FF
 typedef union plle_misc_u {
     struct {
         unsigned int plle_kvco:1;           /* Base PLLE VCO gain */
