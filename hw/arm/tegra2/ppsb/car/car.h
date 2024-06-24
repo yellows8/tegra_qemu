@@ -2161,6 +2161,8 @@ typedef union rst_controller_pllmb_base_u {
 #define RST_CONTROLLER_PLLA1_BASE_OFFSET 0x6A4
 #define RST_CONTROLLER_PLLA1_BASE_WRMASK 0xF3FFFFFF
 
+#define RST_CONTROLLER_PLLMB_SS_CFG 0x780
+
 #define CLK_SOURCE_LA_OFFSET 0x1F8
 #define CLK_SOURCE_LA_RESET  0xC0000000
 typedef union clk_source_la_u {

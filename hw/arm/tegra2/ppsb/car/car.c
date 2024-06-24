@@ -153,7 +153,7 @@ typedef struct tegra_car_state {
     DEFINE_REG32(utmip_pll_cfg0);
     DEFINE_REG32(rst_controller_pllc4_base);
     DEFINE_REG32(rst_controller_pllmb_base);
-    uint32_t regs[0x748>>2];
+    uint32_t regs[0x78C>>2];
 } tegra_car;
 
 static const VMStateDescription vmstate_tegra_car = {
@@ -272,7 +272,7 @@ static const VMStateDescription vmstate_tegra_car = {
         VMSTATE_UINT32(rst_controller_pllc4_base.reg32, tegra_car),
         VMSTATE_UINT32(rst_controller_pllmb_base.reg32, tegra_car),
         VMSTATE_UINT32(clk_source_la.reg32, tegra_car),
-        VMSTATE_UINT32_ARRAY(regs, tegra_car, 0x748>>2),
+        VMSTATE_UINT32_ARRAY(regs, tegra_car, 0x78C>>2),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -1710,11 +1710,17 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
         break;
     case RST_CONTROLLER_PLLMB_BASE_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->rst_controller_pllmb_base.reg32, value);
-        if (tegra_board >= TEGRAX1_BOARD)  {
-            value &= ~(3<<26);
-            value |= s->rst_controller_pllmb_base.reg32 & (3<<26);
-            s->rst_controller_pllmb_base.reg32 = value;
+        value &= ~(3<<26);
+        s->rst_controller_pllmb_base.reg32 &= ~BIT(27);
+        value |= ((value & BIT(30)) != 0) << 27; // PLLMB_LOCK = PLLMB_ENABLE
+        value |= s->rst_controller_pllmb_base.reg32 & (3<<26);
+        if (tegra_board >= TEGRAX1PLUS_BOARD) {
+            // Change the divider to what the guest expects, for the below value (needed when the guest is attempting to use SDM).
+            if ((value & 0x1FFFFFF) == 0x2901) {
+                value = (value & ~0x1FFFFFF) | 0x5510;
+            }
         }
+        s->rst_controller_pllmb_base.reg32 = value;
         break;
     case CLK_SOURCE_LA_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->clk_source_la.reg32, value);
@@ -1801,6 +1807,8 @@ static void tegra_car_priv_write(void *opaque, hwaddr offset,
                     s->regs[off>>2] &= ~value;
                 break;
             }
+            else if (tegra_board >= TEGRAX1PLUS_BOARD && offset == RST_CONTROLLER_PLLMB_SS_CFG)
+                value &= ~BIT(31); // disable CLK_RST_CONTROLLER_PLLM_SS_CFG SDM
             s->regs[offset>>2] = value;
         }
         else TRACE_WRITE(s->iomem.addr, offset, 0, value);
@@ -2039,8 +2047,6 @@ static void tegra_car_priv_reset(DeviceState *dev)
         s->rst_cpu_cmplx_clr_offset = RST_CPU_CMPLX_CLR_TEGRA2_OFFSET;
         s->rst_cpu_cmplx_set.reg32 = RST_CPU_CMPLX_SET_TEGRA2_RESET;
     }
-
-    s->rst_controller_pllmb_base.reg32 |= PLL_LOCKED;
 }
 
 static const MemoryRegionOps tegra_car_mem_ops = {
