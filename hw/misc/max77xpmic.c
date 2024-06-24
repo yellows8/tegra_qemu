@@ -20,6 +20,7 @@
 #include "hw/i2c/i2c.h"
 #include "qom/object.h"
 #include "migration/vmstate.h"
+#include "hw/qdev-properties.h"
 #include "sysemu/runstate.h"
 
 #define TYPE_MAX77XPMIC "max77xpmic"
@@ -28,6 +29,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(MAX77XPMICState, MAX77XPMIC)
 struct MAX77XPMICState {
     I2CSlave parent_obj;
     int8_t addr;
+    uint32_t version;
 
     uint8_t regs[0x71];
 };
@@ -72,7 +74,7 @@ static void max77xpmic_realize(DeviceState *dev, Error **errp)
     // CNFG1_GPIOx reset value should be non-zero in some cases but whatever.
     s->regs[0x42] = 0x07; // ONOFFCNFG2
 
-    s->regs[0x5C] = 0x35;// REG_CID4
+    s->regs[0x5C] = s->version; // REG_CID4
 }
 
 static int max77xpmic_send(I2CSlave *i2c, uint8_t data)
@@ -161,6 +163,11 @@ static int max77xpmic_event(I2CSlave *i2c, enum i2c_event event)
     return 0;
 }
 
+static Property max77xpmic_properties[] = {
+    DEFINE_PROP_UINT32("version", MAX77XPMICState, version, 0x35),
+    DEFINE_PROP_END_OF_LIST(),
+};
+
 static void max77xpmic_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -171,6 +178,7 @@ static void max77xpmic_class_init(ObjectClass *klass, void *data)
     sc->send = max77xpmic_send;
     sc->recv = max77xpmic_recv;
     sc->event = max77xpmic_event;
+    device_class_set_props(dc, max77xpmic_properties);
 }
 
 static const TypeInfo max77xpmic_info = {
