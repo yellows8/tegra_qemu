@@ -580,6 +580,15 @@ static void* tegra_init_timer(hwaddr base, qemu_irq irq, uint32_t id)
     return tegra_init_obj(base, irq, "tegra.timer", "id", id, false);
 }
 
+static void* tegra_init_pmic(I2CBus *bus, uint8_t addr, uint32_t version)
+{
+    I2CSlave *tmp = i2c_slave_new("max77xpmic", addr);
+    qdev_prop_set_uint32(DEVICE(tmp), "version", version);
+    i2c_slave_realize_and_unref(tmp, bus, &error_fatal);
+
+    return tmp;
+}
+
 // TODO: Doesn't work with CPU MMU, use memregions for now.
 /*static hwaddr tegra_ape_translate(hwaddr addr, int access_type)
 {
@@ -1145,18 +1154,20 @@ static void __tegrax1_init(MachineState *machine)
     /* Max77620Rtc */
     tegra_i2c_rtc_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77x", 0x68);
 
+    uint32_t pmic_version = tegra_board < TEGRAX1PLUS_BOARD ? 0x35 : 0x53;
+
     /* Max77620Pmic */
-    tegra_i2c_pmic_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77xpmic", 0x3C);
+    tegra_i2c_pmic_dev = tegra_init_pmic(tegra_i2c_get_bus(tegra_idc5_dev), 0x3C, pmic_version);
 
     /* Max77621Cpu */
-    tegra_i2c_subpmic_devs[0] = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77xpmic", 0x1B);
+    tegra_i2c_subpmic_devs[0] = tegra_init_pmic(tegra_i2c_get_bus(tegra_idc5_dev), 0x1B, pmic_version);
 
     /* Max77621Gpu */
-    tegra_i2c_subpmic_devs[1] = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77xpmic", 0x1C);
+    tegra_i2c_subpmic_devs[1] = tegra_init_pmic(tegra_i2c_get_bus(tegra_idc5_dev), 0x1C, pmic_version);
 
     /* Max77812Pmic */
-    tegra_i2c_subpmic_devs[2] = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77xpmic", 0x31);
-    tegra_i2c_subpmic_devs[3] = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc5_dev), "max77xpmic", 0x33);
+    tegra_i2c_subpmic_devs[2] = tegra_init_pmic(tegra_i2c_get_bus(tegra_idc5_dev), 0x31, pmic_version);
+    tegra_i2c_subpmic_devs[3] = tegra_init_pmic(tegra_i2c_get_bus(tegra_idc5_dev), 0x33, pmic_version);
 
     /* Bq24193 */
     tegra_i2c_charger_dev = i2c_slave_create_simple(tegra_i2c_get_bus(tegra_idc1_dev), "dummyi2c", 0x6B);
