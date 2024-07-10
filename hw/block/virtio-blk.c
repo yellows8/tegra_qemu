@@ -27,7 +27,6 @@
 #include "sysemu/sysemu.h"
 #include "sysemu/runstate.h"
 #include "hw/virtio/virtio-blk.h"
-#include "dataplane/virtio-blk.h"
 #include "scsi/constants.h"
 #ifdef __linux__
 # include <scsi/sg.h>
@@ -37,6 +36,8 @@
 #include "hw/virtio/virtio-access.h"
 #include "hw/virtio/virtio-blk-common.h"
 #include "qemu/coroutine.h"
+
+static void virtio_blk_ioeventfd_attach(VirtIOBlock *s);
 
 static void virtio_blk_init_request(VirtIOBlock *s, VirtQueue *vq,
                                     VirtIOBlockReq *req)
@@ -66,7 +67,7 @@ static void virtio_blk_req_complete(VirtIOBlockReq *req, unsigned char status)
     iov_discard_undo(&req->outhdr_undo);
     virtqueue_push(req->vq, &req->elem, req->in_len);
     if (qemu_in_iothread()) {
-        virtio_blk_data_plane_notify(s->dataplane, req->vq);
+        virtio_notify_irqfd(vdev, req->vq);
     } else {
         virtio_notify(vdev, req->vq);
     }
@@ -662,6 +663,9 @@ static void virtio_blk_zone_report_complete(void *opaque, int ret)
     int64_t zrp_size, n, j = 0;
     int64_t nz = data->zone_report_data.nr_zones;
     int8_t err_status = VIRTIO_BLK_S_OK;
+    struct virtio_blk_zone_report zrp_hdr = (struct virtio_blk_zone_report) {
+        .nr_zones = cpu_to_le64(nz),
+    };
 
     trace_virtio_blk_zone_report_complete(vdev, req, nz, ret);
     if (ret) {
@@ -669,9 +673,6 @@ static void virtio_blk_zone_report_complete(void *opaque, int ret)
         goto out;
     }
 
-    struct virtio_blk_zone_report zrp_hdr = (struct virtio_blk_zone_report) {
-        .nr_zones = cpu_to_le64(nz),
-    };
     zrp_size = sizeof(struct virtio_blk_zone_report)
                + sizeof(struct virtio_blk_zone_descriptor) * nz;
     n = iov_from_buf(in_iov, in_num, 0, &zrp_hdr, sizeof(zrp_hdr));
@@ -767,7 +768,8 @@ static void virtio_blk_handle_zone_report(VirtIOBlockReq *req,
             sizeof(struct virtio_blk_zone_report) +
             sizeof(struct virtio_blk_zone_descriptor)) {
         virtio_error(vdev, "in buffer too small for zone report");
-        return;
+        err_status = VIRTIO_BLK_S_ZONE_INVALID_CMD;
+        goto out;
     }
 
     /* start byte offset of the zone report */
@@ -899,13 +901,14 @@ static int virtio_blk_handle_zone_append(VirtIOBlockReq *req,
 
     int64_t offset = virtio_ldq_p(vdev, &req->out.sector) << BDRV_SECTOR_BITS;
     int64_t len = iov_size(out_iov, out_num);
+    ZoneCmdData *data;
 
     trace_virtio_blk_handle_zone_append(vdev, req, offset >> BDRV_SECTOR_BITS);
     if (!check_zoned_request(s, offset, len, true, &err_status)) {
         goto out;
     }
 
-    ZoneCmdData *data = g_malloc(sizeof(ZoneCmdData));
+    data = g_malloc(sizeof(ZoneCmdData));
     data->req = req;
     data->in_iov = in_iov;
     data->in_num = in_num;
@@ -1142,12 +1145,12 @@ static void virtio_blk_handle_output(VirtIODevice *vdev, VirtQueue *vq)
 {
     VirtIOBlock *s = (VirtIOBlock *)vdev;
 
-    if (s->dataplane && !s->dataplane_started) {
+    if (!s->ioeventfd_disabled && !s->ioeventfd_started) {
         /* Some guests kick before setting VIRTIO_CONFIG_S_DRIVER_OK so start
-         * dataplane here instead of waiting for .set_status().
+         * ioeventfd here instead of waiting for .set_status().
          */
         virtio_device_start_ioeventfd(vdev);
-        if (!s->dataplane_disabled) {
+        if (!s->ioeventfd_disabled) {
             return;
         }
     }
@@ -1157,15 +1160,10 @@ static void virtio_blk_handle_output(VirtIODevice *vdev, VirtQueue *vq)
 
 static void virtio_blk_dma_restart_bh(void *opaque)
 {
-    VirtIOBlock *s = opaque;
+    VirtIOBlockReq *req = opaque;
+    VirtIOBlock *s = req->dev; /* we're called with at least one request */
 
-    VirtIOBlockReq *req;
     MultiReqBuffer mrb = {};
-
-    WITH_QEMU_LOCK_GUARD(&s->rq_lock) {
-        req = s->rq;
-        s->rq = NULL;
-    }
 
     while (req) {
         VirtIOBlockReq *next = req->next;
@@ -1196,16 +1194,46 @@ static void virtio_blk_dma_restart_cb(void *opaque, bool running,
                                       RunState state)
 {
     VirtIOBlock *s = opaque;
+    uint16_t num_queues = s->conf.num_queues;
+    g_autofree VirtIOBlockReq **vq_rq = NULL;
+    VirtIOBlockReq *rq;
 
     if (!running) {
         return;
     }
 
-    /* Paired with dec in virtio_blk_dma_restart_bh() */
-    blk_inc_in_flight(s->conf.conf.blk);
+    /* Split the device-wide s->rq request list into per-vq request lists */
+    vq_rq = g_new0(VirtIOBlockReq *, num_queues);
 
-    aio_bh_schedule_oneshot(blk_get_aio_context(s->conf.conf.blk),
-            virtio_blk_dma_restart_bh, s);
+    WITH_QEMU_LOCK_GUARD(&s->rq_lock) {
+        rq = s->rq;
+        s->rq = NULL;
+    }
+
+    while (rq) {
+        VirtIOBlockReq *next = rq->next;
+        uint16_t idx = virtio_get_queue_index(rq->vq);
+
+        /* Only num_queues vqs were created so vq_rq[idx] is within bounds */
+        assert(idx < num_queues);
+        rq->next = vq_rq[idx];
+        vq_rq[idx] = rq;
+        rq = next;
+    }
+
+    /* Schedule a BH to submit the requests in each vq's AioContext */
+    for (uint16_t i = 0; i < num_queues; i++) {
+        if (!vq_rq[i]) {
+            continue;
+        }
+
+        /* Paired with dec in virtio_blk_dma_restart_bh() */
+        blk_inc_in_flight(s->conf.conf.blk);
+
+        aio_bh_schedule_oneshot(s->vq_aio_context[i],
+                                virtio_blk_dma_restart_bh,
+                                vq_rq[i]);
+    }
 }
 
 static void virtio_blk_reset(VirtIODevice *vdev)
@@ -1214,7 +1242,7 @@ static void virtio_blk_reset(VirtIODevice *vdev)
     VirtIOBlockReq *req;
 
     /* Dataplane has stopped... */
-    assert(!s->dataplane_started);
+    assert(!s->ioeventfd_started);
 
     /* ...but requests may still be in flight. */
     blk_drain(s->blk);
@@ -1381,7 +1409,7 @@ static void virtio_blk_set_status(VirtIODevice *vdev, uint8_t status)
     VirtIOBlock *s = VIRTIO_BLK(vdev);
 
     if (!(status & (VIRTIO_CONFIG_S_DRIVER | VIRTIO_CONFIG_S_DRIVER_OK))) {
-        assert(!s->dataplane_started);
+        assert(!s->ioeventfd_started);
     }
 
     if (!(status & VIRTIO_CONFIG_S_DRIVER_OK)) {
@@ -1464,6 +1492,72 @@ static int virtio_blk_load_device(VirtIODevice *vdev, QEMUFile *f,
     return 0;
 }
 
+static void virtio_resize_cb(void *opaque)
+{
+    VirtIODevice *vdev = opaque;
+
+    assert(qemu_get_current_aio_context() == qemu_get_aio_context());
+    virtio_notify_config(vdev);
+}
+
+static void virtio_blk_resize(void *opaque)
+{
+    VirtIODevice *vdev = VIRTIO_DEVICE(opaque);
+
+    /*
+     * virtio_notify_config() needs to acquire the BQL,
+     * so it can't be called from an iothread. Instead, schedule
+     * it to be run in the main context BH.
+     */
+    aio_bh_schedule_oneshot(qemu_get_aio_context(), virtio_resize_cb, vdev);
+}
+
+static void virtio_blk_ioeventfd_detach(VirtIOBlock *s)
+{
+    VirtIODevice *vdev = VIRTIO_DEVICE(s);
+
+    for (uint16_t i = 0; i < s->conf.num_queues; i++) {
+        VirtQueue *vq = virtio_get_queue(vdev, i);
+        virtio_queue_aio_detach_host_notifier(vq, s->vq_aio_context[i]);
+    }
+}
+
+static void virtio_blk_ioeventfd_attach(VirtIOBlock *s)
+{
+    VirtIODevice *vdev = VIRTIO_DEVICE(s);
+
+    for (uint16_t i = 0; i < s->conf.num_queues; i++) {
+        VirtQueue *vq = virtio_get_queue(vdev, i);
+        virtio_queue_aio_attach_host_notifier(vq, s->vq_aio_context[i]);
+    }
+}
+
+/* Suspend virtqueue ioeventfd processing during drain */
+static void virtio_blk_drained_begin(void *opaque)
+{
+    VirtIOBlock *s = opaque;
+
+    if (s->ioeventfd_started) {
+        virtio_blk_ioeventfd_detach(s);
+    }
+}
+
+/* Resume virtqueue ioeventfd processing after drain */
+static void virtio_blk_drained_end(void *opaque)
+{
+    VirtIOBlock *s = opaque;
+
+    if (s->ioeventfd_started) {
+        virtio_blk_ioeventfd_attach(s);
+    }
+}
+
+static const BlockDevOps virtio_block_ops = {
+    .resize_cb     = virtio_blk_resize,
+    .drained_begin = virtio_blk_drained_begin,
+    .drained_end   = virtio_blk_drained_end,
+};
+
 static bool
 validate_iothread_vq_mapping_list(IOThreadVirtQueueMappingList *list,
         uint16_t num_queues, Error **errp)
@@ -1526,61 +1620,351 @@ validate_iothread_vq_mapping_list(IOThreadVirtQueueMappingList *list,
     return true;
 }
 
-static void virtio_resize_cb(void *opaque)
+/**
+ * apply_iothread_vq_mapping:
+ * @iothread_vq_mapping_list: The mapping of virtqueues to IOThreads.
+ * @vq_aio_context: The array of AioContext pointers to fill in.
+ * @num_queues: The length of @vq_aio_context.
+ * @errp: If an error occurs, a pointer to the area to store the error.
+ *
+ * Fill in the AioContext for each virtqueue in the @vq_aio_context array given
+ * the iothread-vq-mapping parameter in @iothread_vq_mapping_list.
+ *
+ * Returns: %true on success, %false on failure.
+ **/
+static bool apply_iothread_vq_mapping(
+        IOThreadVirtQueueMappingList *iothread_vq_mapping_list,
+        AioContext **vq_aio_context,
+        uint16_t num_queues,
+        Error **errp)
 {
-    VirtIODevice *vdev = opaque;
+    IOThreadVirtQueueMappingList *node;
+    size_t num_iothreads = 0;
+    size_t cur_iothread = 0;
 
-    assert(qemu_get_current_aio_context() == qemu_get_aio_context());
-    virtio_notify_config(vdev);
+    if (!validate_iothread_vq_mapping_list(iothread_vq_mapping_list,
+                                           num_queues, errp)) {
+        return false;
+    }
+
+    for (node = iothread_vq_mapping_list; node; node = node->next) {
+        num_iothreads++;
+    }
+
+    for (node = iothread_vq_mapping_list; node; node = node->next) {
+        IOThread *iothread = iothread_by_id(node->value->iothread);
+        AioContext *ctx = iothread_get_aio_context(iothread);
+
+        /* Released in virtio_blk_vq_aio_context_cleanup() */
+        object_ref(OBJECT(iothread));
+
+        if (node->value->vqs) {
+            uint16List *vq;
+
+            /* Explicit vq:IOThread assignment */
+            for (vq = node->value->vqs; vq; vq = vq->next) {
+                assert(vq->value < num_queues);
+                vq_aio_context[vq->value] = ctx;
+            }
+        } else {
+            /* Round-robin vq:IOThread assignment */
+            for (unsigned i = cur_iothread; i < num_queues;
+                 i += num_iothreads) {
+                vq_aio_context[i] = ctx;
+            }
+        }
+
+        cur_iothread++;
+    }
+
+    return true;
 }
 
-static void virtio_blk_resize(void *opaque)
+/* Context: BQL held */
+static bool virtio_blk_vq_aio_context_init(VirtIOBlock *s, Error **errp)
 {
-    VirtIODevice *vdev = VIRTIO_DEVICE(opaque);
+    ERRP_GUARD();
+    VirtIODevice *vdev = VIRTIO_DEVICE(s);
+    VirtIOBlkConf *conf = &s->conf;
+    BusState *qbus = BUS(qdev_get_parent_bus(DEVICE(vdev)));
+    VirtioBusClass *k = VIRTIO_BUS_GET_CLASS(qbus);
+
+    if (conf->iothread && conf->iothread_vq_mapping_list) {
+        error_setg(errp,
+                   "iothread and iothread-vq-mapping properties cannot be set "
+                   "at the same time");
+        return false;
+    }
+
+    if (conf->iothread || conf->iothread_vq_mapping_list) {
+        if (!k->set_guest_notifiers || !k->ioeventfd_assign) {
+            error_setg(errp,
+                       "device is incompatible with iothread "
+                       "(transport does not support notifiers)");
+            return false;
+        }
+        if (!virtio_device_ioeventfd_enabled(vdev)) {
+            error_setg(errp, "ioeventfd is required for iothread");
+            return false;
+        }
+
+        /*
+         * If ioeventfd is (re-)enabled while the guest is running there could
+         * be block jobs that can conflict.
+         */
+        if (blk_op_is_blocked(conf->conf.blk, BLOCK_OP_TYPE_DATAPLANE, errp)) {
+            error_prepend(errp, "cannot start virtio-blk ioeventfd: ");
+            return false;
+        }
+    }
+
+    s->vq_aio_context = g_new(AioContext *, conf->num_queues);
+
+    if (conf->iothread_vq_mapping_list) {
+        if (!apply_iothread_vq_mapping(conf->iothread_vq_mapping_list,
+                                       s->vq_aio_context,
+                                       conf->num_queues,
+                                       errp)) {
+            g_free(s->vq_aio_context);
+            s->vq_aio_context = NULL;
+            return false;
+        }
+    } else if (conf->iothread) {
+        AioContext *ctx = iothread_get_aio_context(conf->iothread);
+        for (unsigned i = 0; i < conf->num_queues; i++) {
+            s->vq_aio_context[i] = ctx;
+        }
+
+        /* Released in virtio_blk_vq_aio_context_cleanup() */
+        object_ref(OBJECT(conf->iothread));
+    } else {
+        AioContext *ctx = qemu_get_aio_context();
+        for (unsigned i = 0; i < conf->num_queues; i++) {
+            s->vq_aio_context[i] = ctx;
+        }
+    }
+
+    return true;
+}
+
+/* Context: BQL held */
+static void virtio_blk_vq_aio_context_cleanup(VirtIOBlock *s)
+{
+    VirtIOBlkConf *conf = &s->conf;
+
+    assert(!s->ioeventfd_started);
+
+    if (conf->iothread_vq_mapping_list) {
+        IOThreadVirtQueueMappingList *node;
+
+        for (node = conf->iothread_vq_mapping_list; node; node = node->next) {
+            IOThread *iothread = iothread_by_id(node->value->iothread);
+            object_unref(OBJECT(iothread));
+        }
+    }
+
+    if (conf->iothread) {
+        object_unref(OBJECT(conf->iothread));
+    }
+
+    g_free(s->vq_aio_context);
+    s->vq_aio_context = NULL;
+}
+
+/* Context: BQL held */
+static int virtio_blk_start_ioeventfd(VirtIODevice *vdev)
+{
+    VirtIOBlock *s = VIRTIO_BLK(vdev);
+    BusState *qbus = BUS(qdev_get_parent_bus(DEVICE(s)));
+    VirtioBusClass *k = VIRTIO_BUS_GET_CLASS(qbus);
+    unsigned i;
+    unsigned nvqs = s->conf.num_queues;
+    Error *local_err = NULL;
+    int r;
+
+    if (s->ioeventfd_started || s->ioeventfd_starting) {
+        return 0;
+    }
+
+    s->ioeventfd_starting = true;
+
+    /* Set up guest notifier (irq) */
+    r = k->set_guest_notifiers(qbus->parent, nvqs, true);
+    if (r != 0) {
+        error_report("virtio-blk failed to set guest notifier (%d), "
+                     "ensure -accel kvm is set.", r);
+        goto fail_guest_notifiers;
+    }
 
     /*
-     * virtio_notify_config() needs to acquire the BQL,
-     * so it can't be called from an iothread. Instead, schedule
-     * it to be run in the main context BH.
+     * Batch all the host notifiers in a single transaction to avoid
+     * quadratic time complexity in address_space_update_ioeventfds().
      */
-    aio_bh_schedule_oneshot(qemu_get_aio_context(), virtio_resize_cb, vdev);
+    memory_region_transaction_begin();
+
+    /* Set up virtqueue notify */
+    for (i = 0; i < nvqs; i++) {
+        r = virtio_bus_set_host_notifier(VIRTIO_BUS(qbus), i, true);
+        if (r != 0) {
+            int j = i;
+
+            fprintf(stderr, "virtio-blk failed to set host notifier (%d)\n", r);
+            while (i--) {
+                virtio_bus_set_host_notifier(VIRTIO_BUS(qbus), i, false);
+            }
+
+            /*
+             * The transaction expects the ioeventfds to be open when it
+             * commits. Do it now, before the cleanup loop.
+             */
+            memory_region_transaction_commit();
+
+            while (j--) {
+                virtio_bus_cleanup_host_notifier(VIRTIO_BUS(qbus), j);
+            }
+            goto fail_host_notifiers;
+        }
+    }
+
+    memory_region_transaction_commit();
+
+    /*
+     * Try to change the AioContext so that block jobs and other operations can
+     * co-locate their activity in the same AioContext. If it fails, nevermind.
+     */
+    assert(nvqs > 0); /* enforced during ->realize() */
+    r = blk_set_aio_context(s->conf.conf.blk, s->vq_aio_context[0],
+                            &local_err);
+    if (r < 0) {
+        warn_report_err(local_err);
+    }
+
+    /*
+     * These fields must be visible to the IOThread when it processes the
+     * virtqueue, otherwise it will think ioeventfd has not started yet.
+     *
+     * Make sure ->ioeventfd_started is false when blk_set_aio_context() is
+     * called above so that draining does not cause the host notifier to be
+     * detached/attached prematurely.
+     */
+    s->ioeventfd_starting = false;
+    s->ioeventfd_started = true;
+    smp_wmb(); /* paired with aio_notify_accept() on the read side */
+
+    /*
+     * Get this show started by hooking up our callbacks.  If drained now,
+     * virtio_blk_drained_end() will do this later.
+     * Attaching the notifier also kicks the virtqueues, processing any requests
+     * they may already have.
+     */
+    if (!blk_in_drain(s->conf.conf.blk)) {
+        virtio_blk_ioeventfd_attach(s);
+    }
+    return 0;
+
+  fail_host_notifiers:
+    k->set_guest_notifiers(qbus->parent, nvqs, false);
+  fail_guest_notifiers:
+    s->ioeventfd_disabled = true;
+    s->ioeventfd_starting = false;
+    return -ENOSYS;
 }
 
-/* Suspend virtqueue ioeventfd processing during drain */
-static void virtio_blk_drained_begin(void *opaque)
+/* Stop notifications for new requests from guest.
+ *
+ * Context: BH in IOThread
+ */
+static void virtio_blk_ioeventfd_stop_vq_bh(void *opaque)
 {
-    VirtIOBlock *s = opaque;
+    VirtQueue *vq = opaque;
+    EventNotifier *host_notifier = virtio_queue_get_host_notifier(vq);
 
-    if (!s->dataplane || !s->dataplane_started) {
+    virtio_queue_aio_detach_host_notifier(vq, qemu_get_current_aio_context());
+
+    /*
+     * Test and clear notifier after disabling event, in case poll callback
+     * didn't have time to run.
+     */
+    virtio_queue_host_notifier_read(host_notifier);
+}
+
+/* Context: BQL held */
+static void virtio_blk_stop_ioeventfd(VirtIODevice *vdev)
+{
+    VirtIOBlock *s = VIRTIO_BLK(vdev);
+    BusState *qbus = qdev_get_parent_bus(DEVICE(s));
+    VirtioBusClass *k = VIRTIO_BUS_GET_CLASS(qbus);
+    unsigned i;
+    unsigned nvqs = s->conf.num_queues;
+
+    if (!s->ioeventfd_started || s->ioeventfd_stopping) {
         return;
     }
 
-    virtio_blk_data_plane_detach(s->dataplane);
-}
-
-/* Resume virtqueue ioeventfd processing after drain */
-static void virtio_blk_drained_end(void *opaque)
-{
-    VirtIOBlock *s = opaque;
-
-    if (!s->dataplane || !s->dataplane_started) {
+    /* Better luck next time. */
+    if (s->ioeventfd_disabled) {
+        s->ioeventfd_disabled = false;
+        s->ioeventfd_started = false;
         return;
     }
+    s->ioeventfd_stopping = true;
 
-    virtio_blk_data_plane_attach(s->dataplane);
+    if (!blk_in_drain(s->conf.conf.blk)) {
+        for (i = 0; i < nvqs; i++) {
+            VirtQueue *vq = virtio_get_queue(vdev, i);
+            AioContext *ctx = s->vq_aio_context[i];
+
+            aio_wait_bh_oneshot(ctx, virtio_blk_ioeventfd_stop_vq_bh, vq);
+        }
+    }
+
+    /*
+     * Batch all the host notifiers in a single transaction to avoid
+     * quadratic time complexity in address_space_update_ioeventfds().
+     */
+    memory_region_transaction_begin();
+
+    for (i = 0; i < nvqs; i++) {
+        virtio_bus_set_host_notifier(VIRTIO_BUS(qbus), i, false);
+    }
+
+    /*
+     * The transaction expects the ioeventfds to be open when it
+     * commits. Do it now, before the cleanup loop.
+     */
+    memory_region_transaction_commit();
+
+    for (i = 0; i < nvqs; i++) {
+        virtio_bus_cleanup_host_notifier(VIRTIO_BUS(qbus), i);
+    }
+
+    /*
+     * Set ->ioeventfd_started to false before draining so that host notifiers
+     * are not detached/attached anymore.
+     */
+    s->ioeventfd_started = false;
+
+    /* Wait for virtio_blk_dma_restart_bh() and in flight I/O to complete */
+    blk_drain(s->conf.conf.blk);
+
+    /*
+     * Try to switch bs back to the QEMU main loop. If other users keep the
+     * BlockBackend in the iothread, that's ok
+     */
+    blk_set_aio_context(s->conf.conf.blk, qemu_get_aio_context(), NULL);
+
+    /* Clean up guest notifier (irq) */
+    k->set_guest_notifiers(qbus->parent, nvqs, false);
+
+    s->ioeventfd_stopping = false;
 }
-
-static const BlockDevOps virtio_block_ops = {
-    .resize_cb     = virtio_blk_resize,
-    .drained_begin = virtio_blk_drained_begin,
-    .drained_end   = virtio_blk_drained_end,
-};
 
 static void virtio_blk_device_realize(DeviceState *dev, Error **errp)
 {
     VirtIODevice *vdev = VIRTIO_DEVICE(dev);
     VirtIOBlock *s = VIRTIO_BLK(dev);
     VirtIOBlkConf *conf = &s->conf;
+    BlockDriverState *bs;
     Error *err = NULL;
     unsigned i;
 
@@ -1626,7 +2010,7 @@ static void virtio_blk_device_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    BlockDriverState *bs = blk_bs(conf->conf.blk);
+    bs = blk_bs(conf->conf.blk);
     if (bs->bl.zoned != BLK_Z_NONE) {
         virtio_add_feature(&s->host_features, VIRTIO_BLK_F_ZONED);
         if (bs->bl.zoned == BLK_Z_HM) {
@@ -1653,19 +2037,6 @@ static void virtio_blk_device_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    if (conf->iothread_vq_mapping_list) {
-        if (conf->iothread) {
-            error_setg(errp, "iothread and iothread-vq-mapping properties "
-                             "cannot be set at the same time");
-            return;
-        }
-
-        if (!validate_iothread_vq_mapping_list(conf->iothread_vq_mapping_list,
-                                               conf->num_queues, errp)) {
-            return;
-        }
-    }
-
     s->config_size = virtio_get_config_size(&virtio_blk_cfg_size_params,
                                             s->host_features);
     virtio_init(vdev, VIRTIO_ID_BLOCK, s->config_size);
@@ -1680,7 +2051,13 @@ static void virtio_blk_device_realize(DeviceState *dev, Error **errp)
         virtio_add_queue(vdev, conf->queue_size, virtio_blk_handle_output);
     }
     qemu_coroutine_inc_pool_size(conf->num_queues * conf->queue_size / 2);
-    virtio_blk_data_plane_create(vdev, conf, &s->dataplane, &err);
+
+    /* Don't start ioeventfd if transport does not support notifiers. */
+    if (!virtio_device_ioeventfd_enabled(vdev)) {
+        s->ioeventfd_disabled = true;
+    }
+
+    virtio_blk_vq_aio_context_init(s, &err);
     if (err != NULL) {
         error_propagate(errp, err);
         for (i = 0; i < conf->num_queues; i++) {
@@ -1717,8 +2094,7 @@ static void virtio_blk_device_unrealize(DeviceState *dev)
 
     blk_drain(s->blk);
     del_boot_device_lchs(dev, "/disk@0,0");
-    virtio_blk_data_plane_destroy(s->dataplane);
-    s->dataplane = NULL;
+    virtio_blk_vq_aio_context_cleanup(s);
     for (i = 0; i < conf->num_queues; i++) {
         virtio_del_queue(vdev, i);
     }
@@ -1802,8 +2178,8 @@ static void virtio_blk_class_init(ObjectClass *klass, void *data)
     vdc->reset = virtio_blk_reset;
     vdc->save = virtio_blk_save_device;
     vdc->load = virtio_blk_load_device;
-    vdc->start_ioeventfd = virtio_blk_data_plane_start;
-    vdc->stop_ioeventfd = virtio_blk_data_plane_stop;
+    vdc->start_ioeventfd = virtio_blk_start_ioeventfd;
+    vdc->stop_ioeventfd = virtio_blk_stop_ioeventfd;
 }
 
 static const TypeInfo virtio_blk_info = {

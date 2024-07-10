@@ -30,9 +30,15 @@
 #include "exec/confidential-guest-support.h"
 #include "hw/virtio/virtio-pci.h"
 #include "hw/virtio/virtio-net.h"
+#include "hw/virtio/virtio-iommu.h"
 #include "audio/audio.h"
 
-GlobalProperty hw_compat_8_2[] = {};
+GlobalProperty hw_compat_8_2[] = {
+    { "migration", "zero-page-detection", "legacy"},
+    { TYPE_VIRTIO_IOMMU_PCI, "granule", "4k" },
+    { TYPE_VIRTIO_IOMMU_PCI, "aw-bits", "64" },
+    { "virtio-gpu-device", "x-scanout-vmstate-version", "1" },
+};
 const size_t hw_compat_8_2_len = G_N_ELEMENTS(hw_compat_8_2);
 
 GlobalProperty hw_compat_8_1[] = {
@@ -40,15 +46,15 @@ GlobalProperty hw_compat_8_1[] = {
     { "ramfb", "x-migrate", "off" },
     { "vfio-pci-nohotplug", "x-ramfb-migrate", "off" },
     { "igb", "x-pcie-flr-init", "off" },
+    { TYPE_VIRTIO_NET, "host_uso", "off"},
+    { TYPE_VIRTIO_NET, "guest_uso4", "off"},
+    { TYPE_VIRTIO_NET, "guest_uso6", "off"},
 };
 const size_t hw_compat_8_1_len = G_N_ELEMENTS(hw_compat_8_1);
 
 GlobalProperty hw_compat_8_0[] = {
     { "migration", "multifd-flush-after-each-section", "on"},
     { TYPE_PCI_DEVICE, "x-pcie-ari-nextfn-1", "on" },
-    { TYPE_VIRTIO_NET, "host_uso", "off"},
-    { TYPE_VIRTIO_NET, "guest_uso4", "off"},
-    { TYPE_VIRTIO_NET, "guest_uso6", "off"},
 };
 const size_t hw_compat_8_0_len = G_N_ELEMENTS(hw_compat_8_0);
 
@@ -100,6 +106,7 @@ GlobalProperty hw_compat_5_2[] = {
     { "PIIX4_PM", "smm-compat", "on"},
     { "virtio-blk-device", "report-discard-granularity", "off" },
     { "virtio-net-pci-base", "vectors", "3"},
+    { "nvme", "msix-exclusive-bar", "on"},
 };
 const size_t hw_compat_5_2_len = G_N_ELEMENTS(hw_compat_5_2);
 
@@ -746,7 +753,7 @@ HotpluggableCPUList *machine_query_hotpluggable_cpus(MachineState *machine)
     mc->possible_cpu_arch_ids(machine);
 
     for (i = 0; i < machine->possible_cpus->len; i++) {
-        Object *cpu;
+        CPUState *cpu;
         HotpluggableCPU *cpu_item = g_new0(typeof(*cpu_item), 1);
 
         cpu_item->type = g_strdup(machine->possible_cpus->cpus[i].type);
@@ -756,7 +763,7 @@ HotpluggableCPUList *machine_query_hotpluggable_cpus(MachineState *machine)
 
         cpu = machine->possible_cpus->cpus[i].cpu;
         if (cpu) {
-            cpu_item->qom_path = object_get_canonical_path(cpu);
+            cpu_item->qom_path = object_get_canonical_path(OBJECT(cpu));
         }
         QAPI_LIST_PREPEND(head, cpu_item);
     }
@@ -1352,7 +1359,7 @@ static void validate_cpu_cluster_to_numa_boundary(MachineState *ms)
     const CPUArchId *cpus = possible_cpus->cpus;
     int i, j;
 
-    if (state->num_nodes <= 1 || possible_cpus->len <= 1) {
+    if (qtest_enabled() || state->num_nodes <= 1 || possible_cpus->len <= 1) {
         return;
     }
 
@@ -1617,14 +1624,13 @@ void qdev_machine_creation_done(void)
     /* TODO: once all bus devices are qdevified, this should be done
      * when bus is created by qdev.c */
     /*
-     * TODO: If we had a main 'reset container' that the whole system
-     * lived in, we could reset that using the multi-phase reset
-     * APIs. For the moment, we just reset the sysbus, which will cause
+     * This is where we arrange for the sysbus to be reset when the
+     * whole simulation is reset. In turn, resetting the sysbus will cause
      * all devices hanging off it (and all their child buses, recursively)
      * to be reset. Note that this will *not* reset any Device objects
      * which are not attached to some part of the qbus tree!
      */
-    qemu_register_reset(resettable_cold_reset_fn, sysbus_get_default());
+    qemu_register_resettable(OBJECT(sysbus_get_default()));
 
     notifier_list_notify(&machine_init_done_notifiers, NULL);
 

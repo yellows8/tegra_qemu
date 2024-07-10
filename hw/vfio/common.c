@@ -39,7 +39,6 @@
 #include "sysemu/runstate.h"
 #include "trace.h"
 #include "qapi/error.h"
-#include "migration/migration.h"
 #include "migration/misc.h"
 #include "migration/blocker.h"
 #include "migration/qemu-file.h"
@@ -128,7 +127,7 @@ int vfio_block_multiple_devices_migration(VFIODevice *vbasedev, Error **errp)
     error_setg(&multiple_devices_migration_blocker,
                "Multiple VFIO devices migration is supported only if all of "
                "them support P2P migration");
-    ret = migrate_add_blocker(&multiple_devices_migration_blocker, errp);
+    ret = migrate_add_blocker_normal(&multiple_devices_migration_blocker, errp);
 
     return ret;
 }
@@ -150,14 +149,8 @@ bool vfio_viommu_preset(VFIODevice *vbasedev)
 
 static void vfio_set_migration_error(int err)
 {
-    MigrationState *ms = migrate_get_current();
-
-    if (migration_is_setup_or_active(ms->state)) {
-        WITH_QEMU_LOCK_GUARD(&ms->qemu_file_lock) {
-            if (ms->to_dst_file) {
-                qemu_file_set_error(ms->to_dst_file, err);
-            }
-        }
+    if (migration_is_setup_or_active()) {
+        migration_file_set_error(err);
     }
 }
 
@@ -180,10 +173,8 @@ bool vfio_device_state_is_precopy(VFIODevice *vbasedev)
 static bool vfio_devices_all_dirty_tracking(VFIOContainerBase *bcontainer)
 {
     VFIODevice *vbasedev;
-    MigrationState *ms = migrate_get_current();
 
-    if (ms->state != MIGRATION_STATUS_ACTIVE &&
-        ms->state != MIGRATION_STATUS_DEVICE) {
+    if (!migration_is_active() && !migration_is_device()) {
         return false;
     }
 
@@ -225,7 +216,7 @@ vfio_devices_all_running_and_mig_active(const VFIOContainerBase *bcontainer)
 {
     VFIODevice *vbasedev;
 
-    if (!migration_is_active(migrate_get_current())) {
+    if (!migration_is_active()) {
         return false;
     }
 
@@ -1000,7 +991,7 @@ vfio_device_feature_dma_logging_start_create(VFIOContainerBase *bcontainer,
         return NULL;
     }
 
-    control->ranges = (__u64)(uintptr_t)ranges;
+    control->ranges = (uintptr_t)ranges;
     if (tracking->max32) {
         ranges->iova = tracking->min32;
         ranges->length = (tracking->max32 - tracking->min32) + 1;
@@ -1118,7 +1109,7 @@ static int vfio_device_dma_logging_report(VFIODevice *vbasedev, hwaddr iova,
 {
     uint64_t buf[DIV_ROUND_UP(sizeof(struct vfio_device_feature) +
                         sizeof(struct vfio_device_feature_dma_logging_report),
-                        sizeof(__u64))] = {};
+                        sizeof(uint64_t))] = {};
     struct vfio_device_feature *feature = (struct vfio_device_feature *)buf;
     struct vfio_device_feature_dma_logging_report *report =
         (struct vfio_device_feature_dma_logging_report *)feature->data;
@@ -1126,7 +1117,7 @@ static int vfio_device_dma_logging_report(VFIODevice *vbasedev, hwaddr iova,
     report->iova = iova;
     report->length = size;
     report->page_size = qemu_real_host_page_size();
-    report->bitmap = (__u64)(uintptr_t)bitmap;
+    report->bitmap = (uintptr_t)bitmap;
 
     feature->argsz = sizeof(buf);
     feature->flags = VFIO_DEVICE_FEATURE_GET |

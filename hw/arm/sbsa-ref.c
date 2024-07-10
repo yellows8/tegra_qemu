@@ -36,8 +36,8 @@
 #include "hw/arm/smmuv3.h"
 #include "hw/block/flash.h"
 #include "hw/boards.h"
-#include "hw/ide/internal.h"
-#include "hw/ide/ahci_internal.h"
+#include "hw/ide/ide-bus.h"
+#include "hw/ide/ahci-sysbus.h"
 #include "hw/intc/arm_gicv3_common.h"
 #include "hw/intc/arm_gicv3_its_common.h"
 #include "hw/loader.h"
@@ -50,6 +50,8 @@
 #include "net/net.h"
 #include "qapi/qmp/qlist.h"
 #include "qom/object.h"
+#include "target/arm/cpu-qom.h"
+#include "target/arm/gtimer.h"
 
 #define RAMLIMIT_GB 8192
 #define RAMLIMIT_BYTES (RAMLIMIT_GB * GiB)
@@ -148,7 +150,7 @@ static const int sbsa_ref_irqmap[] = {
 static uint64_t sbsa_ref_cpu_mp_affinity(SBSAMachineState *sms, int idx)
 {
     uint8_t clustersz = ARM_DEFAULT_CPUS_PER_CLUSTER;
-    return arm_cpu_mp_affinity(idx, clustersz);
+    return arm_build_mp_affinity(idx, clustersz);
 }
 
 static void sbsa_fdt_add_gic_node(SBSAMachineState *sms)
@@ -568,8 +570,6 @@ static void create_ahci(const SBSAMachineState *sms)
     DeviceState *dev;
     DriveInfo *hd[NUM_SATA_PORTS];
     SysbusAHCIState *sysahci;
-    AHCIState *ahci;
-    int i;
 
     dev = qdev_new("sysbus-ahci");
     qdev_prop_set_uint32(dev, "num-ports", NUM_SATA_PORTS);
@@ -578,14 +578,8 @@ static void create_ahci(const SBSAMachineState *sms)
     sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, qdev_get_gpio_in(sms->gic, irq));
 
     sysahci = SYSBUS_AHCI(dev);
-    ahci = &sysahci->ahci;
     ide_drive_get(hd, ARRAY_SIZE(hd));
-    for (i = 0; i < ahci->ports; i++) {
-        if (hd[i] == NULL) {
-            continue;
-        }
-        ide_bus_create_drive(&ahci->dev[i].port, 0, hd[i]);
-    }
+    ahci_ide_create_devs(&sysahci->ahci, hd);
 }
 
 static void create_xhci(const SBSAMachineState *sms)
@@ -670,11 +664,8 @@ static void create_pcie(SBSAMachineState *sms)
     }
 
     pci = PCI_HOST_BRIDGE(dev);
-    if (pci->bus) {
-        for (i = 0; i < nb_nics; i++) {
-            pci_nic_init_nofail(&nd_table[i], pci->bus, mc->default_nic, NULL);
-        }
-    }
+
+    pci_init_nic_devices(pci->bus, mc->default_nic);
 
     pci_create_simple(pci->bus, -1, "bochs-display");
 

@@ -534,9 +534,9 @@ typedef struct CreateCo {
 int coroutine_fn bdrv_co_create(BlockDriver *drv, const char *filename,
                                 QemuOpts *opts, Error **errp)
 {
+    ERRP_GUARD();
     int ret;
     GLOBAL_STATE_CODE();
-    ERRP_GUARD();
 
     if (!drv->bdrv_co_create_opts) {
         error_setg(errp, "Driver '%s' does not support image creation",
@@ -633,6 +633,7 @@ int coroutine_fn bdrv_co_create_opts_simple(BlockDriver *drv,
                                             QemuOpts *opts,
                                             Error **errp)
 {
+    ERRP_GUARD();
     BlockBackend *blk;
     QDict *options;
     int64_t size = 0;
@@ -1309,11 +1310,14 @@ static void bdrv_backing_detach(BdrvChild *c)
 }
 
 static int bdrv_backing_update_filename(BdrvChild *c, BlockDriverState *base,
-                                        const char *filename, Error **errp)
+                                        const char *filename,
+                                        bool backing_mask_protocol,
+                                        Error **errp)
 {
     BlockDriverState *parent = c->opaque;
     bool read_only = bdrv_is_read_only(parent);
     int ret;
+    const char *format_name;
     GLOBAL_STATE_CODE();
 
     if (read_only) {
@@ -1323,9 +1327,23 @@ static int bdrv_backing_update_filename(BdrvChild *c, BlockDriverState *base,
         }
     }
 
-    ret = bdrv_change_backing_file(parent, filename,
-                                   base->drv ? base->drv->format_name : "",
-                                   false);
+    if (base->drv) {
+        /*
+         * If the new base image doesn't have a format driver layer, which we
+         * detect by the fact that @base is a protocol driver, we record
+         * 'raw' as the format instead of putting the protocol name as the
+         * backing format
+         */
+        if (backing_mask_protocol && base->drv->protocol_name) {
+            format_name = "raw";
+        } else {
+            format_name = base->drv->format_name;
+        }
+    } else {
+        format_name = "";
+    }
+
+    ret = bdrv_change_backing_file(parent, filename, format_name, false);
     if (ret < 0) {
         error_setg_errno(errp, -ret, "Could not update backing file link");
     }
@@ -1479,10 +1497,14 @@ static void GRAPH_WRLOCK bdrv_child_cb_detach(BdrvChild *child)
 }
 
 static int bdrv_child_cb_update_filename(BdrvChild *c, BlockDriverState *base,
-                                         const char *filename, Error **errp)
+                                         const char *filename,
+                                         bool backing_mask_protocol,
+                                         Error **errp)
 {
     if (c->role & BDRV_CHILD_COW) {
-        return bdrv_backing_update_filename(c, base, filename, errp);
+        return bdrv_backing_update_filename(c, base, filename,
+                                            backing_mask_protocol,
+                                            errp);
     }
     return 0;
 }
@@ -1977,6 +1999,7 @@ fail_opts:
 
 static QDict *parse_json_filename(const char *filename, Error **errp)
 {
+    ERRP_GUARD();
     QObject *options_obj;
     QDict *options;
     int ret;
@@ -3564,6 +3587,7 @@ int bdrv_set_backing_hd(BlockDriverState *bs, BlockDriverState *backing_hd,
 int bdrv_open_backing_file(BlockDriverState *bs, QDict *parent_options,
                            const char *bdref_key, Error **errp)
 {
+    ERRP_GUARD();
     char *backing_filename = NULL;
     char *bdref_key_dot;
     const char *reference = NULL;
@@ -3830,6 +3854,7 @@ static BlockDriverState *bdrv_append_temp_snapshot(BlockDriverState *bs,
                                                    QDict *snapshot_options,
                                                    Error **errp)
 {
+    ERRP_GUARD();
     g_autofree char *tmp_filename = NULL;
     int64_t total_size;
     QemuOpts *opts = NULL;
@@ -5803,7 +5828,8 @@ void bdrv_unfreeze_backing_chain(BlockDriverState *bs, BlockDriverState *base)
  *
  */
 int bdrv_drop_intermediate(BlockDriverState *top, BlockDriverState *base,
-                           const char *backing_file_str)
+                           const char *backing_file_str,
+                           bool backing_mask_protocol)
 {
     BlockDriverState *explicit_top = top;
     bool update_inherits_from;
@@ -5869,6 +5895,7 @@ int bdrv_drop_intermediate(BlockDriverState *top, BlockDriverState *base,
 
         if (c->klass->update_filename) {
             ret = c->klass->update_filename(c, base, backing_file_str,
+                                            backing_mask_protocol,
                                             &local_err);
             if (ret < 0) {
                 /*
@@ -7334,7 +7361,10 @@ void bdrv_img_create(const char *filename, const char *fmt,
         goto out;
     }
 
-    if (size == -1) {
+    /* Parameter 'size' is not needed for detached LUKS header */
+    if (size == -1 &&
+        !(!strcmp(fmt, "luks") &&
+          qemu_opt_get_bool(opts, "detached-header", false))) {
         error_setg(errp, "Image creation needs a size parameter");
         goto out;
     }

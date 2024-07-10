@@ -31,6 +31,7 @@
 #include "qemu/error-report.h"
 #include "qemu/module.h"
 #include "hw/ide/pci.h"
+#include "ide-internal.h"
 #include "trace.h"
 
 #define BMDMA_PAGE_SIZE 4096

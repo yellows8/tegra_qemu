@@ -229,16 +229,9 @@ static void s390_init_ipl_dev(const char *kernel_filename,
 
 static void s390_create_virtio_net(BusState *bus, const char *name)
 {
-    int i;
+    DeviceState *dev;
 
-    for (i = 0; i < nb_nics; i++) {
-        NICInfo *nd = &nd_table[i];
-        DeviceState *dev;
-
-        qemu_check_nic_model(nd, "virtio");
-
-        dev = qdev_new(name);
-        qdev_set_nic_properties(dev, nd);
+    while ((dev = qemu_create_nic_device(name, true, "virtio"))) {
         qdev_realize_and_unref(dev, bus, &error_fatal);
     }
 }
@@ -319,12 +312,12 @@ static void ccw_init(MachineState *machine)
 static void s390_cpu_plug(HotplugHandler *hotplug_dev,
                         DeviceState *dev, Error **errp)
 {
+    ERRP_GUARD();
     MachineState *ms = MACHINE(hotplug_dev);
     S390CPU *cpu = S390_CPU(dev);
-    ERRP_GUARD();
 
     g_assert(!ms->possible_cpus->cpus[cpu->env.core_id].cpu);
-    ms->possible_cpus->cpus[cpu->env.core_id].cpu = OBJECT(dev);
+    ms->possible_cpus->cpus[cpu->env.core_id].cpu = CPU(dev);
 
     if (s390_has_topology()) {
         s390_topology_setup_cpu(ms, cpu, errp);
@@ -399,7 +392,7 @@ static int s390_machine_protect(S390CcwMachineState *ms)
     }
 
     /* Set SE header and unpack */
-    rc = s390_ipl_prepare_pv_header();
+    rc = s390_ipl_prepare_pv_header(&local_err);
     if (rc) {
         goto out_err;
     }
@@ -418,6 +411,9 @@ static int s390_machine_protect(S390CcwMachineState *ms)
     return rc;
 
 out_err:
+    if (local_err) {
+        error_report_err(local_err);
+    }
     s390_machine_unprotect(ms);
     return rc;
 }

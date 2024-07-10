@@ -32,7 +32,6 @@
 #include "sysemu/reset.h"
 #include "trace.h"
 #include "qapi/error.h"
-#include "migration/migration.h"
 #include "pci.h"
 
 VFIOGroupList vfio_group_list =
@@ -621,10 +620,15 @@ static int vfio_connect_container(VFIOGroup *group, AddressSpace *as,
         goto free_container_exit;
     }
 
+    ret = vfio_cpr_register_container(bcontainer, errp);
+    if (ret) {
+        goto free_container_exit;
+    }
+
     ret = vfio_ram_block_discard_disable(container, true);
     if (ret) {
         error_setg_errno(errp, -ret, "Cannot set discarding of RAM broken");
-        goto free_container_exit;
+        goto unregister_container_exit;
     }
 
     assert(bcontainer->ops->setup);
@@ -666,6 +670,9 @@ listener_release_exit:
 
 enable_discards_exit:
     vfio_ram_block_discard_disable(container, false);
+
+unregister_container_exit:
+    vfio_cpr_unregister_container(bcontainer);
 
 free_container_exit:
     g_free(container);
@@ -710,6 +717,7 @@ static void vfio_disconnect_container(VFIOGroup *group)
         vfio_container_destroy(bcontainer);
 
         trace_vfio_disconnect_container(container->fd);
+        vfio_cpr_unregister_container(bcontainer);
         close(container->fd);
         g_free(container);
 
@@ -719,6 +727,7 @@ static void vfio_disconnect_container(VFIOGroup *group)
 
 static VFIOGroup *vfio_get_group(int groupid, AddressSpace *as, Error **errp)
 {
+    ERRP_GUARD();
     VFIOGroup *group;
     char path[32];
     struct vfio_group_status status = { .argsz = sizeof(status) };

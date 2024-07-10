@@ -81,6 +81,7 @@ struct virtio_gpu_scanout {
     uint32_t resource_id;
     struct virtio_gpu_update_cursor cursor;
     QEMUCursor *current_cursor;
+    struct virtio_gpu_framebuffer fb;
 };
 
 struct virtio_gpu_requested_state {
@@ -176,6 +177,7 @@ typedef struct VGPUDMABuf {
 struct VirtIOGPU {
     VirtIOGPUBase parent_obj;
 
+    uint8_t scanout_vmstate_version;
     uint64_t conf_max_hostmem;
 
     VirtQueue *ctrl_vq;
@@ -219,6 +221,9 @@ struct VirtIOGPUClass {
     void (*update_cursor_data)(VirtIOGPU *g,
                                struct virtio_gpu_scanout *s,
                                uint32_t resource_id);
+    void (*resource_destroy)(VirtIOGPU *g,
+                             struct virtio_gpu_simple_resource *res,
+                             Error **errp);
 };
 
 struct VirtIOGPUGL {

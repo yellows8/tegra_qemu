@@ -26,7 +26,9 @@
 #include "qapi/error.h"
 #include "exec/address-spaces.h"
 #include "sysemu/sysemu.h"
+#include "hw/or-irq.h"
 #include "hw/arm/stm32l4x5_soc.h"
+#include "hw/gpio/stm32l4x5_gpio.h"
 #include "hw/qdev-clock.h"
 #include "hw/misc/unimp.h"
 
@@ -36,12 +38,100 @@
 #define SRAM2_BASE_ADDRESS 0x10000000
 #define SRAM2_SIZE (32 * KiB)
 
+#define EXTI_ADDR 0x40010400
+#define SYSCFG_ADDR 0x40010000
+
+#define NUM_EXTI_IRQ 40
+/* Match exti line connections with their CPU IRQ number */
+/* See Vector Table (Reference Manual p.396) */
+/*
+ * Some IRQs are connected to the same CPU IRQ (denoted by -1)
+ * and require an intermediary OR gate to function correctly.
+ */
+static const int exti_irq[NUM_EXTI_IRQ] = {
+    6,                      /* GPIO[0]                 */
+    7,                      /* GPIO[1]                 */
+    8,                      /* GPIO[2]                 */
+    9,                      /* GPIO[3]                 */
+    10,                     /* GPIO[4]                 */
+    -1, -1, -1, -1, -1,     /* GPIO[5..9] OR gate 23   */
+    -1, -1, -1, -1, -1, -1, /* GPIO[10..15] OR gate 40 */
+    -1,                     /* PVD OR gate 1           */
+    67,                     /* OTG_FS_WKUP, Direct     */
+    41,                     /* RTC_ALARM               */
+    2,                      /* RTC_TAMP_STAMP2/CSS_LSE */
+    3,                      /* RTC wakeup timer        */
+    -1, -1,                 /* COMP[1..2] OR gate 63   */
+    31,                     /* I2C1 wakeup, Direct     */
+    33,                     /* I2C2 wakeup, Direct     */
+    72,                     /* I2C3 wakeup, Direct     */
+    37,                     /* USART1 wakeup, Direct   */
+    38,                     /* USART2 wakeup, Direct   */
+    39,                     /* USART3 wakeup, Direct   */
+    52,                     /* UART4 wakeup, Direct    */
+    53,                     /* UART4 wakeup, Direct    */
+    70,                     /* LPUART1 wakeup, Direct  */
+    65,                     /* LPTIM1, Direct          */
+    66,                     /* LPTIM2, Direct          */
+    76,                     /* SWPMI1 wakeup, Direct   */
+    -1, -1, -1, -1,         /* PVM[1..4] OR gate 1     */
+    78                      /* LCD wakeup, Direct      */
+};
+#define RCC_BASE_ADDRESS 0x40021000
+#define RCC_IRQ 5
+
+static const int exti_or_gates_out[NUM_EXTI_OR_GATES] = {
+    23, 40, 63, 1,
+};
+
+static const int exti_or_gates_num_lines_in[NUM_EXTI_OR_GATES] = {
+    5, 6, 2, 5,
+};
+
+/* 3 OR gates with consecutive inputs */
+#define NUM_EXTI_SIMPLE_OR_GATES 3
+static const int exti_or_gates_first_line_in[NUM_EXTI_SIMPLE_OR_GATES] = {
+    5, 10, 21,
+};
+
+/* 1 OR gate with non-consecutive inputs */
+#define EXTI_OR_GATE1_NUM_LINES_IN 5
+static const int exti_or_gate1_lines_in[EXTI_OR_GATE1_NUM_LINES_IN] = {
+    16, 35, 36, 37, 38,
+};
+
+static const struct {
+    uint32_t addr;
+    uint32_t moder_reset;
+    uint32_t ospeedr_reset;
+    uint32_t pupdr_reset;
+} stm32l4x5_gpio_cfg[NUM_GPIOS] = {
+    { 0x48000000, 0xABFFFFFF, 0x0C000000, 0x64000000 },
+    { 0x48000400, 0xFFFFFEBF, 0x00000000, 0x00000100 },
+    { 0x48000800, 0xFFFFFFFF, 0x00000000, 0x00000000 },
+    { 0x48000C00, 0xFFFFFFFF, 0x00000000, 0x00000000 },
+    { 0x48001000, 0xFFFFFFFF, 0x00000000, 0x00000000 },
+    { 0x48001400, 0xFFFFFFFF, 0x00000000, 0x00000000 },
+    { 0x48001800, 0xFFFFFFFF, 0x00000000, 0x00000000 },
+    { 0x48001C00, 0x0000000F, 0x00000000, 0x00000000 },
+};
+
 static void stm32l4x5_soc_initfn(Object *obj)
 {
     Stm32l4x5SocState *s = STM32L4X5_SOC(obj);
 
-    s->sysclk = qdev_init_clock_in(DEVICE(s), "sysclk", NULL, NULL, 0);
-    s->refclk = qdev_init_clock_in(DEVICE(s), "refclk", NULL, NULL, 0);
+    object_initialize_child(obj, "exti", &s->exti, TYPE_STM32L4X5_EXTI);
+    for (unsigned i = 0; i < NUM_EXTI_OR_GATES; i++) {
+        object_initialize_child(obj, "exti_or_gates[*]", &s->exti_or_gates[i],
+                                TYPE_OR_IRQ);
+    }
+    object_initialize_child(obj, "syscfg", &s->syscfg, TYPE_STM32L4X5_SYSCFG);
+    object_initialize_child(obj, "rcc", &s->rcc, TYPE_STM32L4X5_RCC);
+
+    for (unsigned i = 0; i < NUM_GPIOS; i++) {
+        g_autofree char *name = g_strdup_printf("gpio%c", 'a' + i);
+        object_initialize_child(obj, name, &s->gpio[i], TYPE_STM32L4X5_GPIO);
+    }
 }
 
 static void stm32l4x5_soc_realize(DeviceState *dev_soc, Error **errp)
@@ -50,31 +140,9 @@ static void stm32l4x5_soc_realize(DeviceState *dev_soc, Error **errp)
     Stm32l4x5SocState *s = STM32L4X5_SOC(dev_soc);
     const Stm32l4x5SocClass *sc = STM32L4X5_SOC_GET_CLASS(dev_soc);
     MemoryRegion *system_memory = get_system_memory();
-    DeviceState *armv7m;
-
-    /*
-     * We use s->refclk internally and only define it with qdev_init_clock_in()
-     * so it is correctly parented and not leaked on an init/deinit; it is not
-     * intended as an externally exposed clock.
-     */
-    if (clock_has_source(s->refclk)) {
-        error_setg(errp, "refclk clock must not be wired up by the board code");
-        return;
-    }
-
-    if (!clock_has_source(s->sysclk)) {
-        error_setg(errp, "sysclk clock must be wired up by the board code");
-        return;
-    }
-
-    /*
-     * TODO: ideally we should model the SoC RCC and its ability to
-     * change the sysclk frequency and define different sysclk sources.
-     */
-
-    /* The refclk always runs at frequency HCLK / 8 */
-    clock_set_mul_div(s->refclk, 8, 1);
-    clock_set_source(s->refclk, s->sysclk);
+    DeviceState *armv7m, *dev;
+    SysBusDevice *busdev;
+    uint32_t pin_index;
 
     if (!memory_region_init_rom(&s->flash, OBJECT(dev_soc), "flash",
                                 sc->flash_size, errp)) {
@@ -105,13 +173,111 @@ static void stm32l4x5_soc_realize(DeviceState *dev_soc, Error **errp)
     qdev_prop_set_uint32(armv7m, "num-prio-bits", 4);
     qdev_prop_set_string(armv7m, "cpu-type", ARM_CPU_TYPE_NAME("cortex-m4"));
     qdev_prop_set_bit(armv7m, "enable-bitband", true);
-    qdev_connect_clock_in(armv7m, "cpuclk", s->sysclk);
-    qdev_connect_clock_in(armv7m, "refclk", s->refclk);
+    qdev_connect_clock_in(armv7m, "cpuclk",
+        qdev_get_clock_out(DEVICE(&(s->rcc)), "cortex-fclk-out"));
+    qdev_connect_clock_in(armv7m, "refclk",
+        qdev_get_clock_out(DEVICE(&(s->rcc)), "cortex-refclk-out"));
     object_property_set_link(OBJECT(&s->armv7m), "memory",
                              OBJECT(system_memory), &error_abort);
     if (!sysbus_realize(SYS_BUS_DEVICE(&s->armv7m), errp)) {
         return;
     }
+
+    /* GPIOs */
+    for (unsigned i = 0; i < NUM_GPIOS; i++) {
+        g_autofree char *name = g_strdup_printf("%c", 'A' + i);
+        dev = DEVICE(&s->gpio[i]);
+        qdev_prop_set_string(dev, "name", name);
+        qdev_prop_set_uint32(dev, "mode-reset",
+                             stm32l4x5_gpio_cfg[i].moder_reset);
+        qdev_prop_set_uint32(dev, "ospeed-reset",
+                             stm32l4x5_gpio_cfg[i].ospeedr_reset);
+        qdev_prop_set_uint32(dev, "pupd-reset",
+                            stm32l4x5_gpio_cfg[i].pupdr_reset);
+        busdev = SYS_BUS_DEVICE(&s->gpio[i]);
+        g_free(name);
+        name = g_strdup_printf("gpio%c-out", 'a' + i);
+        qdev_connect_clock_in(DEVICE(&s->gpio[i]), "clk",
+            qdev_get_clock_out(DEVICE(&(s->rcc)), name));
+        if (!sysbus_realize(busdev, errp)) {
+            return;
+        }
+        sysbus_mmio_map(busdev, 0, stm32l4x5_gpio_cfg[i].addr);
+    }
+
+    /* System configuration controller */
+    busdev = SYS_BUS_DEVICE(&s->syscfg);
+    if (!sysbus_realize(busdev, errp)) {
+        return;
+    }
+    sysbus_mmio_map(busdev, 0, SYSCFG_ADDR);
+
+    for (unsigned i = 0; i < NUM_GPIOS; i++) {
+        for (unsigned j = 0; j < GPIO_NUM_PINS; j++) {
+            pin_index = GPIO_NUM_PINS * i + j;
+            qdev_connect_gpio_out(DEVICE(&s->gpio[i]), j,
+                                  qdev_get_gpio_in(DEVICE(&s->syscfg),
+                                  pin_index));
+        }
+    }
+
+    /* EXTI device */
+    busdev = SYS_BUS_DEVICE(&s->exti);
+    if (!sysbus_realize(busdev, errp)) {
+        return;
+    }
+    sysbus_mmio_map(busdev, 0, EXTI_ADDR);
+
+    /* IRQs with fan-in that require an OR gate */
+    for (unsigned i = 0; i < NUM_EXTI_OR_GATES; i++) {
+        if (!object_property_set_int(OBJECT(&s->exti_or_gates[i]), "num-lines",
+                                     exti_or_gates_num_lines_in[i], errp)) {
+            return;
+        }
+        if (!qdev_realize(DEVICE(&s->exti_or_gates[i]), NULL, errp)) {
+            return;
+        }
+
+        qdev_connect_gpio_out(DEVICE(&s->exti_or_gates[i]), 0,
+            qdev_get_gpio_in(armv7m, exti_or_gates_out[i]));
+
+        if (i < NUM_EXTI_SIMPLE_OR_GATES) {
+            /* consecutive inputs for OR gates 23, 40, 63 */
+            for (unsigned j = 0; j < exti_or_gates_num_lines_in[i]; j++) {
+                sysbus_connect_irq(SYS_BUS_DEVICE(&s->exti),
+                    exti_or_gates_first_line_in[i] + j,
+                    qdev_get_gpio_in(DEVICE(&s->exti_or_gates[i]), j));
+            }
+        } else {
+            /* non-consecutive inputs for OR gate 1 */
+            for (unsigned j = 0; j < EXTI_OR_GATE1_NUM_LINES_IN; j++) {
+                sysbus_connect_irq(SYS_BUS_DEVICE(&s->exti),
+                    exti_or_gate1_lines_in[j],
+                    qdev_get_gpio_in(DEVICE(&s->exti_or_gates[i]), j));
+            }
+        }
+    }
+
+    /* IRQs that don't require fan-in */
+    for (unsigned i = 0; i < NUM_EXTI_IRQ; i++) {
+        if (exti_irq[i] != -1) {
+            sysbus_connect_irq(busdev, i,
+                               qdev_get_gpio_in(armv7m, exti_irq[i]));
+        }
+    }
+
+    for (unsigned i = 0; i < GPIO_NUM_PINS; i++) {
+        qdev_connect_gpio_out(DEVICE(&s->syscfg), i,
+                              qdev_get_gpio_in(DEVICE(&s->exti), i));
+    }
+
+    /* RCC device */
+    busdev = SYS_BUS_DEVICE(&s->rcc);
+    if (!sysbus_realize(busdev, errp)) {
+        return;
+    }
+    sysbus_mmio_map(busdev, 0, RCC_BASE_ADDRESS);
+    sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, RCC_IRQ));
 
     /* APB1 BUS */
     create_unimplemented_device("TIM2",      0x40000000, 0x400);
@@ -150,10 +316,8 @@ static void stm32l4x5_soc_realize(DeviceState *dev_soc, Error **errp)
     /* RESERVED:    0x40009800, 0x6800 */
 
     /* APB2 BUS */
-    create_unimplemented_device("SYSCFG",    0x40010000, 0x30);
     create_unimplemented_device("VREFBUF",   0x40010030, 0x1D0);
     create_unimplemented_device("COMP",      0x40010200, 0x200);
-    create_unimplemented_device("EXTI",      0x40010400, 0x400);
     /* RESERVED:    0x40010800, 0x1400 */
     create_unimplemented_device("FIREWALL",  0x40011C00, 0x400);
     /* RESERVED:    0x40012000, 0x800 */
@@ -177,7 +341,6 @@ static void stm32l4x5_soc_realize(DeviceState *dev_soc, Error **errp)
     create_unimplemented_device("DMA1",      0x40020000, 0x400);
     create_unimplemented_device("DMA2",      0x40020400, 0x400);
     /* RESERVED:    0x40020800, 0x800 */
-    create_unimplemented_device("RCC",       0x40021000, 0x400);
     /* RESERVED:    0x40021400, 0xC00 */
     create_unimplemented_device("FLASH",     0x40022000, 0x400);
     /* RESERVED:    0x40022400, 0xC00 */
@@ -188,14 +351,6 @@ static void stm32l4x5_soc_realize(DeviceState *dev_soc, Error **errp)
     /* RESERVED:    0x40024400, 0x7FDBC00 */
 
     /* AHB2 BUS */
-    create_unimplemented_device("GPIOA",     0x48000000, 0x400);
-    create_unimplemented_device("GPIOB",     0x48000400, 0x400);
-    create_unimplemented_device("GPIOC",     0x48000800, 0x400);
-    create_unimplemented_device("GPIOD",     0x48000C00, 0x400);
-    create_unimplemented_device("GPIOE",     0x48001000, 0x400);
-    create_unimplemented_device("GPIOF",     0x48001400, 0x400);
-    create_unimplemented_device("GPIOG",     0x48001800, 0x400);
-    create_unimplemented_device("GPIOH",     0x48001C00, 0x400);
     /* RESERVED:    0x48002000, 0x7FDBC00 */
     create_unimplemented_device("OTG_FS",    0x50000000, 0x40000);
     create_unimplemented_device("ADC",       0x50040000, 0x400);

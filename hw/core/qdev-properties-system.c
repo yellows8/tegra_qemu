@@ -242,6 +242,7 @@ static void get_chr(Object *obj, Visitor *v, const char *name, void *opaque,
 static void set_chr(Object *obj, Visitor *v, const char *name, void *opaque,
                     Error **errp)
 {
+    ERRP_GUARD();
     Property *prop = opaque;
     CharBackend *be = object_field_prop_ptr(obj, prop);
     Chardev *s;
@@ -679,6 +680,30 @@ const PropertyInfo qdev_prop_mig_mode = {
     .set_default_value = qdev_propinfo_set_default_value_enum,
 };
 
+/* --- GranuleMode --- */
+
+QEMU_BUILD_BUG_ON(sizeof(GranuleMode) != sizeof(int));
+
+const PropertyInfo qdev_prop_granule_mode = {
+    .name = "GranuleMode",
+    .description = "granule_mode values, "
+                   "4k, 8k, 16k, 64k, host",
+    .enum_table = &GranuleMode_lookup,
+    .get = qdev_propinfo_get_enum,
+    .set = qdev_propinfo_set_enum,
+    .set_default_value = qdev_propinfo_set_default_value_enum,
+};
+
+const PropertyInfo qdev_prop_zero_page_detection = {
+    .name = "ZeroPageDetection",
+    .description = "zero_page_detection values, "
+                   "none,legacy,multifd",
+    .enum_table = &ZeroPageDetection_lookup,
+    .get = qdev_propinfo_get_enum,
+    .set = qdev_propinfo_set_enum,
+    .set_default_value = qdev_propinfo_set_default_value_enum,
+};
+
 /* --- Reserved Region --- */
 
 /*
@@ -941,7 +966,7 @@ const PropertyInfo qdev_prop_off_auto_pcibar = {
     .set_default_value = qdev_propinfo_set_default_value_enum,
 };
 
-/* --- PCIELinkSpeed 2_5/5/8/16 -- */
+/* --- PCIELinkSpeed 2_5/5/8/16/32/64 -- */
 
 static void get_prop_pcielinkspeed(Object *obj, Visitor *v, const char *name,
                                    void *opaque, Error **errp)
@@ -962,6 +987,12 @@ static void get_prop_pcielinkspeed(Object *obj, Visitor *v, const char *name,
         break;
     case QEMU_PCI_EXP_LNK_16GT:
         speed = PCIE_LINK_SPEED_16;
+        break;
+    case QEMU_PCI_EXP_LNK_32GT:
+        speed = PCIE_LINK_SPEED_32;
+        break;
+    case QEMU_PCI_EXP_LNK_64GT:
+        speed = PCIE_LINK_SPEED_64;
         break;
     default:
         /* Unreachable */
@@ -996,6 +1027,12 @@ static void set_prop_pcielinkspeed(Object *obj, Visitor *v, const char *name,
     case PCIE_LINK_SPEED_16:
         *p = QEMU_PCI_EXP_LNK_16GT;
         break;
+    case PCIE_LINK_SPEED_32:
+        *p = QEMU_PCI_EXP_LNK_32GT;
+        break;
+    case PCIE_LINK_SPEED_64:
+        *p = QEMU_PCI_EXP_LNK_64GT;
+        break;
     default:
         /* Unreachable */
         abort();
@@ -1004,7 +1041,7 @@ static void set_prop_pcielinkspeed(Object *obj, Visitor *v, const char *name,
 
 const PropertyInfo qdev_prop_pcie_link_speed = {
     .name = "PCIELinkSpeed",
-    .description = "2_5/5/8/16",
+    .description = "2_5/5/8/16/32/64",
     .enum_table = &PCIELinkSpeed_lookup,
     .get = get_prop_pcielinkspeed,
     .set = set_prop_pcielinkspeed,

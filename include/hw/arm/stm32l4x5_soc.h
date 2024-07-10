@@ -26,6 +26,11 @@
 
 #include "exec/memory.h"
 #include "hw/arm/armv7m.h"
+#include "hw/or-irq.h"
+#include "hw/misc/stm32l4x5_syscfg.h"
+#include "hw/misc/stm32l4x5_exti.h"
+#include "hw/misc/stm32l4x5_rcc.h"
+#include "hw/gpio/stm32l4x5_gpio.h"
 #include "qom/object.h"
 
 #define TYPE_STM32L4X5_SOC "stm32l4x5-soc"
@@ -34,18 +39,23 @@
 #define TYPE_STM32L4X5XG_SOC "stm32l4x5xg-soc"
 OBJECT_DECLARE_TYPE(Stm32l4x5SocState, Stm32l4x5SocClass, STM32L4X5_SOC)
 
+#define NUM_EXTI_OR_GATES 4
+
 struct Stm32l4x5SocState {
     SysBusDevice parent_obj;
 
     ARMv7MState armv7m;
 
+    Stm32l4x5ExtiState exti;
+    OrIRQState exti_or_gates[NUM_EXTI_OR_GATES];
+    Stm32l4x5SyscfgState syscfg;
+    Stm32l4x5RccState rcc;
+    Stm32l4x5GpioState gpio[NUM_GPIOS];
+
     MemoryRegion sram1;
     MemoryRegion sram2;
     MemoryRegion flash;
     MemoryRegion flash_alias;
-
-    Clock *sysclk;
-    Clock *refclk;
 };
 
 struct Stm32l4x5SocClass {

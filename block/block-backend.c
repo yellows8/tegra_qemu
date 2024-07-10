@@ -44,7 +44,7 @@ struct BlockBackend {
     char *name;
     int refcnt;
     BdrvChild *root;
-    AioContext *ctx;
+    AioContext *ctx; /* access with atomic operations only */
     DriveInfo *legacy_dinfo;    /* null unless created by drive_new() */
     QTAILQ_ENTRY(BlockBackend) link;         /* for block_backends */
     QTAILQ_ENTRY(BlockBackend) monitor_link; /* for monitor_block_backends */
@@ -599,13 +599,13 @@ BlockDriverState *bdrv_next(BdrvNextIterator *it)
     /* Must be called from the main loop */
     assert(qemu_get_current_aio_context() == qemu_get_aio_context());
 
+    old_bs = it->bs;
+
     /* First, return all root nodes of BlockBackends. In order to avoid
      * returning a BDS twice when multiple BBs refer to it, we only return it
      * if the BB is the first one in the parent list of the BDS. */
     if (it->phase == BDRV_NEXT_BACKEND_ROOTS) {
         BlockBackend *old_blk = it->blk;
-
-        old_bs = old_blk ? blk_bs(old_blk) : NULL;
 
         do {
             it->blk = blk_all_next(it->blk);
@@ -620,11 +620,10 @@ BlockDriverState *bdrv_next(BdrvNextIterator *it)
         if (bs) {
             bdrv_ref(bs);
             bdrv_unref(old_bs);
+            it->bs = bs;
             return bs;
         }
         it->phase = BDRV_NEXT_MONITOR_OWNED;
-    } else {
-        old_bs = it->bs;
     }
 
     /* Then return the monitor-owned BDSes without a BB attached. Ignore all
@@ -664,13 +663,10 @@ void bdrv_next_cleanup(BdrvNextIterator *it)
     /* Must be called from the main loop */
     assert(qemu_get_current_aio_context() == qemu_get_aio_context());
 
-    if (it->phase == BDRV_NEXT_BACKEND_ROOTS) {
-        if (it->blk) {
-            bdrv_unref(blk_bs(it->blk));
-            blk_unref(it->blk);
-        }
-    } else {
-        bdrv_unref(it->bs);
+    bdrv_unref(it->bs);
+
+    if (it->phase == BDRV_NEXT_BACKEND_ROOTS && it->blk) {
+        blk_unref(it->blk);
     }
 
     bdrv_next_reset(it);
@@ -2414,22 +2410,22 @@ void blk_op_unblock_all(BlockBackend *blk, Error *reason)
     }
 }
 
+/**
+ * Return BB's current AioContext.  Note that this context may change
+ * concurrently at any time, with one exception: If the BB has a root node
+ * attached, its context will only change through bdrv_try_change_aio_context(),
+ * which creates a drained section.  Therefore, incrementing such a BB's
+ * in-flight counter will prevent its context from changing.
+ */
 AioContext *blk_get_aio_context(BlockBackend *blk)
 {
-    BlockDriverState *bs;
     IO_CODE();
 
     if (!blk) {
         return qemu_get_aio_context();
     }
 
-    bs = blk_bs(blk);
-    if (bs) {
-        AioContext *ctx = bdrv_get_aio_context(blk_bs(blk));
-        assert(ctx == blk->ctx);
-    }
-
-    return blk->ctx;
+    return qatomic_read(&blk->ctx);
 }
 
 int blk_set_aio_context(BlockBackend *blk, AioContext *new_context,
@@ -2442,7 +2438,7 @@ int blk_set_aio_context(BlockBackend *blk, AioContext *new_context,
     GLOBAL_STATE_CODE();
 
     if (!bs) {
-        blk->ctx = new_context;
+        qatomic_set(&blk->ctx, new_context);
         return 0;
     }
 
@@ -2471,7 +2467,7 @@ static void blk_root_set_aio_ctx_commit(void *opaque)
     AioContext *new_context = s->new_ctx;
     ThrottleGroupMember *tgm = &blk->public.throttle_group_member;
 
-    blk->ctx = new_context;
+    qatomic_set(&blk->ctx, new_context);
     if (tgm->throttle_state) {
         throttle_group_detach_aio_context(tgm);
         throttle_group_attach_aio_context(tgm, new_context);

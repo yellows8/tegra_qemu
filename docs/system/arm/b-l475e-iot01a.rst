@@ -12,21 +12,20 @@ USART, I2C, SPI, CAN and USB OTG, as well as a variety of sensors.
 Supported devices
 """""""""""""""""
 
-Currently, B-L475E-IOT01A machine's implementation is minimal,
-it only supports the following device:
+Currently B-L475E-IOT01A machine's only supports the following devices:
 
 - Cortex-M4F based STM32L4x5 SoC
+- STM32L4x5 EXTI (Extended interrupts and events controller)
+- STM32L4x5 SYSCFG (System configuration controller)
+- STM32L4x5 RCC (Reset and clock control)
+- STM32L4x5 GPIOs (General-purpose I/Os)
 
 Missing devices
 """""""""""""""
 
 The B-L475E-IOT01A does *not* support the following devices:
 
-- Extended interrupts and events controller (EXTI)
-- Reset and clock control (RCC)
 - Serial ports (UART)
-- System configuration controller (SYSCFG)
-- General-purpose I/Os (GPIO)
 - Analog to Digital Converter (ADC)
 - SPI controller
 - Timer controller (TIMER)

@@ -184,7 +184,7 @@ void arm_deliver_fault(ARMCPU *cpu, vaddr addr,
      * (and indeed syndrome does not have the EC field in it,
      * because we masked that out in disas_set_insn_syndrome())
      */
-    bool is_vncr = (mmu_idx != MMU_INST_FETCH) &&
+    bool is_vncr = (access_type != MMU_INST_FETCH) &&
         (env->exception.syndrome & ARM_EL_VNCR);
 
     if (is_vncr) {
@@ -281,7 +281,7 @@ void helper_exception_pc_alignment(CPUARMState *env, target_ulong pc)
 {
     ARMMMUFaultInfo fi = { .type = ARMFault_Alignment };
     int target_el = exception_target_el(env);
-    int mmu_idx = cpu_mmu_index(env, true);
+    int mmu_idx = arm_env_mmu_index(env);
     uint32_t fsc;
 
     env->exception.vaddress = pc;

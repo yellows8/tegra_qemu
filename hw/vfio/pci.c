@@ -2136,6 +2136,7 @@ static void vfio_check_af_flr(VFIOPCIDevice *vdev, uint8_t pos)
 
 static int vfio_add_std_cap(VFIOPCIDevice *vdev, uint8_t pos, Error **errp)
 {
+    ERRP_GUARD();
     PCIDevice *pdev = &vdev->pdev;
     uint8_t cap_id, next, size;
     int ret;
@@ -2558,7 +2559,7 @@ static bool vfio_display_migration_needed(void *opaque)
         (vdev->ramfb_migrate == ON_OFF_AUTO_AUTO && vdev->enable_ramfb);
 }
 
-const VMStateDescription vmstate_vfio_display = {
+static const VMStateDescription vmstate_vfio_display = {
     .name = "VFIOPCIDevice/VFIODisplay",
     .version_id = 1,
     .minimum_version_id = 1,
@@ -2570,7 +2571,7 @@ const VMStateDescription vmstate_vfio_display = {
     }
 };
 
-const VMStateDescription vmstate_vfio_pci_config = {
+static const VMStateDescription vmstate_vfio_pci_config = {
     .name = "VFIOPCIDevice",
     .version_id = 1,
     .minimum_version_id = 1,
@@ -2942,6 +2943,7 @@ static void vfio_unregister_req_notifier(VFIOPCIDevice *vdev)
 
 static void vfio_realize(PCIDevice *pdev, Error **errp)
 {
+    ERRP_GUARD();
     VFIOPCIDevice *vdev = VFIO_PCI(pdev);
     VFIODevice *vbasedev = &vdev->vbasedev;
     char *tmp, *subsys;

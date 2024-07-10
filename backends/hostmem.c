@@ -20,6 +20,7 @@
 #include "qom/object_interfaces.h"
 #include "qemu/mmap-alloc.h"
 #include "qemu/madvise.h"
+#include "hw/qdev-core.h"
 
 #ifdef CONFIG_NUMA
 #include <numaif.h>
@@ -237,7 +238,7 @@ static void host_memory_backend_set_prealloc(Object *obj, bool value,
         uint64_t sz = memory_region_size(&backend->mr);
 
         if (!qemu_prealloc_mem(fd, ptr, sz, backend->prealloc_threads,
-                               backend->prealloc_context, errp)) {
+                               backend->prealloc_context, false, errp)) {
             return;
         }
         backend->prealloc = true;
@@ -323,6 +324,7 @@ host_memory_backend_memory_complete(UserCreatable *uc, Error **errp)
     HostMemoryBackendClass *bc = MEMORY_BACKEND_GET_CLASS(uc);
     void *ptr;
     uint64_t sz;
+    bool async = !phase_check(PHASE_LATE_BACKENDS_CREATED);
 
     if (!bc->alloc) {
         return;
@@ -344,9 +346,11 @@ host_memory_backend_memory_complete(UserCreatable *uc, Error **errp)
     unsigned long lastbit = find_last_bit(backend->host_nodes, MAX_NODES);
     /* lastbit == MAX_NODES means maxnode = 0 */
     unsigned long maxnode = (lastbit + 1) % (MAX_NODES + 1);
-    /* ensure policy won't be ignored in case memory is preallocated
+    /*
+     * Ensure policy won't be ignored in case memory is preallocated
      * before mbind(). note: MPOL_MF_STRICT is ignored on hugepages so
-     * this doesn't catch hugepage case. */
+     * this doesn't catch hugepage case.
+     */
     unsigned flags = MPOL_MF_STRICT | MPOL_MF_MOVE;
     int mode = backend->policy;
 
@@ -363,7 +367,8 @@ host_memory_backend_memory_complete(UserCreatable *uc, Error **errp)
         return;
     }
 
-    /* We can have up to MAX_NODES nodes, but we need to pass maxnode+1
+    /*
+     * We can have up to MAX_NODES nodes, but we need to pass maxnode+1
      * as argument to mbind() due to an old Linux bug (feature?) which
      * cuts off the last specified node. This means backend->host_nodes
      * must have MAX_NODES+1 bits available.
@@ -391,14 +396,16 @@ host_memory_backend_memory_complete(UserCreatable *uc, Error **errp)
         }
     }
 #endif
-    /* Preallocate memory after the NUMA policy has been instantiated.
+    /*
+     * Preallocate memory after the NUMA policy has been instantiated.
      * This is necessary to guarantee memory is allocated with
      * specified NUMA policy in place.
      */
     if (backend->prealloc && !qemu_prealloc_mem(memory_region_get_fd(&backend->mr),
                                                 ptr, sz,
                                                 backend->prealloc_threads,
-                                                backend->prealloc_context, errp)) {
+                                                backend->prealloc_context,
+                                                async, errp)) {
         return;
     }
 }

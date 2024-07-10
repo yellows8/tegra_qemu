@@ -63,9 +63,9 @@ static bool colo_runstate_is_stopped(void)
     return runstate_check(RUN_STATE_COLO) || !runstate_is_running();
 }
 
-static void colo_checkpoint_notify(void *opaque)
+static void colo_checkpoint_notify(void)
 {
-    MigrationState *s = opaque;
+    MigrationState *s = migrate_get_current();
     int64_t next_notify_time;
 
     qemu_event_set(&s->colo_checkpoint_event);
@@ -74,10 +74,15 @@ static void colo_checkpoint_notify(void *opaque)
     timer_mod(s->colo_delay_timer, next_notify_time);
 }
 
+static void colo_checkpoint_notify_timer(void *opaque)
+{
+    colo_checkpoint_notify();
+}
+
 void colo_checkpoint_delay_set(void)
 {
     if (migration_in_colo_state()) {
-        colo_checkpoint_notify(migrate_get_current());
+        colo_checkpoint_notify();
     }
 }
 
@@ -162,7 +167,7 @@ static void primary_vm_do_failover(void)
      * kick COLO thread which might wait at
      * qemu_sem_wait(&s->colo_checkpoint_sem).
      */
-    colo_checkpoint_notify(s);
+    colo_checkpoint_notify();
 
     /*
      * Wake up COLO thread which may blocked in recv() or send(),
@@ -518,7 +523,7 @@ out:
 
 static void colo_compare_notify_checkpoint(Notifier *notifier, void *data)
 {
-    colo_checkpoint_notify(data);
+    colo_checkpoint_notify();
 }
 
 static void colo_process_checkpoint(MigrationState *s)
@@ -642,7 +647,7 @@ void migrate_start_colo_process(MigrationState *s)
     bql_unlock();
     qemu_event_init(&s->colo_checkpoint_event, false);
     s->colo_delay_timer =  timer_new_ms(QEMU_CLOCK_HOST,
-                                colo_checkpoint_notify, s);
+                                colo_checkpoint_notify_timer, NULL);
 
     qemu_sem_init(&s->colo_exit_sem, 0);
     colo_process_checkpoint(s);
@@ -830,6 +835,16 @@ static void *colo_process_incoming_thread(void *opaque)
         return NULL;
     }
 
+    /* Make sure all file formats throw away their mutable metadata */
+    bql_lock();
+    bdrv_activate_all(&local_err);
+    if (local_err) {
+        bql_unlock();
+        error_report_err(local_err);
+        return NULL;
+    }
+    bql_unlock();
+
     failover_init_state();
 
     mis->to_src_file = qemu_file_get_return_path(mis->from_src_file);
@@ -917,20 +932,12 @@ out:
 int coroutine_fn colo_incoming_co(void)
 {
     MigrationIncomingState *mis = migration_incoming_get_current();
-    Error *local_err = NULL;
     QemuThread th;
 
     assert(bql_locked());
 
     if (!migration_incoming_colo_enabled()) {
         return 0;
-    }
-
-    /* Make sure all file formats throw away their mutable metadata */
-    bdrv_activate_all(&local_err);
-    if (local_err) {
-        error_report_err(local_err);
-        return -EINVAL;
     }
 
     qemu_thread_create(&th, "COLO incoming", colo_process_incoming_thread,

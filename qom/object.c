@@ -160,10 +160,6 @@ static bool type_name_is_valid(const char *name)
 
     /* Allow some legacy names with '+' in it for compatibility reasons */
     if (name[plen] == '+') {
-        if (plen == 6 && g_str_has_prefix(name, "power")) {
-            /* Allow "power5+" and "power7+" CPU names*/
-            return true;
-        }
         if (plen >= 17 && g_str_has_prefix(name, "Sun-UltraSparc-I")) {
             /* Allow "Sun-UltraSparc-IV+" and "Sun-UltraSparc-IIIi+" */
             return true;
@@ -2231,6 +2227,22 @@ Object *object_resolve_path_at(Object *parent, const char *path)
                                        TYPE_OBJECT);
     }
     return object_resolve_abs_path(parent, parts, TYPE_OBJECT);
+}
+
+Object *object_resolve_type_unambiguous(const char *typename, Error **errp)
+{
+    bool ambig;
+    Object *o = object_resolve_path_type("", typename, &ambig);
+
+    if (ambig) {
+        error_setg(errp, "More than one object of type %s", typename);
+        return NULL;
+    }
+    if (!o) {
+        error_setg(errp, "No object found of type %s", typename);
+        return NULL;
+    }
+    return o;
 }
 
 typedef struct StringProperty
