@@ -545,8 +545,7 @@ static void tegra2_init(MachineState *machine)
     sysbus_create_simple("tegra.pg", 0x60000000, NULL);
 
     /* PIO ethernet */
-    if (nd_table[0].used)
-        lan9118_init(&nd_table[0], 0xA0000000, DIRQ(INT_SW_RESERVED));
+    lan9118_init(0xA0000000, DIRQ(INT_SW_RESERVED));
 
     /* Multi-CPU shared resources access arbitration */
     tegra_arb_sema_dev = sysbus_create_varargs("tegra.arb_sema",
