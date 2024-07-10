@@ -101,6 +101,7 @@ static void arm7tdmi_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_V4T);
     set_feature(&cpu->env, ARM_FEATURE_NOCP15);
     set_feature(&cpu->env, ARM_FEATURE_ABORT_BU);
+    set_feature(&cpu->env, ARM_FEATURE_PMSA); // For disabling alignment enforcement.
     cpu->midr = 0x41807000;
     cpu->reset_sctlr = 0x00000070;
 }
