@@ -37,7 +37,7 @@ typedef struct tegra_dvfs_state {
     SysBusDevice parent_obj;
 
     MemoryRegion iomem;
-    uint32_t regs[0x78>>2];
+    uint32_t regs[0x170>>2];
 } tegra_dvfs;
 
 static const VMStateDescription vmstate_tegra_dvfs = {
@@ -45,7 +45,7 @@ static const VMStateDescription vmstate_tegra_dvfs = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(regs, tegra_dvfs, 0x78>>2),
+        VMSTATE_UINT32_ARRAY(regs, tegra_dvfs, 0x170>>2),
         VMSTATE_END_OF_LIST()
     }
 };
