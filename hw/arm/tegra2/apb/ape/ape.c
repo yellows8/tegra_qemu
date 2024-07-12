@@ -159,6 +159,7 @@ static void tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id, bool 
                         size_t bufoff = chan_regs[0x44>>2] >= chan_regs[0x30>>2] ? chan_regs[0x44>>2] - chan_regs[0x30>>2] : 0; // TC_0, TC_STATUS_0
 
                         size_t copysize = MIN(transfer_fifosize, chan_regs[0x30>>2]);
+                        copysize = MIN(avail, copysize);
 
                         transfer_size = copysize;
                         if (databuf) {
