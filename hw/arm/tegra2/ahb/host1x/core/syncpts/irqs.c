@@ -29,6 +29,7 @@
 #define lock_irqs()     qemu_mutex_lock(&irq_mutex)
 #define unlock_irqs()   qemu_mutex_unlock(&irq_mutex)
 
+static uint32_t syncpt_intmask;
 static uint32_t syncpts_irq_sts;
 static uint32_t syncpts_percpu_irq_sts[HOST1X_CPUS_NB][NV_HOST1X_SYNCPT_NB_PTS/32];
 static uint32_t syncpts_percpu_dst_mask[HOST1X_CPUS_NB][NV_HOST1X_SYNCPT_NB_PTS/32];
@@ -37,6 +38,16 @@ static qemu_irq *cpu_syncpts_irq;
 static qemu_irq *cop_syncpts_irq;
 
 static QemuMutex irq_mutex;
+
+inline uint32_t host1x_get_syncpt_intmask(void)
+{
+    return syncpt_intmask;
+}
+
+inline void host1x_set_syncpt_intmask(uint32_t value)
+{
+    syncpt_intmask = value;
+}
 
 inline uint32_t host1x_get_syncpts_irq_status(void)
 {
@@ -92,6 +103,11 @@ static void host1x_set_irq_status_bit(enum hcpu cpu_id, bool enable)
 {
     uint32_t irq_mask = (1 << 30) << cpu_id;
     int sts_updated;
+
+    if (tegra_board >= TEGRAX1_BOARD && enable) {
+        irq_mask &= syncpt_intmask << 30;
+        if (!irq_mask) return;
+    }
 
     if (enable) {
         sts_updated = !(syncpts_irq_sts & irq_mask);
@@ -237,6 +253,8 @@ void host1x_init_syncpts_irq(qemu_irq *cpu_irq, qemu_irq *cop_irq)
 void host1x_reset_syncpt_irqs(void)
 {
     enum hcpu cpu_id;
+
+    syncpt_intmask = 0;
 
     syncpts_irq_sts = 0;
 

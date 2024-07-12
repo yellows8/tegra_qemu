@@ -59,6 +59,8 @@ void host1x_init_syncpts(void);
 void host1x_reset_syncpts(void);
 int host1x_syncpt_threshold_is_crossed(uint32_t syncpt_id);
 
+uint32_t host1x_get_syncpt_intmask(void);
+void host1x_set_syncpt_intmask(uint32_t value);
 uint32_t host1x_get_syncpts_irq_status(void);
 uint32_t host1x_get_syncpts_cpu_irq_status(uint32_t index);
 uint32_t host1x_get_syncpts_cop_irq_status(uint32_t index);
