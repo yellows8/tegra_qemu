@@ -267,16 +267,17 @@ static void tegra_apb_misc_update_slave_sec(tegra_apb_misc *s)
     uint32_t regval=0;
 
     for (int index=0; index<NUM_IRQS/16; index++) {
+        int bitoff = (index & 1)*16;
         regval = tegra_apb_misc_get_slave_sec(s, index/2);
 
         for (int i=0; i<16; i++) { // Update the output for tz-ppc cfg_nonsec.
-            qemu_set_irq(s->cfg_nonsec[index*16 + i], (regval & BIT(i)) == 0);
+            qemu_set_irq(s->cfg_nonsec[index*16 + i], (regval & BIT(bitoff + i)) == 0);
         }
 
         // tz-ppc doesn't support allowing both insecure and secure at the same time, via the GPIOs. Update the nonsec_mask prop to disable secure attr validation for bits which allow insecure access.
         if (tegra_tz_ppc_devs[index]) {
             TZPPC *tz = TZ_PPC(tegra_tz_ppc_devs[index]);
-            tz->nonsec_mask = ((~regval) >> ((index & 1)*16)) & 0xFFFF;
+            tz->nonsec_mask = ((~regval) >> bitoff) & 0xFFFF;
         }
     }
 }
