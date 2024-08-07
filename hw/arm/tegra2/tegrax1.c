@@ -1597,9 +1597,6 @@ static void __tegrax1_init(MachineState *machine)
 
     /* Setup APE addrspace. */
 
-    /*memory_region_add_and_init_ram(ape_sysmem, "tegra.ape-arom",
-                                   0x00000000, SZ_4M, RO);*/
-
     memory_region_add_and_init_ram(ape_sysmem, "tegra.ape-aram",
                                    0x00400000, SZ_8M, RW);
 
@@ -1670,7 +1667,7 @@ static void __tegrax1_init(MachineState *machine)
                                 0x702F8000+0x2000,
                                 0x00C00000+0x100, 0x100);
 
-    // Mirror AMC EVP regs into the exception vectors. (Not sure if correct but whatever)
+    // Mirror AMC EVP regs into the exception vectors.
     tegra_memory_region_add_alias(ape_sysmem, "tegra.ape-evp", sysmem,
                                 0x00000000,
                                 0x702EF000+0x700, 0x40);
