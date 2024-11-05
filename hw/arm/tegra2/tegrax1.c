@@ -1565,7 +1565,7 @@ static void __tegrax1_init(MachineState *machine)
 
     tegra_memory_region_add_alias(cop_sysmem, "tegra.bpmp-IROM_LOVEC", sysmem,
                                 BOOTROM_LOVEC_BASE,
-                                BOOTROM_LOVEC_BASE, 0x1000);
+                                BOOTROM_LOVEC_BASE, 0x1400);
 
     tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-IROM", sysmem,
                                 TEGRA_IROM_BASE,

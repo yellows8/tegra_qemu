@@ -115,16 +115,19 @@ static uint64_t tegra_evp_priv_read(void *opaque, hwaddr offset,
     if (offset & 3)
         goto out;
 
-    switch (offset) {
-    case EVP_RESET_VECTOR_OFFSET ... EVP_PRI_FIQ_VEC_3_OFFSET:
+    offset &= 0x3FF;
+
+    hwaddr tmpoff = offset & 0xFF;
+    switch (tmpoff) {
+    case EVP_RESET_VECTOR_OFFSET ... EVP_FIQ_VECTOR_OFFSET:
+    case EVP_PRI_IRQ_STS_OFFSET:
+    case EVP_PRI_FIQ_STS_OFFSET:
+    case EVP_PRI_IRQ_NUM_0_OFFSET ... EVP_PRI_FIQ_VEC_3_OFFSET:
         cpu_index = tegra_evp_cpu_index(offset);
-        ret = s->evp_regs[cpu_index][(offset & 0xff) >> 2];
-        break;
-    case EVP_CPU_RESET_VECTOR_OFFSET ... EVP_CPU_PRI_FIQ_VEC_3_OFFSET:
-        ret = s->evp_regs[0][(offset & 0xff) >> 2];
-        break;
-    case EVP_COP_RESET_VECTOR_OFFSET ... EVP_COP_PRI_FIQ_VEC_3_OFFSET:
-        ret = s->evp_regs[1][(offset & 0xff) >> 2];
+        ret = s->evp_regs[cpu_index][tmpoff >> 2];
+        if (tmpoff == EVP_PRI_IRQ_STS_OFFSET || tmpoff == EVP_PRI_FIQ_STS_OFFSET ||
+            (tmpoff >= EVP_PRI_IRQ_NUM_0_OFFSET && (tmpoff & 0x4) == 0))
+            ret &= 0xFF;
         break;
     default:
         break;
@@ -141,9 +144,14 @@ static void tegra_evp_priv_write(void *opaque, hwaddr offset,
 {
     tegra_evp *s = opaque;
 
-    switch (offset) {
-    case EVP_CPU_RESET_VECTOR_OFFSET ... EVP_COP_PRI_FIQ_VEC_2_OFFSET:
-        if (!(offset & 3)) {
+    offset &= 0x3FF;
+
+    switch (offset & 0xFF) {
+    case EVP_RESET_VECTOR_OFFSET ... EVP_FIQ_VECTOR_OFFSET:
+    case EVP_PRI_IRQ_STS_OFFSET:
+    case EVP_PRI_FIQ_STS_OFFSET:
+    case EVP_PRI_IRQ_NUM_0_OFFSET ... EVP_PRI_FIQ_VEC_3_OFFSET:
+        if (!(offset & 3) && (offset & 0x300) != 0x0) {
             int cpu_index = tegra_evp_cpu_index(offset);
             int reg_id = (offset & 0xff) >> 2;
 
@@ -179,7 +187,8 @@ static void tegra_evp_lovec_priv_write(void *opaque, hwaddr offset,
 {
     tegra_evp *s = opaque;
 
-    // Not writable.
+    // Only offset >=0x400 is writable.
+    if (offset >= 0x400) tegra_evp_priv_write(s, offset-0x400, value, size);
 
     TRACE_WRITE(s->lovec_mem.addr, offset, 0, value);
 }
@@ -307,7 +316,7 @@ static void tegra_evp_priv_realize(DeviceState *dev, Error **errp)
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_evp_mem_ops, s,
                           "tegra.evp", TEGRA_EXCEPTION_VECTORS_SIZE);
     memory_region_init_io(&s->lovec_mem, OBJECT(dev), &tegra_evp_lovec_ops, s,
-                          "tegra.evp.lovec", TEGRA_EXCEPTION_VECTORS_SIZE);
+                          "tegra.evp.lovec", 0x1400);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->lovec_mem);
 
