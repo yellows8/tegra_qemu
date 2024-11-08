@@ -155,6 +155,9 @@ config AUX
 config UNIMP
     bool
 
+config FIXEDMEM
+    bool
+
 config LED
     bool
 
