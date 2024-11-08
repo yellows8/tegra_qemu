@@ -198,6 +198,8 @@ void tegra_evp_reset(DeviceState *dev, ShutdownCause cause)
     tegra_evp *s = TEGRA_EVP(dev);
     int i;
 
+    uint32_t resetval = tegra_board < TEGRAX1_BOARD ? 0x80 : 0xC0;
+
     s->evp_regs[0][0] = s->cpu_reset_vector;
     s->evp_regs[1][0] = cause != SHUTDOWN_CAUSE_GUEST_RESET ? s->cold_bpmp_reset_vector : s->bpmp_reset_vector;
 
@@ -210,37 +212,41 @@ void tegra_evp_reset(DeviceState *dev, ShutdownCause cause)
         s->evp_regs[i][6]  = EVP_IRQ_VECTOR_RESET;
         s->evp_regs[i][7]  = EVP_FIQ_VECTOR_RESET;
         s->evp_regs[i][8]  = EVP_IRQ_STS_RESET;
-        s->evp_regs[i][9]  = EVP_PRI_IRQ_STS_RESET;
+        s->evp_regs[i][9]  = resetval;
         s->evp_regs[i][10] = EVP_FIQ_STS_RESET;
-        s->evp_regs[i][11] = EVP_PRI_FIQ_STS_RESET;
-        s->evp_regs[i][12] = EVP_PRI_IRQ_NUM_0_RESET;
+        s->evp_regs[i][11] = resetval;
+        s->evp_regs[i][12] = resetval;
         s->evp_regs[i][13] = EVP_PRI_IRQ_VEC_0_RESET;
-        s->evp_regs[i][14] = EVP_PRI_IRQ_NUM_1_RESET;
+        s->evp_regs[i][14] = resetval;
         s->evp_regs[i][15] = EVP_PRI_IRQ_VEC_1_RESET;
-        s->evp_regs[i][16] = EVP_PRI_IRQ_NUM_2_RESET;
+        s->evp_regs[i][16] = resetval;
         s->evp_regs[i][17] = EVP_PRI_IRQ_VEC_2_RESET;
-        s->evp_regs[i][18] = EVP_PRI_IRQ_NUM_3_RESET;
+        s->evp_regs[i][18] = resetval;
         s->evp_regs[i][19] = EVP_PRI_IRQ_VEC_3_RESET;
-        s->evp_regs[i][20] = EVP_PRI_IRQ_NUM_4_RESET;
+        s->evp_regs[i][20] = resetval;
         s->evp_regs[i][21] = EVP_PRI_IRQ_VEC_4_RESET;
-        s->evp_regs[i][22] = EVP_PRI_IRQ_NUM_5_RESET;
+        s->evp_regs[i][22] = resetval;
         s->evp_regs[i][23] = EVP_PRI_IRQ_VEC_5_RESET;
-        s->evp_regs[i][24] = EVP_PRI_IRQ_NUM_6_RESET;
+        s->evp_regs[i][24] = resetval;
         s->evp_regs[i][25] = EVP_PRI_IRQ_VEC_6_RESET;
-        s->evp_regs[i][26] = EVP_PRI_IRQ_NUM_7_RESET;
+        s->evp_regs[i][26] = resetval;
         s->evp_regs[i][27] = EVP_PRI_IRQ_VEC_7_RESET;
-        s->evp_regs[i][28] = EVP_PRI_FIQ_NUM_0_RESET;
+        s->evp_regs[i][28] = resetval;
         s->evp_regs[i][29] = EVP_PRI_FIQ_VEC_0_RESET;
-        s->evp_regs[i][30] = EVP_PRI_FIQ_NUM_1_RESET;
+        s->evp_regs[i][30] = resetval;
         s->evp_regs[i][31] = EVP_PRI_FIQ_VEC_1_RESET;
-        s->evp_regs[i][32] = EVP_PRI_FIQ_NUM_2_RESET;
+        s->evp_regs[i][32] = resetval;
         s->evp_regs[i][33] = EVP_PRI_FIQ_VEC_2_RESET;
-        s->evp_regs[i][34] = EVP_PRI_FIQ_NUM_3_RESET;
+        s->evp_regs[i][34] = resetval;
         s->evp_regs[i][35] = EVP_PRI_FIQ_VEC_3_RESET;
     }
 
-    for (i = 1; i < 0x20>>2; i++) {
-        s->evp_regs[1][i] = TEGRA_IROM_BASE + (i<<2);
+    if (tegra_board >= TEGRAX1_BOARD) {
+        for (int cpu_index = 0; cpu_index < 2; cpu_index++) {
+            for (i = 1; i < 0x20>>2; i++) {
+                s->evp_regs[cpu_index][i] = TEGRA_IROM_BASE + (i<<2);
+            }
+        }
     }
 }
 
