@@ -47,6 +47,7 @@
 #include "hw/intc/arm_gicv3_common.h"
 #include "hw/intc/arm_gicv3_its_common.h"
 #include "hw/misc/tz-ppc.h"
+#include "hw/misc/fixedmem.h"
 #include "hw/arm/bsa.h"
 #include "hw/arm/fdt.h"
 #include "sysemu/device_tree.h"
@@ -776,6 +777,12 @@ static void __tegrax1_init(MachineState *machine)
     /* MSELECT */
     tegra_mselect_dev = sysbus_create_simple("tegra.mselect",
                                          TEGRA_MSELECT_BASE, NULL);
+
+    /* Fixedmem which returns "b ." as fallback for memory which doesn't have other devices. */
+    create_fixedmem_device("tegra.irom_lovec_fixedmem",
+                           BOOTROM_LOVEC_BASE,
+                           SZ_16M,
+                           0xeafffffeeafffffe);
 
     /* Exception vectors */
     tegra_evp_dev = qdev_new("tegra.evp");
@@ -1563,13 +1570,17 @@ static void __tegrax1_init(MachineState *machine)
                                 0xC0000000,
                                 0xC0000000, SZ_128M + SZ_1K + SZ_512);*/
 
-    tegra_memory_region_add_alias(cop_sysmem, "tegra.bpmp-IROM_LOVEC", sysmem,
+    /*tegra_memory_region_add_alias(cop_sysmem, "tegra.bpmp-IROM_LOVEC", sysmem,
                                 BOOTROM_LOVEC_BASE,
                                 BOOTROM_LOVEC_BASE, 0x1400);
 
     tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-IROM", sysmem,
                                 TEGRA_IROM_BASE,
-                                TEGRA_IROM_BASE, TEGRA_IROM_SIZE);
+                                TEGRA_IROM_BASE, TEGRA_IROM_SIZE);*/
+
+    tegra_memory_region_add_alias(cop_sysmem, "tegra.bpmp-IROM_LOVEC", sysmem,
+                                BOOTROM_LOVEC_BASE,
+                                BOOTROM_LOVEC_BASE, SZ_16M);
 
     /*tegra_memory_region_add_alias(cop_sysmem, "tegra.cop-bootmon", sysmem,
                                 BOOTMON_BASE,

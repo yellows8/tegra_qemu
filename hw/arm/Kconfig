@@ -727,3 +727,4 @@ config TEGRA2
     select USB_EHCI_SYSBUS
     select USB_XHCI_SYSBUS
     select FTM3BD56
+    select FIXEDMEM
