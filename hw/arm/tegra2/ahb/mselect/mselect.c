@@ -113,7 +113,7 @@ static void tegra_mselect_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_mselect_priv_realize;
     dc->vmsd = &vmstate_tegra_mselect;
-    dc->reset = tegra_mselect_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_mselect_priv_reset);
 }
 
 static const TypeInfo tegra_mselect_info = {

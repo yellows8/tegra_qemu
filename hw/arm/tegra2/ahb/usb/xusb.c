@@ -168,7 +168,7 @@ static void tegra_xusb_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->vmsd = &vmstate_tegra_xusb;
-    dc->reset = tegra_xusb_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_xusb_priv_reset);
 
     set_bit(DEVICE_CATEGORY_USB, dc->categories);
 }

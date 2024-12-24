@@ -142,7 +142,7 @@ static void tegra_dsi_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, tegra_dsi_properties);
     dc->realize = tegra_dsi_priv_realize;
     dc->vmsd = &vmstate_tegra_dsi;
-    dc->reset = tegra_dsi_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_dsi_priv_reset);
 }
 
 static const TypeInfo tegra_dsi_info = {

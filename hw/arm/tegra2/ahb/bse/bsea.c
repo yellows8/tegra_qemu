@@ -498,7 +498,7 @@ static void tegra_bse_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, tegra_bse_props);
     dc->realize = tegra_bse_priv_realize;
     dc->vmsd = &vmstate_tegra_bse;
-    dc->reset = tegra_bse_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_bse_priv_reset);
 }
 
 static const TypeInfo tegra_bse_info = {

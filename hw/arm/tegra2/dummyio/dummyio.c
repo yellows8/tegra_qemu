@@ -121,7 +121,7 @@ static void tegra_dummyio_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, tegra_dummyio_properties);
     dc->realize = tegra_dummyio_priv_realize;
     dc->vmsd = &vmstate_tegra_dummyio;
-    dc->reset = tegra_dummyio_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_dummyio_priv_reset);
 }
 
 static const TypeInfo tegra_dummyio_info = {

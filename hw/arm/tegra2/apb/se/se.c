@@ -201,8 +201,8 @@ static void se_log_hexdump(const char *prefix,
 typedef struct QCryptoGcryptRSA {
     QCryptoAkCipher akcipher;
     gcry_sexp_t key;
-    QCryptoRSAPaddingAlgorithm padding_alg;
-    QCryptoHashAlgorithm hash_alg;
+    QCryptoRSAPaddingAlgo padding_alg;
+    QCryptoHashAlgo hash_alg;
 } QCryptoGcryptRSA;
 
 static void byteswap_rsa(uint32_t *p, uint32_t *outptr, size_t size) { // SE uses little-endian, convert to/from big-endian.
@@ -302,7 +302,7 @@ static QCryptoGcryptRSA *qcrypto_gcrypt_rsa_new(
         }
         break;*/
 
-    case QCRYPTO_AKCIPHER_KEY_TYPE_PUBLIC:
+    case QCRYPTO_AK_CIPHER_KEY_TYPE_PUBLIC:
         if (qcrypto_gcrypt_parse_rsa_public_key_raw(rsa, n, n_size, e, e_size, errp) != 0) {
             goto error;
         }
@@ -327,7 +327,7 @@ static QCryptoAkCipher *qcrypto_akcipher_new_raw(const QCryptoAkCipherOptions *o
                                       Error **errp)
 {
     switch (opts->alg) {
-    case QCRYPTO_AKCIPHER_ALG_RSA:
+    case QCRYPTO_AK_CIPHER_ALGO_RSA:
         return (QCryptoAkCipher *)qcrypto_gcrypt_rsa_new(
             &opts->u.rsa, type, n, n_size, e, e_size, errp);
 
@@ -623,16 +623,16 @@ static const struct QCryptoCipherDriver qcrypto_cipher_aes_driver_cbc = {
     .cipher_free = qcrypto_cipher_ctx_free,
 };
 
-static QCryptoCipher *qcrypto_cipher_ctx_new(QCryptoCipherAlgorithm alg,
+static QCryptoCipher *qcrypto_cipher_ctx_new(QCryptoCipherAlgo alg,
                                              QCryptoCipherMode mode,
                                              const uint8_t *key,
                                              size_t nkey,
                                              Error **errp)
 {
     switch (alg) {
-    case QCRYPTO_CIPHER_ALG_AES_128:
-    case QCRYPTO_CIPHER_ALG_AES_192:
-    case QCRYPTO_CIPHER_ALG_AES_256:
+    case QCRYPTO_CIPHER_ALGO_AES_128:
+    case QCRYPTO_CIPHER_ALGO_AES_192:
+    case QCRYPTO_CIPHER_ALGO_AES_256:
         {
             QCryptoCipherBuiltinAES *ctx;
             const QCryptoCipherDriver *drv;
@@ -673,7 +673,7 @@ static QCryptoCipher *qcrypto_cipher_ctx_new(QCryptoCipherAlgorithm alg,
     default:
         error_setg(errp,
                    "Unsupported cipher algorithm %s",
-                   QCryptoCipherAlgorithm_str(alg));
+                   QCryptoCipherAlgo_str(alg));
         return NULL;
     }
 
@@ -688,7 +688,7 @@ static MemTxAttrs tegra_se_get_memattrs(tegra_se *s)
     return (MemTxAttrs){ .secure = 1 };
 }
 
-int tegra_se_crypto_operation(void *opaque, void* key, void* iv, QCryptoCipherAlgorithm cipher_alg, QCryptoCipherMode mode, bool encrypt, uintptr_t inbuf, uintptr_t outbuf, dma_addr_t databuf_size, bool inbuf_host, bool outbuf_host)
+int tegra_se_crypto_operation(void *opaque, void* key, void* iv, QCryptoCipherAlgo cipher_alg, QCryptoCipherMode mode, bool encrypt, uintptr_t inbuf, uintptr_t outbuf, dma_addr_t databuf_size, bool inbuf_host, bool outbuf_host)
 {
     tegra_se *s = opaque;
     Error *err = NULL;
@@ -914,7 +914,7 @@ static void tegra_se_auto_save_context(tegra_se *s)
 
     memcpy(&data[(size-0x10)>>2], fixed_pattern, sizeof(fixed_pattern));
 
-    tegra_se_crypto_operation(s, key, iv, QCRYPTO_CIPHER_ALG_AES_128,
+    tegra_se_crypto_operation(s, key, iv, QCRYPTO_CIPHER_ALGO_AES_128,
                               QCRYPTO_CIPHER_MODE_CBC, true,
                               (uintptr_t)data, context_addr,
                               size, true, false);
@@ -1127,18 +1127,18 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     else {
                         uint32_t tmpmode = encrypt ? enc_mode : dec_mode;
 
-                        QCryptoCipherAlgorithm cipher_alg = QCRYPTO_CIPHER_ALG__MAX;
+                        QCryptoCipherAlgo cipher_alg = QCRYPTO_CIPHER_ALGO__MAX;
                         switch (tmpmode) {
                             case SE_CONFIG_ENC_MODE_AESMODE_KEY128:
-                                cipher_alg = QCRYPTO_CIPHER_ALG_AES_128;
+                                cipher_alg = QCRYPTO_CIPHER_ALGO_AES_128;
                             break;
 
                             case SE_CONFIG_ENC_MODE_AESMODE_KEY192:
-                                cipher_alg = QCRYPTO_CIPHER_ALG_AES_192;
+                                cipher_alg = QCRYPTO_CIPHER_ALGO_AES_192;
                             break;
 
                             case SE_CONFIG_ENC_MODE_AESMODE_KEY256:
-                                cipher_alg = QCRYPTO_CIPHER_ALG_AES_256;
+                                cipher_alg = QCRYPTO_CIPHER_ALGO_AES_256;
                             break;
 
                             default:
@@ -1162,7 +1162,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                             }
                         }
 
-                        if (cipher_alg!=QCRYPTO_CIPHER_ALG__MAX && mode!=QCRYPTO_CIPHER_MODE__MAX) {
+                        if (cipher_alg!=QCRYPTO_CIPHER_ALGO__MAX && mode!=QCRYPTO_CIPHER_MODE__MAX) {
                             QCryptoCipher *cipher = qcrypto_cipher_ctx_new(cipher_alg, mode, key, qcrypto_cipher_get_key_len(cipher_alg), &err);
 
                             if (cipher) {
@@ -1263,7 +1263,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     }
                 }
                 else if (enc_alg == 0x2) { // CONFIG_ENC_ALG RNG
-                    datasize = (s->regs.SE_CRYPTO_LAST_BLOCK+1)*qcrypto_cipher_get_block_len(QCRYPTO_CIPHER_ALG_AES_128);
+                    datasize = (s->regs.SE_CRYPTO_LAST_BLOCK+1)*qcrypto_cipher_get_block_len(QCRYPTO_CIPHER_ALGO_AES_128);
                     if(datasize>databuf_outsize) datasize = databuf_outsize;
                     qemu_guest_getrandom(databuf_out, datasize, &err);
                     //se_log_hexdump("tegra_se_rng_output", databuf_out, datasize);
@@ -1271,26 +1271,26 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                 else if (enc_alg == 0x3) { // CONFIG_ENC_ALG SHA
                     datasize = s->regs.SE_SHA_MSG_LENGTH[0]/8;
                     s->regs.SE_SHA_MSG_LEFT[0] = 0;
-                    QCryptoHashAlgorithm hash_alg = QCRYPTO_HASH_ALG__MAX;
+                    QCryptoHashAlgo hash_alg = QCRYPTO_HASH_ALGO__MAX;
                     switch (enc_mode) {
                        case SE_CONFIG_ENC_MODE_SHA1:
-                           hash_alg = QCRYPTO_HASH_ALG_SHA1;
+                           hash_alg = QCRYPTO_HASH_ALGO_SHA1;
                        break;
 
                        case SE_CONFIG_ENC_MODE_SHA224:
-                           hash_alg = QCRYPTO_HASH_ALG_SHA224;
+                           hash_alg = QCRYPTO_HASH_ALGO_SHA224;
                        break;
 
                        case SE_CONFIG_ENC_MODE_SHA256:
-                           hash_alg = QCRYPTO_HASH_ALG_SHA256;
+                           hash_alg = QCRYPTO_HASH_ALGO_SHA256;
                        break;
 
                        case SE_CONFIG_ENC_MODE_SHA384:
-                           hash_alg = QCRYPTO_HASH_ALG_SHA384;
+                           hash_alg = QCRYPTO_HASH_ALGO_SHA384;
                        break;
 
                        case SE_CONFIG_ENC_MODE_SHA512:
-                           hash_alg = QCRYPTO_HASH_ALG_SHA512;
+                           hash_alg = QCRYPTO_HASH_ALGO_SHA512;
                        break;
 
                        default:
@@ -1298,7 +1298,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                        break;
                    }
 
-                   if (hash_alg!=QCRYPTO_HASH_ALG__MAX) {
+                   if (hash_alg!=QCRYPTO_HASH_ALGO__MAX) {
                        dma_addr_t tmplen = in_entry.size;
                        void* databuf = dma_memory_map(&address_space_memory, in_entry.address, &tmplen, DMA_DIRECTION_TO_DEVICE, tegra_se_get_memattrs(s));
 
@@ -1353,10 +1353,10 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     se_log_hexdump("tegra_se_rsa_e_buf", e_buf, e_size);
                     #endif
 
-                    QCryptoAkCipherOptions opts = { .alg = QCRYPTO_AKCIPHER_ALG_RSA };
-                    opts.u.rsa.hash_alg = QCRYPTO_HASH_ALG__MAX;
-                    opts.u.rsa.padding_alg = QCRYPTO_RSA_PADDING_ALG_RAW;
-                    QCryptoAkCipher *akcipher = qcrypto_akcipher_new_raw(&opts, QCRYPTO_AKCIPHER_KEY_TYPE_PUBLIC,
+                    QCryptoAkCipherOptions opts = { .alg = QCRYPTO_AK_CIPHER_ALGO_RSA };
+                    opts.u.rsa.hash_alg = QCRYPTO_HASH_ALGO__MAX;
+                    opts.u.rsa.padding_alg = QCRYPTO_RSA_PADDING_ALGO_RAW;
+                    QCryptoAkCipher *akcipher = qcrypto_akcipher_new_raw(&opts, QCRYPTO_AK_CIPHER_KEY_TYPE_PUBLIC,
                                       (const uint8_t*)&n_buf, n_size,
                                       (const uint8_t*)&e_buf, e_size,
                                       &err);
@@ -1602,7 +1602,7 @@ static void tegra_se_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, tegra_se_properties);
     dc->realize = tegra_se_priv_realize;
     dc->vmsd = &vmstate_tegra_se;
-    dc->reset = tegra_se_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_se_priv_reset);
 
     object_class_property_add(klass, "aes-keyslots-lock", "uint",
                               NULL,

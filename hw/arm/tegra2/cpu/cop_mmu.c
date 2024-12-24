@@ -202,7 +202,7 @@ static void tegra_cop_mmu_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_cop_mmu_priv_realize;
     dc->vmsd = &vmstate_tegra_cop_mmu;
-    dc->reset = tegra_cop_mmu_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_cop_mmu_priv_reset);
 }
 
 static const TypeInfo tegra_cop_mmu_info = {

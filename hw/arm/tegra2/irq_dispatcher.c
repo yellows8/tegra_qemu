@@ -160,7 +160,7 @@ static void tegra_irq_dispatcher_class_init(ObjectClass *klass, void *data)
 
     device_class_set_props(dc, tegra_irq_dispatcher_properties);
     dc->realize = tegra_irq_dispatcher_realize;
-    dc->reset = tegra_irq_dispatcher_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_irq_dispatcher_priv_reset);
 }
 
 static const TypeInfo tegra_irq_dispatcher_info = {

@@ -850,7 +850,7 @@ static void tegra_flow_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, tegra_flow_properties);
     dc->realize = tegra_flow_priv_realize;
     dc->vmsd = &vmstate_tegra_flow;
-    dc->reset = tegra_flow_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_flow_priv_reset);
 }
 
 static const TypeInfo tegra_flow_info = {

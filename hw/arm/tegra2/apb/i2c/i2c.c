@@ -616,7 +616,7 @@ static void tegra_i2c_class_init(ObjectClass *oc, void *data)
     DeviceClass *dc = DEVICE_CLASS(oc);
 
     device_class_set_props(dc, tegra_i2c_props);
-    dc->reset = tegra_i2c_reset;
+    device_class_set_legacy_reset(dc, tegra_i2c_reset);
     dc->vmsd = &tegra_i2c_vmstate;
 }
 

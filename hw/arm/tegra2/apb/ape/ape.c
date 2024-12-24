@@ -484,7 +484,7 @@ static void tegra_ape_class_init(ObjectClass *klass, void *data)
     dc->realize = tegra_ape_priv_realize;
     set_bit(DEVICE_CATEGORY_SOUND, dc->categories);
     dc->vmsd = &vmstate_tegra_ape;
-    dc->reset = tegra_ape_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_ape_priv_reset);
     device_class_set_props(dc, tegra_ape_device_properties);
 }
 

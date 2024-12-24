@@ -306,7 +306,7 @@ static void tegra_gr2d_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_gr2d_priv_realize;
     dc->vmsd = &vmstate_tegra_gr2d;
-    dc->reset = tegra_gr2d_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_gr2d_priv_reset);
 }
 
 static const TypeInfo tegra_gr2d_info = {

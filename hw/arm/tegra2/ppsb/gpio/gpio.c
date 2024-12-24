@@ -409,7 +409,7 @@ static void tegra_gpio_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_gpio_priv_realize;
     dc->vmsd = &vmstate_tegra_gpio;
-    dc->reset = tegra_gpio_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_gpio_priv_reset);
 
     for (int bank=0; bank<BANKS_NB; bank++) {
         for (int port=0; port<PORTS_NB; port++) {

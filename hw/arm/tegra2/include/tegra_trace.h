@@ -20,13 +20,6 @@
 /* WARNING: HACK */
 
 #include "hw/irq.h"
-struct IRQState {
-    Object parent_obj;
-
-    qemu_irq_handler handler;
-    void *opaque;
-    int n;
-};
 
 #ifdef TEGRA_TRACE
 

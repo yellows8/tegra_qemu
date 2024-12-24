@@ -272,7 +272,7 @@ static void tegra_pinmuxaux_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_pinmuxaux_priv_realize;
     dc->vmsd = &vmstate_tegra_pinmuxaux;
-    dc->reset = tegra_pinmuxaux_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_pinmuxaux_priv_reset);
 }
 
 static const TypeInfo tegra_pinmuxaux_info = {

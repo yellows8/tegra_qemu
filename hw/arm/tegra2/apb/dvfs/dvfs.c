@@ -155,7 +155,7 @@ static void tegra_dvfs_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_dvfs_priv_realize;
     dc->vmsd = &vmstate_tegra_dvfs;
-    dc->reset = tegra_dvfs_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_dvfs_priv_reset);
 }
 
 static const TypeInfo tegra_dvfs_info = {

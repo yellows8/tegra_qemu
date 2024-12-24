@@ -119,7 +119,7 @@ static void tegra_vde_tfe_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = tegra_vde_tfe_priv_realize;
-    dc->reset = tegra_vde_tfe_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_vde_tfe_priv_reset);
 }
 
 static const TypeInfo tegra_tfe_info = {

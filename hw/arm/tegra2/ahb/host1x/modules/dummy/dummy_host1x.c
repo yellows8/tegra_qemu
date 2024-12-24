@@ -131,7 +131,7 @@ static void tegra_host1x_dummy_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, tegra_host1x_dummy_properties);
     dc->realize = tegra_host1x_dummy_priv_realize;
     dc->vmsd = &vmstate_tegra_host1x_dummy;
-    dc->reset = tegra_host1x_dummy_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_host1x_dummy_priv_reset);
 }
 
 static const TypeInfo tegra_host1x_dummy_info = {

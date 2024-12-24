@@ -135,7 +135,10 @@ static void remote_io_connect(void)
 
         printf("remote_io: connecting to %s ...\n", remote_addr);
 
-        sock = inet_connect(remote_addr, &err);
+        InetSocketAddress addr={};
+        if (!inet_parse(&addr, remote_addr, &err)) {
+            sock = inet_connect_saddr(&addr, &err);
+        }
 
         if (sock < 0) {
             error_report_err(err);

@@ -275,7 +275,7 @@ static void tegra_usb_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->vmsd = &vmstate_tegra_usb;
-    dc->reset = tegra_usb_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_usb_priv_reset);
 
     set_bit(DEVICE_CATEGORY_USB, dc->categories);
 }

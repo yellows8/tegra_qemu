@@ -1571,7 +1571,7 @@ static void tegra_emc_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_emc_priv_realize;
     dc->vmsd = &vmstate_tegra_emc;
-    dc->reset = tegra_emc_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_emc_priv_reset);
 }
 
 static const TypeInfo tegra_emc_info = {

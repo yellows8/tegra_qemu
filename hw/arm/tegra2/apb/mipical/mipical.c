@@ -103,7 +103,7 @@ static void tegra_mipical_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_mipical_priv_realize;
     dc->vmsd = &vmstate_tegra_mipical;
-    dc->reset = tegra_mipical_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_mipical_priv_reset);
 }
 
 static const TypeInfo tegra_mipical_info = {

@@ -137,7 +137,7 @@ static void tegra_arb_gnt_ictlr_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, tegra_arb_gnt_ictlr_properties);
     dc->vmsd = &vmstate_tegra_arb_gnt_ictlr;
     dc->realize = tegra_arb_gnt_ictlr_realize;
-    dc->reset = tegra_arb_gnt_ictlr_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_arb_gnt_ictlr_priv_reset);
 }
 
 static const TypeInfo tegra_arb_gnt_ictlr_info = {

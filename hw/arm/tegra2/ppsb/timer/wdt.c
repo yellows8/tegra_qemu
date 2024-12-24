@@ -268,7 +268,7 @@ static void tegra_wdt_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_wdt_priv_realize;
     dc->vmsd = &vmstate_tegra_wdt;
-    dc->reset = tegra_wdt_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_wdt_priv_reset);
 }
 
 static const TypeInfo tegra_wdt_info = {

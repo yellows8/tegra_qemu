@@ -112,7 +112,7 @@ static void tegra_avpcache_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_avpcache_priv_realize;
     dc->vmsd = &vmstate_tegra_avpcache;
-    dc->reset = tegra_avpcache_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_avpcache_priv_reset);
 }
 
 static const TypeInfo tegra_avpcache_info = {

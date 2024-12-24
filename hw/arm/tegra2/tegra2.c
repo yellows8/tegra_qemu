@@ -31,7 +31,7 @@
 #include "hw/sysbus.h"
 #include "hw/arm/boot.h"
 #include "hw/loader.h"
-#include "hw/char/serial.h"
+#include "hw/char/serial-mm.h"
 #include "hw/sd/sdhci.h"
 #include "hw/net/lan9118.h"
 #include "sysemu/reset.h"
@@ -418,7 +418,6 @@ static void tegra2_init(MachineState *machine)
         blk = di ? blk_by_legacy_dinfo(di) : NULL;
         carddev = qdev_new(TYPE_SD_CARD);
         qdev_prop_set_drive(carddev, "drive", blk);
-        qdev_prop_set_bit(carddev, "emmc", false);
         qdev_realize_and_unref(carddev, qdev_get_child_bus(tegra_sdmmc4_dev, "sd-bus"), &error_fatal);
 
 //         tegra_sdmmc4_dev = sysbus_create_simple("tegra.sdhci",
@@ -654,11 +653,13 @@ static void tegra2_init_board_picasso(MachineState *state)
     tegra2_init(state);
 }
 
-static void tegra2_reset(MachineState *state, ShutdownCause cause)
+static void tegra2_reset(MachineState *state, ResetType type)
 {
 //     remote_io_init("10.1.1.3:45312");
     tegra_trace_init();
-    qemu_devices_reset(cause);
+    qemu_devices_reset(type);
+
+    ShutdownCause cause = SHUTDOWN_CAUSE_NONE; // TODO: How to handle properly? The input ResetType doesn't have guest-reset.
 
     tegra_pmc_reset(tegra_pmc_dev, cause);
 

@@ -426,7 +426,7 @@ static void tegra_rtc_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_rtc_priv_realize;
     dc->vmsd = &vmstate_tegra_rtc;
-    dc->reset = tegra_rtc_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_rtc_priv_reset);
 }
 
 static const TypeInfo tegra_rtc_info = {

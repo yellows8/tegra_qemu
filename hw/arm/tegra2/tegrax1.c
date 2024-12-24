@@ -37,7 +37,7 @@
 #include "hw/sysbus.h"
 #include "hw/arm/boot.h"
 #include "hw/loader.h"
-#include "hw/char/serial.h"
+#include "hw/char/serial-mm.h"
 #include "hw/sd/sdhci.h"
 #include "hw/cpu/a9mpcore.h"
 #include "sysemu/reset.h"
@@ -535,10 +535,12 @@ static void* tegra_init_sdmmc(int index, hwaddr base, qemu_irq irq, bool emmc, u
 
     di = drive_get_by_index(IF_SD, index);
     blk = di ? blk_by_legacy_dinfo(di) : NULL;
-    carddev = qdev_new(TYPE_SD_CARD);
+    carddev = qdev_new(emmc ? TYPE_EMMC : TYPE_SD_CARD);
     qdev_prop_set_drive(carddev, "drive", blk);
-    qdev_prop_set_bit(carddev, "emmc", emmc);
-    if (emmc) qdev_prop_set_uint32(carddev, "bootpartsize", bootpartsize);
+    if (emmc) {
+        qdev_prop_set_uint32(carddev, "boot-partition-size", bootpartsize);
+        qdev_prop_set_uint8(carddev, "boot-config", 0x0);
+    }
     qdev_prop_set_bit(carddev, "single-reset", true);
     qdev_realize_and_unref(carddev, qdev_get_child_bus(tmpdev, "sd-bus"), &error_fatal);
     return tmpdev;
@@ -1724,7 +1726,7 @@ static void tegrax1plus_init(MachineState *machine)
     __tegrax1_init(machine);
 }
 
-static void tegrax1_reset(MachineState *state, ShutdownCause cause)
+static void tegrax1_reset(MachineState *state, ResetType type)
 {
 //     remote_io_init("10.1.1.3:45312");
     //tegra_trace_init();
@@ -1733,7 +1735,9 @@ static void tegrax1_reset(MachineState *state, ShutdownCause cause)
         tegra_cpu_reset_assert(i);
     }
 
-    qemu_devices_reset(cause);
+    ShutdownCause cause = SHUTDOWN_CAUSE_NONE; // TODO: How to handle properly? The input ResetType doesn't have guest-reset.
+
+    qemu_devices_reset(type);
 
     tegra_pmc_reset(tegra_pmc_dev, cause);
 

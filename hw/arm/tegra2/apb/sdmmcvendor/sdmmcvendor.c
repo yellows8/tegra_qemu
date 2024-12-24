@@ -104,7 +104,7 @@ static void tegra_sdmmcvendor_class_init(ObjectClass *klass, void *data)
 
     dc->vmsd = &vmstate_tegra_sdmmcvendor;
     dc->realize = tegra_sdmmcvendor_realize;
-    dc->reset = tegra_sdmmcvendor_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_sdmmcvendor_priv_reset);
 }
 
 static const TypeInfo tegra_sdmmcvendor_info = {

@@ -1689,7 +1689,7 @@ static void tegra_mc_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, tegra_mc_properties);
     dc->realize = tegra_mc_priv_realize;
     dc->vmsd = &vmstate_tegra_mc;
-    dc->reset = tegra_mc_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_mc_priv_reset);
 }
 
 static const TypeInfo tegra_mc_info = {

@@ -135,7 +135,7 @@ static void tegra_timer_us_class_init(ObjectClass *klass, void *data)
 
     dc->realize = tegra_timer_us_priv_realize;
     dc->vmsd = &vmstate_tegra_timer_us;
-    dc->reset = tegra_timer_us_priv_reset;
+    device_class_set_legacy_reset(dc, tegra_timer_us_priv_reset);
 }
 
 static const TypeInfo tegra_timer_us_info = {
