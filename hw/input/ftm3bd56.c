@@ -491,7 +491,7 @@ static void ftm3bd56_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     I2CSlaveClass *sc = I2C_SLAVE_CLASS(klass);
 
-    dc->reset = ftm3bd56_reset;
+    device_class_set_legacy_reset(dc, ftm3bd56_reset);
     dc->realize = ftm3bd56_realize;
     dc->unrealize = ftm3bd56_unrealize;
     dc->vmsd = &vmstate_ftm3bd56;
