@@ -55,7 +55,7 @@ static TegraIommuContext *g_tegra_iommu_contexts[TegraIommuDeviceName_Count] = {
 
 // TODO: NX kernel supports 0x80 ASIDs, should we bother implementing hash table lookup for full 7-bit ASID?
 static uint8_t g_tegra_mc_cur_asid = 0;
-static uint32_t g_tegra_mc_asid_ptb_data[0x100] = {0};
+static uint32_t g_tegra_mc_asid_ptb_data[0x80] = {0};
 
 static void tegra_mc_set_iommu_enabled(TegraIommuDeviceName dev) {
     if (g_tegra_iommu_contexts[dev] == NULL)
@@ -1171,7 +1171,7 @@ static void tegra_mc_priv_write(void *opaque, hwaddr offset,
         if (s->is_smmu_mc) {
             TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
             s->regs[offset>>2] = value;
-            g_tegra_mc_cur_asid = value & 0xFF;
+            g_tegra_mc_cur_asid = value & 0x7F;
             s->regs[PTB_DATA_OFFSET>>2] = g_tegra_mc_asid_ptb_data[g_tegra_mc_cur_asid];
         } else {
             TRACE_WRITE(s->iomem.addr, offset, s->emem_arb_cfg2.reg32, value);
@@ -1944,8 +1944,8 @@ IOMMUTLBEntry tegra_mc_iommu_translate_for_device(TegraIommuDeviceName dev, hwad
             break;
     }
 
-    //if (dev == TegraIommuDeviceName_Ape)
-    //    printf("Ape: Translating %p\n", (void*)addr);
+    //if (dev == TegraIommuDeviceName_Gpu)
+    //    printf("Gpu: Translating %p, asid_val=%08"PRIx32"\n", (void*)addr, ctx->asid);
 
     if (!g_smmu_enabled || !(ctx->asid & 0x80000000))
     {
@@ -1963,15 +1963,16 @@ IOMMUTLBEntry tegra_mc_iommu_translate_for_device(TegraIommuDeviceName dev, hwad
     const size_t l1_index = (addr & 0xFFFFFFFF) >> 22;
     const size_t l2_index = (addr & 0x003FFFFF) >> 12;
 
-    const uint32_t ptb_data = g_tegra_mc_asid_ptb_data[(ctx->asid >> (l0_index * 8)) & 0xFF];
-    //const bool asid_readable = ptb_data & (1u<<31);
-    //const bool asid_writable = ptb_data & (1u<<30);
-    //const bool asid_ns       = ptb_data & (1u<<29);
+    const uint32_t ptb_data = g_tegra_mc_asid_ptb_data[(ctx->asid >> (l0_index * 8)) & 0x7F];
 
     const uint64_t asid_pde_base = ((uint64_t)(ptb_data & 0x1FFFFF)) << 12;
-    //printf("!!! Doing translation %" PRIx64", dev=%d, asid=%08" PRIx32", read=%d, write=%d, ns=%d, pde_base=%p\n", (uint64_t)addr, (int)dev, ctx->asid, asid_readable, asid_writable, asid_ns, (void*)asid_pde_base);
-    //printf("l0=%zu, l1=%zu, l2=%zu", l0_index, l1_index, l2_index);
-
+    //if (dev == TegraIommuDeviceName_Gpu) {
+    //    const bool asid_readable = ptb_data & (1u<<31);
+    //    const bool asid_writable = ptb_data & (1u<<30);
+    //    const bool asid_ns       = ptb_data & (1u<<29);
+    //    printf("Gpu: Doing translation %" PRIx64", dev=%d, asid=%08" PRIx32", read=%d, write=%d, ns=%d, pde_base=%p\n", (uint64_t)addr, (int)dev, ctx->asid, asid_readable, asid_writable, asid_ns, (void*)asid_pde_base);
+    //    printf("Gpu: l0=%zu, l1=%zu, l2=%zu\n", l0_index, l1_index, l2_index);
+    //}
     IOMMUTLBEntry entry = {
         .target_as = &address_space_memory,
         .iova = addr,
@@ -1986,12 +1987,13 @@ IOMMUTLBEntry tegra_mc_iommu_translate_for_device(TegraIommuDeviceName dev, hwad
     uint32_t l1_value;
     if (dma_memory_read(&address_space_memory, asid_pde_base + l1_index * sizeof(uint32_t), &l1_value, sizeof(l1_value), MEMTXATTRS_UNSPECIFIED) != MEMTX_OK)
         return entry;
-    //printf("!!!     l1=%08"PRIx32"\n", l1_value);
 
     const bool l1_readable = l1_value & (1u<<31);
     const bool l1_writable = l1_value & (1u<<30);
     //const bool l1_ns       = l1_value & (1u<<29);
     const bool l1_table    = l1_value & (1u<<28);
+    //if (dev == TegraIommuDeviceName_Gpu)
+    //    printf("Gpu: l1_value=%08"PRIx32", read=%d, write=%d, table=%d\n", l1_value, l1_readable, l1_writable, l1_table);
     if (!(l1_readable || l1_writable))
         return entry;
 
@@ -2004,11 +2006,12 @@ IOMMUTLBEntry tegra_mc_iommu_translate_for_device(TegraIommuDeviceName dev, hwad
         uint32_t l2_value;
         if (dma_memory_read(&address_space_memory, l1_pde_base + l2_index * sizeof(uint32_t), &l2_value, sizeof(l2_value), MEMTXATTRS_UNSPECIFIED) != MEMTX_OK)
             return entry;
-        //printf("!!!     l2=%08"PRIx32"\n", l1_value);
 
         const bool l2_readable = l2_value & (1u<<31);
         const bool l2_writable = l2_value & (1u<<30);
         //const bool l2_ns       = l2_value & (1u<<29);
+        //if (dev == TegraIommuDeviceName_Gpu)
+        //    printf("Gpu: l2_value=%08"PRIx32", read=%d, write=%d\n", l2_value, l2_readable, l2_writable);
         if (!(l2_readable || l2_writable))
             return entry;
 
@@ -2025,8 +2028,8 @@ IOMMUTLBEntry tegra_mc_iommu_translate_for_device(TegraIommuDeviceName dev, hwad
         if (l1_writable) entry.perm |= IOMMU_WO;
     }
 
-    //if (dev == TegraIommuDeviceName_Ape) {
-    //    printf("APE: Translated %p -> %p\n", (void *)addr, (void *)entry.translated_addr);
+    //if (dev == TegraIommuDeviceName_Gpu) {
+    //    printf("Gpu: Translated %p -> %p\n", (void *)addr, (void *)entry.translated_addr);
     //}
 
     return entry;

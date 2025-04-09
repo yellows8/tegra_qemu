@@ -614,7 +614,7 @@ static void tegra_gpu_priv_realize(DeviceState *dev, Error **errp)
                           TYPE_TEGRA_GPU, sizeof(s->regs));
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
 
-    s->dma_as = tegra_mc_get_iommu_address_space(TegraIommuDeviceName_Gpu, NULL);
+    s->dma_as = tegra_mc_get_iommu_address_space(TegraIommuDeviceName_Gpub, NULL);
 }
 
 static void tegra_gpu_class_init(ObjectClass *klass, void *data)
