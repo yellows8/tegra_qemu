@@ -1959,7 +1959,7 @@ IOMMUTLBEntry tegra_mc_iommu_translate_for_device(TegraIommuDeviceName dev, hwad
         return untranslated_entry;
     }
 
-    const size_t l0_index = addr >> 32;
+    const size_t l0_index = (addr >> 32) & 0x3;
     const size_t l1_index = (addr & 0xFFFFFFFF) >> 22;
     const size_t l2_index = (addr & 0x003FFFFF) >> 12;
 
