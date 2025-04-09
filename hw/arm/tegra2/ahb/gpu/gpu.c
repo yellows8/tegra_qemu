@@ -39,6 +39,8 @@
 #include "iomap.h"
 #include "tegra_trace.h"
 
+#include "../../axi/mc/mc.h"
+
 #define TYPE_TEGRA_GPU "tegra.gpu"
 #define TEGRA_GPU(obj) OBJECT_CHECK(tegra_gpu, (obj), TYPE_TEGRA_GPU)
 #define DEFINE_REG32(reg) reg##_t reg
@@ -46,10 +48,12 @@
 
 #define NV_GMMU_VA_RANGE          38
 
-//#define TEGRA_GPU_DEBUG
+#define TEGRA_GPU_DEBUG
 
 typedef struct tegra_gpu_state {
     SysBusDevice parent_obj;
+
+    AddressSpace *dma_as;
 
     qemu_irq irq_stall;
     qemu_irq irq_nonstall;
@@ -161,7 +165,7 @@ static MemTxResult tegra_gpu_translate_gmmu(tegra_gpu *s, dma_addr_t addr,
 
     dma_addr_t pte_base=0;
 
-    res = dma_memory_read(&address_space_memory, pdb + pde_i*8,
+    res = dma_memory_read(s->dma_as, pdb + pde_i*8,
                           pde, sizeof(pde),
                           MEMTXATTRS_UNSPECIFIED);
 
@@ -179,7 +183,7 @@ static MemTxResult tegra_gpu_translate_gmmu(tegra_gpu *s, dma_addr_t addr,
     if (res == MEMTX_OK) {
         pte_base &= (1ULL<<34)-1;
 
-        res = dma_memory_read(&address_space_memory, pte_base + pte_i*8,
+        res = dma_memory_read(s->dma_as, pte_base + pte_i*8,
                               pte, sizeof(pte),
                               MEMTXATTRS_UNSPECIFIED);
     }
@@ -220,13 +224,13 @@ static void tegra_gpu_dump_gmmu_pages(tegra_gpu *s, dma_addr_t pdb, bool big_pag
             continue;
         }
 
-        void* databuf = dma_memory_map(&address_space_memory, ptr, &tmplen_in, DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
+        void* databuf = dma_memory_map(s->dma_as, ptr, &tmplen_in, DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
 
         if (databuf) {
             qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_dump_gmmu_pages: Dumping gva 0x%" PRIX64 ":\n", gva + i);
             tegra_gpu_log_hexdump("tegra_gpu_dump_gmmu_pages", databuf, databuf_size);
 
-            dma_memory_unmap(&address_space_memory, databuf, databuf_size, DMA_DIRECTION_TO_DEVICE, databuf_size);
+            dma_memory_unmap(s->dma_as, databuf, databuf_size, DMA_DIRECTION_TO_DEVICE, databuf_size);
         }
         else {
             qemu_log_mask(LOG_GUEST_ERROR, "tegra_gpu_dump_gmmu_pages: dma_memory_map(0x%" PRIX64 ") failed.\n", ptr);
@@ -250,7 +254,7 @@ static MemTxResult tegra_gpu_rw_gmmu(tegra_gpu *s,
         if (res != MEMTX_OK) return res;
     }
 
-    res = dma_memory_rw(&address_space_memory, (*ptr) | ((*gva_tmp) & 0xFFF),
+    res = dma_memory_rw(s->dma_as, (*ptr) | ((*gva_tmp) & 0xFFF),
                           data, size,
                           dir,
                           MEMTXATTRS_UNSPECIFIED);
@@ -437,7 +441,7 @@ static void tegra_gpu_process_gpfifo(tegra_gpu *s, uint32_t channel_id, uint32_t
         uint32_t *gp_base = &inst[18]; // ram_fc_gp_base/ram_fc_gp_base_hi_w
         uint32_t *page_dir_base = &inst[128]; // ram_in_page_dir_base_lo_w/ram_in_page_dir_base_hi_w
 
-        if (dma_memory_read(&address_space_memory, inst_ptr,
+        if (dma_memory_read(s->dma_as, inst_ptr,
                             inst, sizeof(inst),
                             MEMTXATTRS_UNSPECIFIED) == MEMTX_OK) {
             dma_addr_t gpfifo_base = gp_base[0] & (0x1FFFFFFF << 3);
@@ -609,6 +613,8 @@ static void tegra_gpu_priv_realize(DeviceState *dev, Error **errp)
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_gpu_mem_ops, s,
                           TYPE_TEGRA_GPU, sizeof(s->regs));
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
+
+    s->dma_as = tegra_mc_get_iommu_address_space(TegraIommuDeviceName_Gpu, NULL);
 }
 
 static void tegra_gpu_class_init(ObjectClass *klass, void *data)

@@ -182,8 +182,8 @@ typedef struct tegra_mc_state {
     DEFINE_REG32(bwshare_ppcs);
     DEFINE_REG32(bwshare_vde);
     DEFINE_REG32(bwshare_vi);
-    DEFINE_REG32(intstatus);
-    DEFINE_REG32(intmask);
+    mc_intstatus_t intstatus;
+    mc_intmask_t intmask;
     DEFINE_REG32(clken_override);
     DEFINE_REG32(security_cfg0);
     DEFINE_REG32(security_cfg1);
@@ -912,10 +912,20 @@ static uint64_t tegra_mc_priv_read(void *opaque, hwaddr offset,
         ret = s->rcoal_autodisable.reg32;
         break;
     case BWSHARE_AVPC_OFFSET:
-        ret = s->bwshare_avpc.reg32;
+        _Static_assert(BWSHARE_AVPC_OFFSET == SMMU_AFI_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_READ_SMMU_ASID_BODY(SMMU_AFI_ASID_OFFSET, TegraIommuDeviceName_Afi);
+        } else {
+            ret = s->bwshare_avpc.reg32;
+        }
         break;
     case BWSHARE_DC_OFFSET:
-        ret = s->bwshare_dc.reg32;
+        _Static_assert(BWSHARE_DC_OFFSET == SMMU_AVPC_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_READ_SMMU_ASID_BODY(SMMU_AVPC_ASID_OFFSET, TegraIommuDeviceName_Avpc);
+        } else {
+            ret = s->bwshare_dc.reg32;
+        }
         break;
     case BWSHARE_DCB_OFFSET:
         _Static_assert(BWSHARE_DCB_OFFSET == SMMU_DC_ASID_OFFSET);
@@ -926,7 +936,12 @@ static uint64_t tegra_mc_priv_read(void *opaque, hwaddr offset,
         }
         break;
     case BWSHARE_EPP_OFFSET:
-        ret = s->bwshare_epp.reg32;
+        _Static_assert(BWSHARE_EPP_OFFSET == SMMU_DCB_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_READ_SMMU_ASID_BODY(SMMU_DCB_ASID_OFFSET, TegraIommuDeviceName_Dcb);
+        } else {
+            ret = s->bwshare_epp.reg32;
+        }
         break;
     case BWSHARE_G2_OFFSET:
         ret = s->bwshare_g2.reg32;
@@ -935,13 +950,28 @@ static uint64_t tegra_mc_priv_read(void *opaque, hwaddr offset,
         ret = s->bwshare_hc.reg32;
         break;
     case BWSHARE_ISP_OFFSET:
-        ret = s->bwshare_isp.reg32;
+        _Static_assert(BWSHARE_ISP_OFFSET == SMMU_HC_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_READ_SMMU_ASID_BODY(SMMU_HC_ASID_OFFSET, TegraIommuDeviceName_Hc);
+        } else {
+            ret = s->bwshare_isp.reg32;
+        }
         break;
     case BWSHARE_MPCORE_OFFSET:
-        ret = s->bwshare_mpcore.reg32;
+        _Static_assert(BWSHARE_MPCORE_OFFSET == SMMU_HDA_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_READ_SMMU_ASID_BODY(SMMU_HDA_ASID_OFFSET, TegraIommuDeviceName_Hda);
+        } else {
+            ret = s->bwshare_mpcore.reg32;
+        }
         break;
     case BWSHARE_MPEA_OFFSET:
-        ret = s->bwshare_mpea.reg32;
+        _Static_assert(BWSHARE_MPEA_OFFSET == SMMU_ISP2_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_READ_SMMU_ASID_BODY(SMMU_ISP2_ASID_OFFSET, TegraIommuDeviceName_Isp2);
+        } else {
+            ret = s->bwshare_mpea.reg32;
+        }
         break;
     case BWSHARE_MPEB_OFFSET:
         ret = s->bwshare_mpeb.reg32;
@@ -950,16 +980,36 @@ static uint64_t tegra_mc_priv_read(void *opaque, hwaddr offset,
         ret = s->bwshare_mpec.reg32;
         break;
     case BWSHARE_NV_OFFSET:
-        ret = s->bwshare_nv.reg32;
+        _Static_assert(BWSHARE_NV_OFFSET == SMMU_MSENC_NVENC_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_READ_SMMU_ASID_BODY(SMMU_MSENC_NVENC_ASID_OFFSET, TegraIommuDeviceName_MsencNvenc);
+        } else {
+            ret = s->bwshare_nv.reg32;
+        }
         break;
     case BWSHARE_PPCS_OFFSET:
-        ret = s->bwshare_ppcs.reg32;
+        _Static_assert(BWSHARE_PPCS_OFFSET == SMMU_NV_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_READ_SMMU_ASID_BODY(SMMU_NV_ASID_OFFSET, TegraIommuDeviceName_Nv);
+        } else {
+            ret = s->bwshare_ppcs.reg32;
+        }
         break;
     case BWSHARE_VDE_OFFSET:
-        ret = s->bwshare_vde.reg32;
+        _Static_assert(BWSHARE_VDE_OFFSET == SMMU_NV2_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_READ_SMMU_ASID_BODY(SMMU_NV2_ASID_OFFSET, TegraIommuDeviceName_Nv2);
+        } else {
+            ret = s->bwshare_vde.reg32;
+        }
         break;
     case BWSHARE_VI_OFFSET:
-        ret = s->bwshare_vi.reg32;
+        _Static_assert(BWSHARE_VI_OFFSET == SMMU_PPCS_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_READ_SMMU_ASID_BODY(SMMU_PPCS_ASID_OFFSET, TegraIommuDeviceName_Ppcs);
+        } else {
+            ret = s->bwshare_vi.reg32;
+        }
         break;
     case INTSTATUS_OFFSET:
         ret = s->intstatus.reg32;
@@ -1045,14 +1095,45 @@ static uint64_t tegra_mc_priv_read(void *opaque, hwaddr offset,
     case CLIENT_ACTIVITY_MONITOR_EMEM_1_OFFSET:
         ret = s->client_activity_monitor_emem_1.reg32;
         break;
-    //CASE_READ_SMMU_ASID(SMMU_DC_ASID_OFFSET, TegraIommuDeviceName_Dc);
-    CASE_READ_SMMU_ASID(SMMU_APE_ASID_OFFSET, TegraIommuDeviceName_Ape);
-    CASE_READ_SMMU_ASID(SMMU_SE_ASID_OFFSET, TegraIommuDeviceName_Se);
-    CASE_READ_SMMU_ASID(SMMU_SE1_ASID_OFFSET, TegraIommuDeviceName_Se1);
-    CASE_READ_SMMU_ASID(SMMU_SDMMC1A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc1a);
-    CASE_READ_SMMU_ASID(SMMU_SDMMC2A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc2a);
-    CASE_READ_SMMU_ASID(SMMU_SDMMC3A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc3a);
-    CASE_READ_SMMU_ASID(SMMU_SDMMC4A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc4a);
+    //CASE_READ_SMMU_ASID(SMMU_AFI_ASID_OFFSET,         TegraIommuDeviceName_Afi);
+    //CASE_READ_SMMU_ASID(SMMU_AVPC_ASID_OFFSET,        TegraIommuDeviceName_Avpc);
+    //CASE_READ_SMMU_ASID(SMMU_DC_ASID_OFFSET,          TegraIommuDeviceName_Dc)
+    //CASE_READ_SMMU_ASID(SMMU_DCB_ASID_OFFSET,         TegraIommuDeviceName_Dcb);
+    //CASE_READ_SMMU_ASID(SMMU_HC_ASID_OFFSET,          TegraIommuDeviceName_Hc);
+    //CASE_READ_SMMU_ASID(SMMU_HDA_ASID_OFFSET,         TegraIommuDeviceName_Hda);
+    //CASE_READ_SMMU_ASID(SMMU_ISP2_ASID_OFFSET,        TegraIommuDeviceName_Isp2);
+    //CASE_READ_SMMU_ASID(SMMU_MSENC_NVENC_ASID_OFFSET, TegraIommuDeviceName_MsencNvenc);
+    //CASE_READ_SMMU_ASID(SMMU_NV_ASID_OFFSET,          TegraIommuDeviceName_Nv);
+    //CASE_READ_SMMU_ASID(SMMU_NV2_ASID_OFFSET,         TegraIommuDeviceName_Nv2);
+    //CASE_READ_SMMU_ASID(SMMU_PPCS_ASID_OFFSET,        TegraIommuDeviceName_Ppcs);
+    CASE_READ_SMMU_ASID(SMMU_SATA_ASID_OFFSET,        TegraIommuDeviceName_Sata);
+    CASE_READ_SMMU_ASID(SMMU_VI_ASID_OFFSET,          TegraIommuDeviceName_Vi);
+    CASE_READ_SMMU_ASID(SMMU_VIC_ASID_OFFSET,         TegraIommuDeviceName_Vic);
+    CASE_READ_SMMU_ASID(SMMU_XUSB_HOST_ASID_OFFSET,   TegraIommuDeviceName_XusbHost);
+    CASE_READ_SMMU_ASID(SMMU_XUSB_DEV_ASID_OFFSET,    TegraIommuDeviceName_XusbDev);
+    CASE_READ_SMMU_ASID(SMMU_TSEC_ASID_OFFSET,        TegraIommuDeviceName_Tsec);
+    CASE_READ_SMMU_ASID(SMMU_PPCS1_ASID_OFFSET,       TegraIommuDeviceName_Ppcs1);
+    CASE_READ_SMMU_ASID(SMMU_DC1_ASID_OFFSET,         TegraIommuDeviceName_Dc1);
+    CASE_READ_SMMU_ASID(SMMU_SDMMC1A_ASID_OFFSET,     TegraIommuDeviceName_Sdmmc1a);
+    CASE_READ_SMMU_ASID(SMMU_SDMMC2A_ASID_OFFSET,     TegraIommuDeviceName_Sdmmc2a);
+    CASE_READ_SMMU_ASID(SMMU_SDMMC3A_ASID_OFFSET,     TegraIommuDeviceName_Sdmmc3a);
+    CASE_READ_SMMU_ASID(SMMU_SDMMC4A_ASID_OFFSET,     TegraIommuDeviceName_Sdmmc4a);
+    CASE_READ_SMMU_ASID(SMMU_ISP2B_ASID_OFFSET,       TegraIommuDeviceName_Isp2b);
+    CASE_READ_SMMU_ASID(SMMU_GPU_ASID_OFFSET,         TegraIommuDeviceName_Gpu);
+    CASE_READ_SMMU_ASID(SMMU_GPUB_ASID_OFFSET,        TegraIommuDeviceName_Gpub);
+    CASE_READ_SMMU_ASID(SMMU_PPCS2_ASID_OFFSET,       TegraIommuDeviceName_Ppcs2);
+    CASE_READ_SMMU_ASID(SMMU_NVDEC_ASID_OFFSET,       TegraIommuDeviceName_Nvdec);
+    CASE_READ_SMMU_ASID(SMMU_APE_ASID_OFFSET,         TegraIommuDeviceName_Ape);
+    CASE_READ_SMMU_ASID(SMMU_SE_ASID_OFFSET,          TegraIommuDeviceName_Se);
+    CASE_READ_SMMU_ASID(SMMU_NVJPG_ASID_OFFSET,       TegraIommuDeviceName_Nvjpg);
+    CASE_READ_SMMU_ASID(SMMU_HC1_ASID_OFFSET,         TegraIommuDeviceName_Hc1);
+    CASE_READ_SMMU_ASID(SMMU_SE1_ASID_OFFSET,         TegraIommuDeviceName_Se1);
+    CASE_READ_SMMU_ASID(SMMU_AXIAP_ASID_OFFSET,       TegraIommuDeviceName_Axiap);
+    CASE_READ_SMMU_ASID(SMMU_ETR_ASID_OFFSET,         TegraIommuDeviceName_Etr);
+    CASE_READ_SMMU_ASID(SMMU_TSECB_ASID_OFFSET,       TegraIommuDeviceName_Tsecb);
+    CASE_READ_SMMU_ASID(SMMU_TSEC1_ASID_OFFSET,       TegraIommuDeviceName_Tsec1);
+    CASE_READ_SMMU_ASID(SMMU_TSECB1_ASID_OFFSET,      TegraIommuDeviceName_Tsecb1);
+    CASE_READ_SMMU_ASID(SMMU_NVDEC1_ASID_OFFSET,      TegraIommuDeviceName_Nvdec1);
     default:
         if (offset == s->emem_cfg_offset) ret = s->emem_cfg.reg32;
         else if (offset == s->emem_adr_cfg_offset) ret = s->emem_adr_cfg.reg32;
@@ -1357,12 +1438,22 @@ static void tegra_mc_priv_write(void *opaque, hwaddr offset,
         s->rcoal_autodisable.reg32 = value;
         break;
     case BWSHARE_AVPC_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->bwshare_avpc.reg32, value);
-        s->bwshare_avpc.reg32 = value;
+        _Static_assert(BWSHARE_AVPC_OFFSET == SMMU_AFI_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_WRITE_SMMU_ASID_BODY(SMMU_AFI_ASID_OFFSET, TegraIommuDeviceName_Afi);
+        } else {
+            TRACE_WRITE(s->iomem.addr, offset, s->bwshare_avpc.reg32, value);
+            s->bwshare_avpc.reg32 = value;
+        }
         break;
     case BWSHARE_DC_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->bwshare_dc.reg32, value);
-        s->bwshare_dc.reg32 = value;
+        _Static_assert(BWSHARE_DC_OFFSET == SMMU_AVPC_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_WRITE_SMMU_ASID_BODY(SMMU_AVPC_ASID_OFFSET, TegraIommuDeviceName_Avpc);
+        } else {
+            TRACE_WRITE(s->iomem.addr, offset, s->bwshare_dc.reg32, value);
+            s->bwshare_dc.reg32 = value;
+        }
         break;
     case BWSHARE_DCB_OFFSET:
         _Static_assert(BWSHARE_DCB_OFFSET == SMMU_DC_ASID_OFFSET);
@@ -1374,8 +1465,13 @@ static void tegra_mc_priv_write(void *opaque, hwaddr offset,
         }
         break;
     case BWSHARE_EPP_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->bwshare_epp.reg32, value);
-        s->bwshare_epp.reg32 = value;
+        _Static_assert(BWSHARE_EPP_OFFSET == SMMU_DCB_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_WRITE_SMMU_ASID_BODY(SMMU_DCB_ASID_OFFSET, TegraIommuDeviceName_Dcb);
+        } else {
+            TRACE_WRITE(s->iomem.addr, offset, s->bwshare_epp.reg32, value);
+            s->bwshare_epp.reg32 = value;
+        }
         break;
     case BWSHARE_G2_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->bwshare_g2.reg32, value);
@@ -1386,16 +1482,31 @@ static void tegra_mc_priv_write(void *opaque, hwaddr offset,
         s->bwshare_hc.reg32 = value;
         break;
     case BWSHARE_ISP_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->bwshare_isp.reg32, value);
-        s->bwshare_isp.reg32 = value;
+        _Static_assert(BWSHARE_ISP_OFFSET == SMMU_HC_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_WRITE_SMMU_ASID_BODY(SMMU_HC_ASID_OFFSET, TegraIommuDeviceName_Hc);
+        } else {
+            TRACE_WRITE(s->iomem.addr, offset, s->bwshare_isp.reg32, value);
+            s->bwshare_isp.reg32 = value;
+        }
         break;
     case BWSHARE_MPCORE_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->bwshare_mpcore.reg32, value);
-        s->bwshare_mpcore.reg32 = value;
+        _Static_assert(BWSHARE_MPCORE_OFFSET == SMMU_HDA_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_WRITE_SMMU_ASID_BODY(SMMU_HDA_ASID_OFFSET, TegraIommuDeviceName_Hda);
+        } else {
+            TRACE_WRITE(s->iomem.addr, offset, s->bwshare_mpcore.reg32, value);
+            s->bwshare_mpcore.reg32 = value;
+        }
         break;
     case BWSHARE_MPEA_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->bwshare_mpea.reg32, value);
-        s->bwshare_mpea.reg32 = value;
+        _Static_assert(BWSHARE_MPEA_OFFSET == SMMU_ISP2_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_WRITE_SMMU_ASID_BODY(SMMU_ISP2_ASID_OFFSET, TegraIommuDeviceName_Isp2);
+        } else {
+            TRACE_WRITE(s->iomem.addr, offset, s->bwshare_mpea.reg32, value);
+            s->bwshare_mpea.reg32 = value;
+        }
         break;
     case BWSHARE_MPEB_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->bwshare_mpeb.reg32, value);
@@ -1406,20 +1517,40 @@ static void tegra_mc_priv_write(void *opaque, hwaddr offset,
         s->bwshare_mpec.reg32 = value;
         break;
     case BWSHARE_NV_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->bwshare_nv.reg32, value);
-        s->bwshare_nv.reg32 = value;
+        _Static_assert(BWSHARE_NV_OFFSET == SMMU_MSENC_NVENC_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_WRITE_SMMU_ASID_BODY(SMMU_MSENC_NVENC_ASID_OFFSET, TegraIommuDeviceName_MsencNvenc);
+        } else {
+            TRACE_WRITE(s->iomem.addr, offset, s->bwshare_nv.reg32, value);
+            s->bwshare_nv.reg32 = value;
+        }
         break;
     case BWSHARE_PPCS_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->bwshare_ppcs.reg32, value);
-        s->bwshare_ppcs.reg32 = value;
+        _Static_assert(BWSHARE_PPCS_OFFSET == SMMU_NV_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_WRITE_SMMU_ASID_BODY(SMMU_NV_ASID_OFFSET, TegraIommuDeviceName_Nv);
+        } else {
+            TRACE_WRITE(s->iomem.addr, offset, s->bwshare_ppcs.reg32, value);
+            s->bwshare_ppcs.reg32 = value;
+        }
         break;
     case BWSHARE_VDE_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->bwshare_vde.reg32, value);
-        s->bwshare_vde.reg32 = value;
+        _Static_assert(BWSHARE_VDE_OFFSET == SMMU_NV2_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_WRITE_SMMU_ASID_BODY(SMMU_NV2_ASID_OFFSET, TegraIommuDeviceName_Nv2);
+        } else {
+            TRACE_WRITE(s->iomem.addr, offset, s->bwshare_vde.reg32, value);
+            s->bwshare_vde.reg32 = value;
+        }
         break;
     case BWSHARE_VI_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->bwshare_vi.reg32, value);
-        s->bwshare_vi.reg32 = value;
+        _Static_assert(BWSHARE_VI_OFFSET == SMMU_PPCS_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_WRITE_SMMU_ASID_BODY(SMMU_PPCS_ASID_OFFSET, TegraIommuDeviceName_Ppcs);
+        } else {
+            TRACE_WRITE(s->iomem.addr, offset, s->bwshare_vi.reg32, value);
+            s->bwshare_vi.reg32 = value;
+        }
         break;
     case INTSTATUS_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->intstatus.reg32, value);
@@ -1533,14 +1664,45 @@ static void tegra_mc_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->client_activity_monitor_emem_1.reg32, value);
         s->client_activity_monitor_emem_1.reg32 = value;
         break;
-    //CASE_WRITE_SMMU_ASID(SMMU_DC_ASID_OFFSET, TegraIommuDeviceName_Dc);
-    CASE_WRITE_SMMU_ASID(SMMU_APE_ASID_OFFSET, TegraIommuDeviceName_Ape);
-    CASE_WRITE_SMMU_ASID(SMMU_SE_ASID_OFFSET, TegraIommuDeviceName_Se);
-    CASE_WRITE_SMMU_ASID(SMMU_SE1_ASID_OFFSET, TegraIommuDeviceName_Se1);
-    CASE_WRITE_SMMU_ASID(SMMU_SDMMC1A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc1a);
-    CASE_WRITE_SMMU_ASID(SMMU_SDMMC2A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc2a);
-    CASE_WRITE_SMMU_ASID(SMMU_SDMMC3A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc3a);
-    CASE_WRITE_SMMU_ASID(SMMU_SDMMC4A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc4a);
+    //CASE_WRITE_SMMU_ASID(SMMU_AFI_ASID_OFFSET,         TegraIommuDeviceName_Afi);
+    //CASE_WRITE_SMMU_ASID(SMMU_AVPC_ASID_OFFSET,        TegraIommuDeviceName_Avpc);
+    //CASE_WRITE_SMMU_ASID(SMMU_DC_ASID_OFFSET,          TegraIommuDeviceName_Dc)
+    //CASE_WRITE_SMMU_ASID(SMMU_DCB_ASID_OFFSET,         TegraIommuDeviceName_Dcb);
+    //CASE_WRITE_SMMU_ASID(SMMU_HC_ASID_OFFSET,          TegraIommuDeviceName_Hc);
+    //CASE_WRITE_SMMU_ASID(SMMU_HDA_ASID_OFFSET,         TegraIommuDeviceName_Hda);
+    //CASE_WRITE_SMMU_ASID(SMMU_ISP2_ASID_OFFSET,        TegraIommuDeviceName_Isp2);
+    //CASE_WRITE_SMMU_ASID(SMMU_MSENC_NVENC_ASID_OFFSET, TegraIommuDeviceName_MsencNvenc);
+    //CASE_WRITE_SMMU_ASID(SMMU_NV_ASID_OFFSET,          TegraIommuDeviceName_Nv);
+    //CASE_WRITE_SMMU_ASID(SMMU_NV2_ASID_OFFSET,         TegraIommuDeviceName_Nv2);
+    //CASE_WRITE_SMMU_ASID(SMMU_PPCS_ASID_OFFSET,        TegraIommuDeviceName_Ppcs);
+    CASE_WRITE_SMMU_ASID(SMMU_SATA_ASID_OFFSET,        TegraIommuDeviceName_Sata);
+    CASE_WRITE_SMMU_ASID(SMMU_VI_ASID_OFFSET,          TegraIommuDeviceName_Vi);
+    CASE_WRITE_SMMU_ASID(SMMU_VIC_ASID_OFFSET,         TegraIommuDeviceName_Vic);
+    CASE_WRITE_SMMU_ASID(SMMU_XUSB_HOST_ASID_OFFSET,   TegraIommuDeviceName_XusbHost);
+    CASE_WRITE_SMMU_ASID(SMMU_XUSB_DEV_ASID_OFFSET,    TegraIommuDeviceName_XusbDev);
+    CASE_WRITE_SMMU_ASID(SMMU_TSEC_ASID_OFFSET,        TegraIommuDeviceName_Tsec);
+    CASE_WRITE_SMMU_ASID(SMMU_PPCS1_ASID_OFFSET,       TegraIommuDeviceName_Ppcs1);
+    CASE_WRITE_SMMU_ASID(SMMU_DC1_ASID_OFFSET,         TegraIommuDeviceName_Dc1);
+    CASE_WRITE_SMMU_ASID(SMMU_SDMMC1A_ASID_OFFSET,     TegraIommuDeviceName_Sdmmc1a);
+    CASE_WRITE_SMMU_ASID(SMMU_SDMMC2A_ASID_OFFSET,     TegraIommuDeviceName_Sdmmc2a);
+    CASE_WRITE_SMMU_ASID(SMMU_SDMMC3A_ASID_OFFSET,     TegraIommuDeviceName_Sdmmc3a);
+    CASE_WRITE_SMMU_ASID(SMMU_SDMMC4A_ASID_OFFSET,     TegraIommuDeviceName_Sdmmc4a);
+    CASE_WRITE_SMMU_ASID(SMMU_ISP2B_ASID_OFFSET,       TegraIommuDeviceName_Isp2b);
+    CASE_WRITE_SMMU_ASID(SMMU_GPU_ASID_OFFSET,         TegraIommuDeviceName_Gpu);
+    CASE_WRITE_SMMU_ASID(SMMU_GPUB_ASID_OFFSET,        TegraIommuDeviceName_Gpub);
+    CASE_WRITE_SMMU_ASID(SMMU_PPCS2_ASID_OFFSET,       TegraIommuDeviceName_Ppcs2);
+    CASE_WRITE_SMMU_ASID(SMMU_NVDEC_ASID_OFFSET,       TegraIommuDeviceName_Nvdec);
+    CASE_WRITE_SMMU_ASID(SMMU_APE_ASID_OFFSET,         TegraIommuDeviceName_Ape);
+    CASE_WRITE_SMMU_ASID(SMMU_SE_ASID_OFFSET,          TegraIommuDeviceName_Se);
+    CASE_WRITE_SMMU_ASID(SMMU_NVJPG_ASID_OFFSET,       TegraIommuDeviceName_Nvjpg);
+    CASE_WRITE_SMMU_ASID(SMMU_HC1_ASID_OFFSET,         TegraIommuDeviceName_Hc1);
+    CASE_WRITE_SMMU_ASID(SMMU_SE1_ASID_OFFSET,         TegraIommuDeviceName_Se1);
+    CASE_WRITE_SMMU_ASID(SMMU_AXIAP_ASID_OFFSET,       TegraIommuDeviceName_Axiap);
+    CASE_WRITE_SMMU_ASID(SMMU_ETR_ASID_OFFSET,         TegraIommuDeviceName_Etr);
+    CASE_WRITE_SMMU_ASID(SMMU_TSECB_ASID_OFFSET,       TegraIommuDeviceName_Tsecb);
+    CASE_WRITE_SMMU_ASID(SMMU_TSEC1_ASID_OFFSET,       TegraIommuDeviceName_Tsec1);
+    CASE_WRITE_SMMU_ASID(SMMU_TSECB1_ASID_OFFSET,      TegraIommuDeviceName_Tsecb1);
+    CASE_WRITE_SMMU_ASID(SMMU_NVDEC1_ASID_OFFSET,      TegraIommuDeviceName_Nvdec1);
     default:
         if (offset == s->emem_cfg_offset) {
             TRACE_WRITE(s->iomem.addr, offset, s->emem_cfg.reg32, value);

@@ -614,7 +614,7 @@ static void __tegrax1_init(MachineState *machine)
     MemoryRegion *cop_sysmem = g_new0(MemoryRegion, 1);
     MemoryRegion *ape_sysmem = g_new0(MemoryRegion, 1);
     //AddressSpace *cop_as = g_new0(AddressSpace, 1);
-    //AddressSpace *ape_as = g_new0(AddressSpace, 1);
+    AddressSpace *ape_as;
     MemoryRegion *sysmem = get_system_memory();
     SysBusDevice *irq_dispatcher, *lic;
     SysBusDevice *s = NULL;
@@ -626,7 +626,6 @@ static void __tegrax1_init(MachineState *machine)
     //address_space_init(cop_as, cop_sysmem, "tegra.cop-address space");
 
     memory_region_init(ape_sysmem, NULL, "tegra.ape-memory", UINT64_MAX);
-    //address_space_init(ape_as, ape_sysmem, "tegra.ape-address space");
 
     /* Main RAM */
     assert(machine->ram_size <= TEGRA_DRAM_SIZE);
@@ -834,6 +833,8 @@ static void __tegrax1_init(MachineState *machine)
 
     /* Audio */
     tegra_hda_dev = tegra_init_obj_simple(TEGRA_HDA_BASE, DIRQ(INT_HDA), "tegra.hda", true);
+
+    ape_as = tegra_mc_get_iommu_address_space(TegraIommuDeviceName_Ape, ape_sysmem);
 
     tegra_ape_dev = qdev_new("tegra.ape");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_ape_dev), &error_fatal);
@@ -1325,7 +1326,6 @@ static void __tegrax1_init(MachineState *machine)
                                          DIRQ(INT_DISPLAY_GENERAL));
 
     /* TODO: Set this somewhere? */
-    tegra_mc_get_iommu_address_space(TegraIommuDeviceName_Dc, NULL);
 
     tegra_dcb_dev = qdev_new("tegra.dc");
     s = SYS_BUS_DEVICE(tegra_dcb_dev);
@@ -1704,8 +1704,8 @@ static void __tegrax1_init(MachineState *machine)
     sysbus_connect_irq(s, 6 + TEGRA_ADSP, qdev_get_gpio_in(DEVICE(gicbusdev_ape), 79-32));*/
 
     cs = qemu_get_cpu(TEGRA_ADSP);
-    cs->as = tegra_mc_get_iommu_address_space(TegraIommuDeviceName_Ape, ape_sysmem);
-    cs->cpu_ases[0].as = cs->as;
+    cs->as = ape_as;
+    cs->cpu_ases[0].as = ape_as;
 
     /* Override default AS.  */
     /*memory_listener_unregister(&cs->cpu_ases[0].tcg_as_listener);
@@ -1715,6 +1715,11 @@ static void __tegrax1_init(MachineState *machine)
     //cpu_address_space_init(cs, 0, "tegra.ape-address-space", ape_sysmem);
 
     //ARM_CPU(cs)->translate_addr = tegra_ape_translate;
+
+    // Initialize remaining address spaces
+    for (int d = 0; d < TegraIommuDeviceName_Count; ++d) {
+        tegra_mc_get_iommu_address_space((TegraIommuDeviceName)d, NULL);
+    }
 
     load_memory_images(machine);
 

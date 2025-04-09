@@ -1389,7 +1389,7 @@ typedef union bwshare_vi_u {
 
 #define INTSTATUS_OFFSET 0x0
 #define INTSTATUS_RESET  0x00000000
-typedef union intstatus_u {
+typedef union mc_intstatus_u {
     struct {
         unsigned int undefined_bits_0_5:6;
         unsigned int decerr_emem_others_int:1;/* EMEM Address Decode Error for a non AXI client. */
@@ -1399,11 +1399,11 @@ typedef union intstatus_u {
     };
 
     uint32_t reg32;
-} intstatus_t;
+} mc_intstatus_t;
 
 #define INTMASK_OFFSET 0x4
 #define INTMASK_RESET  0x00000000
-typedef union intmask_u {
+typedef union mc_intmask_u {
     struct {
         unsigned int undefined_bits_0_5:6;
         unsigned int decerr_emem_others_intmask:1;/* EMEM Address Decode Error for a non AXI client. */
@@ -1413,7 +1413,7 @@ typedef union intmask_u {
     };
 
     uint32_t reg32;
-} intmask_t;
+} mc_intmask_t;
 
 #define CLKEN_OVERRIDE_OFFSET 0x68
 #define CLKEN_OVERRIDE_RESET  0x00000000
@@ -1851,16 +1851,47 @@ typedef enum {
     TegraIommuDeviceName_Count,
 } TegraIommuDeviceName;
 
-#define PTB_ASID_OFFSET 0x01C
-#define PTB_DATA_OFFSET 0x020
-#define SMMU_DC_ASID_OFFSET      0x240
-#define SMMU_SDMMC1A_ASID_OFFSET 0xA94
-#define SMMU_SDMMC2A_ASID_OFFSET 0xA98
-#define SMMU_SDMMC3A_ASID_OFFSET 0xA9C
-#define SMMU_SDMMC4A_ASID_OFFSET 0xAA0
-#define SMMU_APE_ASID_OFFSET 0xAB8
-#define SMMU_SE_ASID_OFFSET 0xABC
-#define SMMU_SE1_ASID_OFFSET 0xAC8
+#define PTB_ASID_OFFSET              0x01C
+#define PTB_DATA_OFFSET              0x020
+#define SMMU_AFI_ASID_OFFSET         0x238
+#define SMMU_AVPC_ASID_OFFSET        0x23C
+#define SMMU_DC_ASID_OFFSET          0x240
+#define SMMU_DCB_ASID_OFFSET         0x244
+#define SMMU_HC_ASID_OFFSET          0x250
+#define SMMU_HDA_ASID_OFFSET         0x254
+#define SMMU_ISP2_ASID_OFFSET        0x258
+#define SMMU_MSENC_NVENC_ASID_OFFSET 0x264
+#define SMMU_NV_ASID_OFFSET          0x268
+#define SMMU_NV2_ASID_OFFSET         0x26C
+#define SMMU_PPCS_ASID_OFFSET        0x270
+#define SMMU_SATA_ASID_OFFSET        0x274
+#define SMMU_VI_ASID_OFFSET          0x280
+#define SMMU_VIC_ASID_OFFSET         0x284
+#define SMMU_XUSB_HOST_ASID_OFFSET   0x288
+#define SMMU_XUSB_DEV_ASID_OFFSET    0x28C
+#define SMMU_TSEC_ASID_OFFSET        0x294
+#define SMMU_PPCS1_ASID_OFFSET       0x298
+#define SMMU_DC1_ASID_OFFSET         0xA88
+#define SMMU_SDMMC1A_ASID_OFFSET     0xA94
+#define SMMU_SDMMC2A_ASID_OFFSET     0xA98
+#define SMMU_SDMMC3A_ASID_OFFSET     0xA9C
+#define SMMU_SDMMC4A_ASID_OFFSET     0xAA0
+#define SMMU_ISP2B_ASID_OFFSET       0xAA4
+#define SMMU_GPU_ASID_OFFSET         0xAA8
+#define SMMU_GPUB_ASID_OFFSET        0xAAC
+#define SMMU_PPCS2_ASID_OFFSET       0xAB0
+#define SMMU_NVDEC_ASID_OFFSET       0xAB4
+#define SMMU_APE_ASID_OFFSET         0xAB8
+#define SMMU_SE_ASID_OFFSET          0xABC
+#define SMMU_NVJPG_ASID_OFFSET       0xAC0
+#define SMMU_HC1_ASID_OFFSET         0xAC4
+#define SMMU_SE1_ASID_OFFSET         0xAC8
+#define SMMU_AXIAP_ASID_OFFSET       0xACC
+#define SMMU_ETR_ASID_OFFSET         0xAD0
+#define SMMU_TSECB_ASID_OFFSET       0xAD4
+#define SMMU_TSEC1_ASID_OFFSET       0xAD8
+#define SMMU_TSECB1_ASID_OFFSET      0xADC
+#define SMMU_NVDEC1_ASID_OFFSET      0xAE0
 
 AddressSpace *tegra_mc_get_iommu_address_space(TegraIommuDeviceName dev, MemoryRegion *target_mr);
 

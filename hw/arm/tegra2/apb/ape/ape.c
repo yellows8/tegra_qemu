@@ -39,6 +39,8 @@
 #include "qemu/cutils.h"
 #include "qemu/log.h"
 
+#include "../../axi/mc/mc.h"
+
 #define TYPE_TEGRA_APE "tegra.ape"
 #define TEGRA_APE(obj) OBJECT_CHECK(tegra_ape, (obj), TYPE_TEGRA_APE)
 #define DEFINE_REG32(reg) reg##_t reg
@@ -59,6 +61,8 @@ typedef struct tegra_ape_state {
     qemu_irq irqs[2][NUM_MAILBOX];
     qemu_irq irqs_dma[NUM_DMA_CHANNELS];
     MemoryRegion iomem;
+
+    AddressSpace *dma_as;
 
     QEMUSoundCard card;
     SWVoiceOut *voice_out;
@@ -152,7 +156,7 @@ static void tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id, bool 
                     avail = MIN(avail, chan_regs[0x44>>2] - transfer_fifosize);
 
                     dma_addr_t tmplen = chan_regs[0x44>>2];
-                    uint8_t *databuf = dma_memory_map(&address_space_memory, data_addr, &tmplen,
+                    uint8_t *databuf = dma_memory_map(s->dma_as, data_addr, &tmplen,
                                                       dmadir, MEMTXATTRS_UNSPECIFIED);
 
                     while (avail>0) {
@@ -183,7 +187,7 @@ static void tegra_ape_dma_process_channel(tegra_ape *s, size_t channel_id, bool 
                             chan_regs[0x30>>2] = chan_regs[0x44>>2];
                     }
 
-                    if (databuf) dma_memory_unmap(&address_space_memory, databuf, tmplen, dmadir, chan_regs[0x44>>2]);
+                    if (databuf) dma_memory_unmap(s->dma_as, databuf, tmplen, dmadir, chan_regs[0x44>>2]);
                 }
             }
         }
@@ -461,6 +465,8 @@ static void tegra_ape_priv_realize(DeviceState *dev, Error **errp)
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_ape_mem_ops, s,
                           TYPE_TEGRA_APE, (0x702F8000+0x1000)-TEGRA_APE_BASE);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
+
+    s->dma_as = tegra_mc_get_iommu_address_space(TegraIommuDeviceName_Ape, NULL);
 
     // Init audio card and the voices.
     if (!AUD_register_card("tegra.ape", &s->card, errp)) {

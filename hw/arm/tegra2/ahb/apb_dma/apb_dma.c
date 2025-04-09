@@ -30,6 +30,8 @@
 #include "iomap.h"
 #include "tegra_trace.h"
 
+#include "../../axi/mc/mc.h"
+
 #define TYPE_TEGRA_APB_DMA "tegra.apb_dma"
 #define TEGRA_APB_DMA(obj) OBJECT_CHECK(tegra_apb_dma, (obj), TYPE_TEGRA_APB_DMA)
 #define DEFINE_REG32(reg) reg##_t reg
@@ -74,6 +76,8 @@ typedef struct tegra_apb_dma_state {
     SysBusDevice parent_obj;
 
     MemoryRegion iomem;
+
+    AddressSpace *dma_as;
 
     qemu_irq irqs[2];
 
@@ -384,7 +388,7 @@ static void tegra_apb_dma_priv_write(void *opaque, hwaddr offset,
             uint8_t *databuf_ahb = NULL;
 
             DMADirection dmadir = channel->channel_csr.dir ? DMA_DIRECTION_FROM_DEVICE : DMA_DIRECTION_TO_DEVICE;
-            databuf_ahb = dma_memory_map(&address_space_memory, ahb_ptr_reg, &tmplen,
+            databuf_ahb = dma_memory_map(s->dma_as, ahb_ptr_reg, &tmplen,
                                          dmadir, MEMTXATTRS_UNSPECIFIED);
 
             channel->channel_word_transfer.reg32 = 0;
@@ -434,7 +438,7 @@ static void tegra_apb_dma_priv_write(void *opaque, hwaddr offset,
                 }
             }
 
-            if (databuf_ahb) dma_memory_unmap(&address_space_memory, databuf_ahb, tmplen, dmadir, channel->channel_dma_byte_sta.reg32);
+            if (databuf_ahb) dma_memory_unmap(s->dma_as, databuf_ahb, tmplen, dmadir, channel->channel_dma_byte_sta.reg32);
 
             channel->channel_csr.enb = 0;
 
@@ -559,6 +563,9 @@ static void tegra_apb_dma_priv_realize(DeviceState *dev, Error **errp)
     memory_region_init_io(&s->iomem, OBJECT(dev), &tegra_apb_dma_mem_ops, s,
                           "tegra.apb_dma", TEGRA_APB_DMA_SIZE + (num_channels * channel_size));
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
+
+    // TODO: Is this Ppcs or Ppcs1?
+    s->dma_as = tegra_mc_get_iommu_address_space(TegraIommuDeviceName_Ppcs, NULL);
 
     for (uint32_t i=0; i<ARRAY_SIZE(s->irqs); i++)
         sysbus_init_irq(SYS_BUS_DEVICE(dev), &s->irqs[i]);
