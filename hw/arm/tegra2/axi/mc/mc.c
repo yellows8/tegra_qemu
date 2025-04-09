@@ -21,7 +21,9 @@
 
 #include "tegra_common.h"
 
+#include "exec/address-spaces.h"
 #include "hw/sysbus.h"
+#include "sysemu/dma.h"
 
 #include "mc.h"
 #include "iomap.h"
@@ -29,13 +31,55 @@
 #include "devices.h"
 
 #define TYPE_TEGRA_MC "tegra.mc"
+#define TYPE_TEGRA_MC_IOMMU_MEMORY_REGION "tegra.mc.iommu-memory-region"
 #define TEGRA_MC(obj) OBJECT_CHECK(tegra_mc, (obj), TYPE_TEGRA_MC)
 #define DEFINE_REG32(reg) reg##_t reg
 #define WR_MASKED(r, d, m)  r = (r & ~m##_WRMASK) | (d & m##_WRMASK)
 
+typedef struct {
+    IOMMUMemoryRegion mr;
+    TegraIommuDeviceName dev;
+} TegraIommuMemoryRegion;
+
+typedef struct {
+    AddressSpace as;
+    MemoryRegion root_mr;
+    MemoryRegion bypass_mr;
+    TegraIommuMemoryRegion iommu_mr;
+    uint32_t asid;
+} TegraIommuContext;
+
+static bool g_smmu_enabled = false;
+
+static TegraIommuContext *g_tegra_iommu_contexts[TegraIommuDeviceName_Count] = {NULL};
+
+// TODO: NX kernel supports 0x80 ASIDs, should we bother implementing hash table lookup for full 7-bit ASID?
+static uint8_t g_tegra_mc_cur_asid = 0;
+static uint32_t g_tegra_mc_asid_ptb_data[0x100] = {0};
+
+static void tegra_mc_set_iommu_enabled(TegraIommuDeviceName dev) {
+    if (g_tegra_iommu_contexts[dev] == NULL)
+        return;
+
+    if (g_smmu_enabled && g_tegra_iommu_contexts[dev]->asid & 0x80000000) {
+        //memory_region_set_enabled(&g_tegra_iommu_contexts[dev]->bypass_mr, false);
+        memory_region_set_enabled(MEMORY_REGION(&g_tegra_iommu_contexts[dev]->iommu_mr), true);
+    } else {
+        //memory_region_set_enabled(&g_tegra_iommu_contexts[dev]->bypass_mr, true);
+        memory_region_set_enabled(MEMORY_REGION(&g_tegra_iommu_contexts[dev]->iommu_mr), false);
+    }
+}
+
+static void tegra_mc_set_iommu_enabled_all(void) {
+    for (int i = 0; i < TegraIommuDeviceName_Count; ++i) {
+        tegra_mc_set_iommu_enabled((TegraIommuDeviceName)i);
+    }
+}
+
 typedef struct tegra_mc_state {
     SysBusDevice parent_obj;
 
+    bool is_smmu_mc;
     uint32_t ram_size_kb;
     MemoryRegion iomem;
     uint32_t emem_cfg_offset;
@@ -601,6 +645,25 @@ static uint32_t tegra_mc_regdef_tegrax1_reset_table[] = {
     TEGRA_REGDEF_TABLE_RESET(MC_LATENCY_ALLOWANCE_HDA_0_0, 0x318, 0x00800024)
 };
 
+#define CASE_READ_SMMU_ASID_BODY(_offset, _dev) \
+    ret = g_tegra_iommu_contexts[_dev]->asid;
+
+#define CASE_READ_SMMU_ASID(_offset, _dev) \
+    case _offset: \
+        CASE_READ_SMMU_ASID_BODY(_offset, _dev) \
+        break
+
+#define CASE_WRITE_SMMU_ASID_BODY(_offset, _dev) \
+        TRACE_WRITE(s->iomem.addr, offset, g_tegra_iommu_contexts[_dev]->asid, value); \
+        g_tegra_iommu_contexts[_dev]->asid = value; \
+        tegra_mc_set_iommu_enabled(_dev)
+
+
+#define CASE_WRITE_SMMU_ASID(_offset, _dev) \
+    case _offset:\
+        CASE_WRITE_SMMU_ASID_BODY(_offset, _dev); \
+        break
+
 static uint64_t tegra_mc_priv_read(void *opaque, hwaddr offset,
                                    unsigned size)
 {
@@ -855,7 +918,12 @@ static uint64_t tegra_mc_priv_read(void *opaque, hwaddr offset,
         ret = s->bwshare_dc.reg32;
         break;
     case BWSHARE_DCB_OFFSET:
-        ret = s->bwshare_dcb.reg32;
+        _Static_assert(BWSHARE_DCB_OFFSET == SMMU_DC_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_READ_SMMU_ASID_BODY(SMMU_DC_ASID_OFFSET, TegraIommuDeviceName_Dc);
+        } else {
+            ret = s->bwshare_dcb.reg32;
+        }
         break;
     case BWSHARE_EPP_OFFSET:
         ret = s->bwshare_epp.reg32;
@@ -977,6 +1045,14 @@ static uint64_t tegra_mc_priv_read(void *opaque, hwaddr offset,
     case CLIENT_ACTIVITY_MONITOR_EMEM_1_OFFSET:
         ret = s->client_activity_monitor_emem_1.reg32;
         break;
+    //CASE_READ_SMMU_ASID(SMMU_DC_ASID_OFFSET, TegraIommuDeviceName_Dc);
+    CASE_READ_SMMU_ASID(SMMU_APE_ASID_OFFSET, TegraIommuDeviceName_Ape);
+    CASE_READ_SMMU_ASID(SMMU_SE_ASID_OFFSET, TegraIommuDeviceName_Se);
+    CASE_READ_SMMU_ASID(SMMU_SE1_ASID_OFFSET, TegraIommuDeviceName_Se1);
+    CASE_READ_SMMU_ASID(SMMU_SDMMC1A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc1a);
+    CASE_READ_SMMU_ASID(SMMU_SDMMC2A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc2a);
+    CASE_READ_SMMU_ASID(SMMU_SDMMC3A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc3a);
+    CASE_READ_SMMU_ASID(SMMU_SDMMC4A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc4a);
     default:
         if (offset == s->emem_cfg_offset) ret = s->emem_cfg.reg32;
         else if (offset == s->emem_adr_cfg_offset) ret = s->emem_adr_cfg.reg32;
@@ -1009,9 +1085,22 @@ static void tegra_mc_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->emem_arb_cfg1.reg32, value);
         s->emem_arb_cfg1.reg32 = value;
         break;
-    case EMEM_ARB_CFG2_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->emem_arb_cfg2.reg32, value);
-        s->emem_arb_cfg2.reg32 = value;
+    case EMEM_ARB_CFG2_OFFSET: // PTB_ASID_OFFSET
+        _Static_assert(EMEM_ARB_CFG2_OFFSET == PTB_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
+            s->regs[offset>>2] = value;
+            g_tegra_mc_cur_asid = value & 0xFF;
+            s->regs[PTB_DATA_OFFSET>>2] = g_tegra_mc_asid_ptb_data[g_tegra_mc_cur_asid];
+        } else {
+            TRACE_WRITE(s->iomem.addr, offset, s->emem_arb_cfg2.reg32, value);
+            s->emem_arb_cfg2.reg32 = value;
+        }
+        break;
+    case PTB_DATA_OFFSET:
+        TRACE_WRITE(s->iomem.addr, offset, s->regs[offset>>2], value);
+        s->regs[offset>>2] = value;
+        g_tegra_mc_asid_ptb_data[g_tegra_mc_cur_asid] = value;
         break;
     case GART_CONFIG_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->gart_config.reg32, value);
@@ -1276,8 +1365,13 @@ static void tegra_mc_priv_write(void *opaque, hwaddr offset,
         s->bwshare_dc.reg32 = value;
         break;
     case BWSHARE_DCB_OFFSET:
-        TRACE_WRITE(s->iomem.addr, offset, s->bwshare_dcb.reg32, value);
-        s->bwshare_dcb.reg32 = value;
+        _Static_assert(BWSHARE_DCB_OFFSET == SMMU_DC_ASID_OFFSET);
+        if (s->is_smmu_mc) {
+            CASE_WRITE_SMMU_ASID_BODY(SMMU_DC_ASID_OFFSET, TegraIommuDeviceName_Dc);
+        } else {
+            TRACE_WRITE(s->iomem.addr, offset, s->bwshare_dcb.reg32, value);
+            s->bwshare_dcb.reg32 = value;
+        }
         break;
     case BWSHARE_EPP_OFFSET:
         TRACE_WRITE(s->iomem.addr, offset, s->bwshare_epp.reg32, value);
@@ -1439,6 +1533,14 @@ static void tegra_mc_priv_write(void *opaque, hwaddr offset,
         TRACE_WRITE(s->iomem.addr, offset, s->client_activity_monitor_emem_1.reg32, value);
         s->client_activity_monitor_emem_1.reg32 = value;
         break;
+    //CASE_WRITE_SMMU_ASID(SMMU_DC_ASID_OFFSET, TegraIommuDeviceName_Dc);
+    CASE_WRITE_SMMU_ASID(SMMU_APE_ASID_OFFSET, TegraIommuDeviceName_Ape);
+    CASE_WRITE_SMMU_ASID(SMMU_SE_ASID_OFFSET, TegraIommuDeviceName_Se);
+    CASE_WRITE_SMMU_ASID(SMMU_SE1_ASID_OFFSET, TegraIommuDeviceName_Se1);
+    CASE_WRITE_SMMU_ASID(SMMU_SDMMC1A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc1a);
+    CASE_WRITE_SMMU_ASID(SMMU_SDMMC2A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc2a);
+    CASE_WRITE_SMMU_ASID(SMMU_SDMMC3A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc3a);
+    CASE_WRITE_SMMU_ASID(SMMU_SDMMC4A_ASID_OFFSET, TegraIommuDeviceName_Sdmmc4a);
     default:
         if (offset == s->emem_cfg_offset) {
             TRACE_WRITE(s->iomem.addr, offset, s->emem_cfg.reg32, value);
@@ -1451,6 +1553,9 @@ static void tegra_mc_priv_write(void *opaque, hwaddr offset,
         else if (tegra_board >= TEGRAX1_BOARD && offset == SMMU_CONFIG_OFFSET) {
             TRACE_WRITE(s->iomem.addr, offset, s->smmu_config.reg32, value);
             s->smmu_config.reg32 = value;
+
+            g_smmu_enabled = value & 1;
+            tegra_mc_set_iommu_enabled_all();
         }
         else {
             if (tegra_board >= TEGRAX1_BOARD && offset <= sizeof(s->regs)-4) {
@@ -1662,6 +1767,168 @@ static void tegra_mc_priv_reset(DeviceState *dev)
     }
 }
 
+IOMMUTLBEntry tegra_mc_iommu_translate_for_device(TegraIommuDeviceName dev, hwaddr addr)
+{
+    TegraIommuContext *ctx = g_tegra_iommu_contexts[dev];
+
+    // Special handling
+    switch (dev) {
+        case TegraIommuDeviceName_Ape:
+        case TegraIommuDeviceName_Se:
+        case TegraIommuDeviceName_Se1:
+            addr += 0x80000000;
+            break;
+        default:
+            break;
+    }
+
+    //if (dev == TegraIommuDeviceName_Ape)
+    //    printf("Ape: Translating %p\n", (void*)addr);
+
+    if (!g_smmu_enabled || !(ctx->asid & 0x80000000))
+    {
+        IOMMUTLBEntry untranslated_entry = {
+            .target_as = &address_space_memory,
+            .iova = addr,
+            .translated_addr = addr,
+            .addr_mask = 0xFFF,
+            .perm = IOMMU_RW,
+        };
+        return untranslated_entry;
+    }
+
+    const size_t l0_index = addr >> 32;
+    const size_t l1_index = (addr & 0xFFFFFFFF) >> 22;
+    const size_t l2_index = (addr & 0x003FFFFF) >> 12;
+
+    const uint32_t ptb_data = g_tegra_mc_asid_ptb_data[(ctx->asid >> (l0_index * 8)) & 0xFF];
+    //const bool asid_readable = ptb_data & (1u<<31);
+    //const bool asid_writable = ptb_data & (1u<<30);
+    //const bool asid_ns       = ptb_data & (1u<<29);
+
+    const uint64_t asid_pde_base = ((uint64_t)(ptb_data & 0x1FFFFF)) << 12;
+    //printf("!!! Doing translation %" PRIx64", dev=%d, asid=%08" PRIx32", read=%d, write=%d, ns=%d, pde_base=%p\n", (uint64_t)addr, (int)dev, ctx->asid, asid_readable, asid_writable, asid_ns, (void*)asid_pde_base);
+    //printf("l0=%zu, l1=%zu, l2=%zu", l0_index, l1_index, l2_index);
+
+    IOMMUTLBEntry entry = {
+        .target_as = &address_space_memory,
+        .iova = addr,
+        .translated_addr = 0,
+        //.addr_mask = BIT_ULL(granule) - 1,
+        .perm = IOMMU_NONE,
+    };
+
+    if (!asid_pde_base)
+        return entry;
+
+    uint32_t l1_value;
+    if (dma_memory_read(&address_space_memory, asid_pde_base + l1_index * sizeof(uint32_t), &l1_value, sizeof(l1_value), MEMTXATTRS_UNSPECIFIED) != MEMTX_OK)
+        return entry;
+    //printf("!!!     l1=%08"PRIx32"\n", l1_value);
+
+    const bool l1_readable = l1_value & (1u<<31);
+    const bool l1_writable = l1_value & (1u<<30);
+    //const bool l1_ns       = l1_value & (1u<<29);
+    const bool l1_table    = l1_value & (1u<<28);
+    if (!(l1_readable || l1_writable))
+        return entry;
+
+    if (l1_table) {
+        const uint64_t l1_pde_base = ((uint64_t)(l1_value & 0x1FFFFF)) << 12;
+
+        if (!l1_pde_base)
+            return entry;
+
+        uint32_t l2_value;
+        if (dma_memory_read(&address_space_memory, l1_pde_base + l2_index * sizeof(uint32_t), &l2_value, sizeof(l2_value), MEMTXATTRS_UNSPECIFIED) != MEMTX_OK)
+            return entry;
+        //printf("!!!     l2=%08"PRIx32"\n", l1_value);
+
+        const bool l2_readable = l2_value & (1u<<31);
+        const bool l2_writable = l2_value & (1u<<30);
+        //const bool l2_ns       = l2_value & (1u<<29);
+        if (!(l2_readable || l2_writable))
+            return entry;
+
+        entry.translated_addr = (addr & 0xFFF) | (((uint64_t)(l2_value & 0x1FFFFF)) << 12);
+        entry.addr_mask = 0xFFF;
+
+        if (l2_readable) entry.perm |= IOMMU_RO;
+        if (l2_writable) entry.perm |= IOMMU_WO;
+
+    } else {
+        entry.translated_addr = (addr & 0x003FFFFF) | ((((uint64_t)(l1_value & 0x1FFFFF)) << 12) & 0xFFC00000);
+        entry.addr_mask = 0x003FFFFF;
+        if (l1_readable) entry.perm |= IOMMU_RO;
+        if (l1_writable) entry.perm |= IOMMU_WO;
+    }
+
+    //if (dev == TegraIommuDeviceName_Ape) {
+    //    printf("APE: Translated %p -> %p\n", (void *)addr, (void *)entry.translated_addr);
+    //}
+
+    return entry;
+}
+
+static IOMMUTLBEntry tegra_mc_iommu_translate(IOMMUMemoryRegion *mr, hwaddr addr,
+                                            IOMMUAccessFlags flag,
+                                            int iommu_idx)
+{
+    TegraIommuMemoryRegion *tmr = (TegraIommuMemoryRegion*)mr;
+    return tegra_mc_iommu_translate_for_device(tmr->dev, addr);
+}
+
+static int tegra_mc_iommu_attrs_to_index(IOMMUMemoryRegion *, MemTxAttrs) {
+    return 0;
+}
+
+AddressSpace *tegra_mc_get_iommu_address_space(TegraIommuDeviceName dev, MemoryRegion *target_mr) {
+    if (g_tegra_iommu_contexts[dev] != NULL)
+        return &g_tegra_iommu_contexts[dev]->as;
+
+    printf("Creating iommu address space, dev=%d\n", (int)dev);
+
+    char *as_name = g_strdup_printf("tegra.mc.iommu-as-%d", (int)dev);
+    char *mr_name = g_strdup_printf("tegra.mc.iommu-mr-%d", (int)dev);
+    g_tegra_iommu_contexts[dev] = g_new0(TegraIommuContext, 1);
+
+    memory_region_init(&g_tegra_iommu_contexts[dev]->root_mr, NULL, mr_name, UINT64_MAX);
+    address_space_init(&g_tegra_iommu_contexts[dev]->as, &g_tegra_iommu_contexts[dev]->root_mr, as_name);
+
+    if (target_mr)
+        memory_region_init_alias(&g_tegra_iommu_contexts[dev]->bypass_mr, NULL, "target", target_mr, 0, memory_region_size(target_mr));
+    else
+        memory_region_init_alias(&g_tegra_iommu_contexts[dev]->bypass_mr, NULL, "target", get_system_memory(), 0, memory_region_size(get_system_memory()));
+
+    memory_region_init_iommu(&g_tegra_iommu_contexts[dev]->iommu_mr, sizeof(g_tegra_iommu_contexts[dev]->iommu_mr), TYPE_TEGRA_MC_IOMMU_MEMORY_REGION, NULL, mr_name, UINT64_MAX);
+
+    g_tegra_iommu_contexts[dev]->iommu_mr.dev  = dev;
+    g_tegra_iommu_contexts[dev]->asid = 0;
+
+    switch (dev) {
+        case TegraIommuDeviceName_Ape:
+        case TegraIommuDeviceName_Se:
+        case TegraIommuDeviceName_Se1:
+            // TODO: How to flag this as dram-start?
+            memory_region_init_iommu(&g_tegra_iommu_contexts[dev]->iommu_mr, sizeof(g_tegra_iommu_contexts[dev]->iommu_mr), TYPE_TEGRA_MC_IOMMU_MEMORY_REGION, NULL, mr_name, UINT64_MAX - 0x80000000);
+            memory_region_add_subregion_overlap(&g_tegra_iommu_contexts[dev]->root_mr, 0x80000000, MEMORY_REGION(&g_tegra_iommu_contexts[dev]->iommu_mr), 1);
+            break;
+        default:
+            memory_region_init_iommu(&g_tegra_iommu_contexts[dev]->iommu_mr, sizeof(g_tegra_iommu_contexts[dev]->iommu_mr), TYPE_TEGRA_MC_IOMMU_MEMORY_REGION, NULL, mr_name, UINT64_MAX);
+            memory_region_add_subregion_overlap(&g_tegra_iommu_contexts[dev]->root_mr, 0, MEMORY_REGION(&g_tegra_iommu_contexts[dev]->iommu_mr), 1);
+            break;
+    }
+
+    memory_region_add_subregion_overlap(&g_tegra_iommu_contexts[dev]->root_mr, 0, MEMORY_REGION(&g_tegra_iommu_contexts[dev]->bypass_mr), 0);
+
+    tegra_mc_set_iommu_enabled(dev);
+
+    g_free(as_name);
+    g_free(mr_name);
+
+    return &g_tegra_iommu_contexts[dev]->as;
+}
+
 static const MemoryRegionOps tegra_mc_mem_ops = {
     .read = tegra_mc_priv_read,
     .write = tegra_mc_priv_write,
@@ -1678,6 +1945,7 @@ static void tegra_mc_priv_realize(DeviceState *dev, Error **errp)
 }
 
 static Property tegra_mc_properties[] = {
+    DEFINE_PROP_BOOL("is_smmu_mc", tegra_mc, is_smmu_mc, false), \
     DEFINE_PROP_UINT32("ram_size_kb", tegra_mc, ram_size_kb, EMEM_CFG_TEGRAX1_RESET*SZ_1K), \
     DEFINE_PROP_END_OF_LIST(),
 };
@@ -1692,6 +1960,14 @@ static void tegra_mc_class_init(ObjectClass *klass, void *data)
     device_class_set_legacy_reset(dc, tegra_mc_priv_reset);
 }
 
+static void tegra_mc_iommu_memory_region_class_init(ObjectClass *klass, void *data)
+{
+    IOMMUMemoryRegionClass *imrc = IOMMU_MEMORY_REGION_CLASS(klass);
+
+    imrc->translate = tegra_mc_iommu_translate;
+    imrc->attrs_to_index = tegra_mc_iommu_attrs_to_index;
+}
+
 static const TypeInfo tegra_mc_info = {
     .name = TYPE_TEGRA_MC,
     .parent = TYPE_SYS_BUS_DEVICE,
@@ -1699,9 +1975,16 @@ static const TypeInfo tegra_mc_info = {
     .class_init = tegra_mc_class_init,
 };
 
+static const TypeInfo tegra_mc_iommu_memory_region_info = {
+    .name = TYPE_TEGRA_MC_IOMMU_MEMORY_REGION,
+    .parent = TYPE_IOMMU_MEMORY_REGION,
+    .class_init = tegra_mc_iommu_memory_region_class_init,
+};
+
 static void tegra_mc_register_types(void)
 {
     type_register_static(&tegra_mc_info);
+    type_register_static(&tegra_mc_iommu_memory_region_info);
 }
 
 type_init(tegra_mc_register_types)

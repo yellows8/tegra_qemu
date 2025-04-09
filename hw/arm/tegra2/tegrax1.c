@@ -61,6 +61,7 @@
 #include "ppsb/evp/evp.h"
 #include "apb/fuse/fuse.h"
 #include "apb/i2c/i2c.h"
+#include "axi/mc/mc.h"
 #include "dummyi2c/dummyi2c.h"
 #include "dummyio/dummyio.h"
 
@@ -527,6 +528,7 @@ static void* tegra_init_sdmmc(int index, hwaddr base, qemu_irq irq, bool emmc, u
 
     void* tmpdev = qdev_new(TYPE_SYSBUS_SDHCI);
     qdev_prop_set_uint32(tmpdev, "capareg", 0x376c0c8c); // Value from hardware is 0x376cd08c. Workaround qemu BASECLKFREQ validation.
+    qdev_prop_set_uint32(tmpdev, "dma_dev", TegraIommuDeviceName_Sdmmc1a + index);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(tmpdev), &error_fatal);
 
     //sysbus_mmio_map(SYS_BUS_DEVICE(tmpdev), 0, base);
@@ -617,7 +619,7 @@ static void __tegrax1_init(MachineState *machine)
     SysBusDevice *irq_dispatcher, *lic;
     SysBusDevice *s = NULL;
     DeviceState *cpudev;
-    //CPUState *cs;
+    CPUState *cs;
     int i, j;
 
     memory_region_init(cop_sysmem, NULL, "tegra.cop-memory", UINT64_MAX);
@@ -671,6 +673,23 @@ static void __tegrax1_init(MachineState *machine)
 
     memory_region_add_and_init_ram(sysmem, "tegra.ahb_a2_upper",
                                    0x7d005800, 0x7e000000-0x7d005800, RW);
+
+    /* Memory controller */
+    tegra_mc_dev = qdev_new("tegra.mc");
+    qdev_prop_set_uint32(tegra_mc_dev, "ram_size_kb", machine->ram_size / SZ_1K);
+    qdev_prop_set_bit(tegra_mc_dev, "is_smmu_mc", true);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_mc_dev), &error_fatal);
+    //sysbus_mmio_map(SYS_BUS_DEVICE(tegra_mc_dev), 0, TEGRA_MC_BASE);
+
+    tegra_mc0_dev = qdev_new("tegra.mc");
+    qdev_prop_set_uint32(tegra_mc0_dev, "ram_size_kb", machine->ram_size / SZ_1K);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_mc0_dev), &error_fatal);
+    //sysbus_mmio_map(SYS_BUS_DEVICE(tegra_mc0_dev), 0, TEGRA_MC0_BASE);
+
+    tegra_mc1_dev = qdev_new("tegra.mc");
+    qdev_prop_set_uint32(tegra_mc1_dev, "ram_size_kb", machine->ram_size / SZ_1K);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_mc1_dev), &error_fatal);
+    //sysbus_mmio_map(SYS_BUS_DEVICE(tegra_mc1_dev), 0, TEGRA_MC1_BASE);
 
     /* Create the actual CPUs */
     tegrax1_create_cpus(cop_sysmem, ape_sysmem);
@@ -806,22 +825,6 @@ static void __tegrax1_init(MachineState *machine)
     tegra_emc_dev = tegra_init_obj_simple(TEGRA_EMC_BASE, NULL, "tegra.emc", true);
     tegra_emc0_dev = tegra_init_obj_simple(TEGRA_EMC0_BASE, NULL, "tegra.emc", true);
     tegra_emc1_dev = tegra_init_obj_simple(TEGRA_EMC1_BASE, NULL, "tegra.emc", true);
-
-    /* Memory controller */
-    tegra_mc_dev = qdev_new("tegra.mc");
-    qdev_prop_set_uint32(tegra_mc_dev, "ram_size_kb", machine->ram_size / SZ_1K);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_mc_dev), &error_fatal);
-    //sysbus_mmio_map(SYS_BUS_DEVICE(tegra_mc_dev), 0, TEGRA_MC_BASE);
-
-    tegra_mc0_dev = qdev_new("tegra.mc");
-    qdev_prop_set_uint32(tegra_mc0_dev, "ram_size_kb", machine->ram_size / SZ_1K);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_mc0_dev), &error_fatal);
-    //sysbus_mmio_map(SYS_BUS_DEVICE(tegra_mc0_dev), 0, TEGRA_MC0_BASE);
-
-    tegra_mc1_dev = qdev_new("tegra.mc");
-    qdev_prop_set_uint32(tegra_mc1_dev, "ram_size_kb", machine->ram_size / SZ_1K);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(tegra_mc1_dev), &error_fatal);
-    //sysbus_mmio_map(SYS_BUS_DEVICE(tegra_mc1_dev), 0, TEGRA_MC1_BASE);
 
     /* PCIE */
     tegra_pcie_dev = tegra_init_dummyio(IO_PCIE_PHYS, SZ_256K, "tegra.pcie", false);
@@ -1321,6 +1324,9 @@ static void __tegrax1_init(MachineState *machine)
     tegra_dca_dev = sysbus_create_simple("tegra.dc", TEGRA_DISPLAY_BASE,
                                          DIRQ(INT_DISPLAY_GENERAL));
 
+    /* TODO: Set this somewhere? */
+    tegra_mc_get_iommu_address_space(TegraIommuDeviceName_Dc, NULL);
+
     tegra_dcb_dev = qdev_new("tegra.dc");
     s = SYS_BUS_DEVICE(tegra_dcb_dev);
     qdev_prop_set_uint8(DEVICE(tegra_dcb_dev), "class_id", 0x71);
@@ -1697,8 +1703,9 @@ static void __tegrax1_init(MachineState *machine)
     /*s = SYS_BUS_DEVICE(&a9mpcore->wdt);
     sysbus_connect_irq(s, 6 + TEGRA_ADSP, qdev_get_gpio_in(DEVICE(gicbusdev_ape), 79-32));*/
 
-    //cs = qemu_get_cpu(TEGRA_ADSP);
-    //cs->as = ape_as;
+    cs = qemu_get_cpu(TEGRA_ADSP);
+    cs->as = tegra_mc_get_iommu_address_space(TegraIommuDeviceName_Ape, ape_sysmem);
+    cs->cpu_ases[0].as = cs->as;
 
     /* Override default AS.  */
     /*memory_listener_unregister(&cs->cpu_ases[0].tcg_as_listener);

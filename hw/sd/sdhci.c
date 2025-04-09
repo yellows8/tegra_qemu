@@ -1553,6 +1553,8 @@ static Property sdhci_sysbus_properties[] = {
                      false),
     DEFINE_PROP_LINK("dma", SDHCIState,
                      dma_mr, TYPE_MEMORY_REGION, MemoryRegion *),
+    DEFINE_PROP_UINT32("dma_dev", SDHCIState,
+                     dma_dev, 0),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -1574,6 +1576,8 @@ static void sdhci_sysbus_finalize(Object *obj)
     sdhci_uninitfn(s);
 }
 
+AddressSpace *tegra_mc_get_iommu_address_space(int dev, MemoryRegion *target_mr);
+
 static void sdhci_sysbus_realize(DeviceState *dev, Error **errp)
 {
     ERRP_GUARD();
@@ -1585,7 +1589,9 @@ static void sdhci_sysbus_realize(DeviceState *dev, Error **errp)
         return;
     }
 
-    if (s->dma_mr) {
+    if (s->dma_dev) {
+        s->dma_as = tegra_mc_get_iommu_address_space((int)s->dma_dev, NULL);
+    } else if (s->dma_mr) {
         s->dma_as = &s->sysbus_dma_as;
         address_space_init(s->dma_as, s->dma_mr, "sdhci-dma");
     } else {
@@ -1604,7 +1610,7 @@ static void sdhci_sysbus_unrealize(DeviceState *dev)
 
     sdhci_common_unrealize(s);
 
-     if (s->dma_mr) {
+     if (!s->dma_dev && s->dma_mr) {
         address_space_destroy(s->dma_as);
     }
 }

@@ -42,6 +42,7 @@ struct SDHCIState {
     SDBus sdbus;
     MemoryRegion iomem;
     AddressSpace sysbus_dma_as;
+    uint32_t dma_dev;
     AddressSpace *dma_as;
     MemoryRegion *dma_mr;
     const MemoryRegionOps *io_ops;

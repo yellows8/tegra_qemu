@@ -30,6 +30,7 @@
 #include "window.h"
 
 #include "host1x_priv.h"
+#include "../../../../axi/mc/mc.h"
 
 #define OFFSET_IN_RANGE(offset, handler)                    \
     ((handler.begin <= offset) && (offset <= handler.end))
@@ -211,7 +212,14 @@ static void update_window_surface(display_window *win)
 
     if (tegra_dc_to_pixman(win->regs_active.win_color_depth.color_depth) == -1) return;
 
-    starting_address += win->regs_active.winbuf_start_addr.reg32;
+    //printf("Translating...\n");
+    IOMMUTLBEntry entry = tegra_mc_iommu_translate_for_device(TegraIommuDeviceName_Dc, win->regs_active.winbuf_start_addr.reg32);
+    //printf("Translated %p -> %p\n", (void *)(uintptr_t)win->regs_active.winbuf_start_addr.reg32, (void *)entry.translated_addr);
+
+    if (entry.translated_addr)
+        starting_address = entry.translated_addr;
+    else
+        starting_address = win->regs_active.winbuf_start_addr.reg32;
 
 //     starting_address += win->regs_active.win_buf_stride.reg32 * buf_index;
 

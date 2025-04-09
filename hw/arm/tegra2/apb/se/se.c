@@ -54,6 +54,7 @@
 
 #include "../apb/pmc/pmc.h"
 #include "../ppsb/apb_misc/apb_misc.h"
+#include "../../axi/mc/mc.h"
 
 #define TYPE_TEGRA_SE "tegra.se"
 #define TEGRA_SE(obj) OBJECT_CHECK(tegra_se, (obj), TYPE_TEGRA_SE)
@@ -82,6 +83,8 @@ typedef struct {
 
 typedef struct tegra_se_state {
     SysBusDevice parent_obj;
+
+    AddressSpace *dma_as;
 
     qemu_irq irq;
     MemoryRegion iomem;
@@ -700,11 +703,11 @@ int tegra_se_crypto_operation(void *opaque, void* key, void* iv, QCryptoCipherAl
     QCryptoCipher *cipher = qcrypto_cipher_ctx_new(cipher_alg, mode, key, qcrypto_cipher_get_key_len(cipher_alg), &err);
 
     if (!inbuf_host)
-        databuf_in = dma_memory_map(&address_space_memory, inbuf, &tmplen_in, DMA_DIRECTION_TO_DEVICE, tegra_se_get_memattrs(s));
+        databuf_in = dma_memory_map(s->dma_as, inbuf, &tmplen_in, DMA_DIRECTION_TO_DEVICE, tegra_se_get_memattrs(s));
     else
         databuf_in = (void*)inbuf;
     if (!outbuf_host)
-        databuf_out = dma_memory_map(&address_space_memory, outbuf, &tmplen_out, DMA_DIRECTION_FROM_DEVICE, tegra_se_get_memattrs(s));
+        databuf_out = dma_memory_map(s->dma_as, outbuf, &tmplen_out, DMA_DIRECTION_FROM_DEVICE, tegra_se_get_memattrs(s));
     else
         databuf_out = (void*)outbuf;
 
@@ -734,8 +737,8 @@ int tegra_se_crypto_operation(void *opaque, void* key, void* iv, QCryptoCipherAl
     }
     else tmpret = -1;
 
-    if (databuf_in && !inbuf_host) dma_memory_unmap(&address_space_memory, databuf_in, databuf_size, DMA_DIRECTION_TO_DEVICE, databuf_size);
-    if (databuf_out && !outbuf_host) dma_memory_unmap(&address_space_memory, databuf_out, databuf_size, DMA_DIRECTION_FROM_DEVICE, datasize);
+    if (databuf_in && !inbuf_host) dma_memory_unmap(s->dma_as, databuf_in, databuf_size, DMA_DIRECTION_TO_DEVICE, databuf_size);
+    if (databuf_out && !outbuf_host) dma_memory_unmap(s->dma_as, databuf_out, databuf_size, DMA_DIRECTION_FROM_DEVICE, datasize);
     if (err) error_report_err(err);
 
     return tmpret;
@@ -782,7 +785,7 @@ static void tegra_se_set_aes_keyslots_lock(Object *obj, Visitor *v, const char *
         s->aes_keyslots_lock[_value] = value;
     }
     else
-        error_setg(errp, "error reading %s '%s': id 0x%" PRIx64 " is too large.", name, keyname, _value);
+        error_setg(errp, "error reading %s '%s': id 0x%" PRIx64 " is too large.", name, keyname, (uint64_t)_value);
 }
 
 static uint32_t tegra_se_get_aes_keyslot_access(tegra_se *s, uint32_t slot)
@@ -961,7 +964,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
     uint32_t cfg_dst = (s->regs.SE_CONFIG >> 2) & 0x7;
 
     if (offset == SE_OPERATION_OFFSET || (offset == SE_RSA_KEYTABLE_ADDR_OFFSET && cfg_dst==0)) {
-        dma_memory_read(&address_space_memory, s->regs.SE_IN_LL_ADDR, &in_entry, sizeof(in_entry), tegra_se_get_memattrs(s));
+        dma_memory_read(s->dma_as, s->regs.SE_IN_LL_ADDR, &in_entry, sizeof(in_entry), tegra_se_get_memattrs(s));
     }
 
     switch (offset) {
@@ -1049,9 +1052,9 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                     break;
                 }
 
-                if (op==1 || (ctxsave && ctxsave_src==4)) databuf_in = dma_memory_map(&address_space_memory, in_entry.address, &tmplen_in, DMA_DIRECTION_TO_DEVICE, tegra_se_get_memattrs(s));
+                if (op==1 || (ctxsave && ctxsave_src==4)) databuf_in = dma_memory_map(s->dma_as, in_entry.address, &tmplen_in, DMA_DIRECTION_TO_DEVICE, tegra_se_get_memattrs(s));
 
-                if (cfg_dst==0) dma_memory_read(&address_space_memory, s->regs.SE_OUT_LL_ADDR, &out_entry, sizeof(out_entry), tegra_se_get_memattrs(s));
+                if (cfg_dst==0) dma_memory_read(s->dma_as, s->regs.SE_OUT_LL_ADDR, &out_entry, sizeof(out_entry), tegra_se_get_memattrs(s));
                 //printf("se in: 0x%x, 0x%x, 0x%x\n", in_entry.zero, in_entry.address, in_entry.size);
                 //printf("se out: 0x%x, 0x%x, 0x%x\n", out_entry.zero, out_entry.address, out_entry.size);
 
@@ -1068,7 +1071,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 
                 if (cfg_dst==0) { // MEMORY
                     databuf_outsize = out_entry.size;
-                    databuf_out = dma_memory_map(&address_space_memory, out_entry.address, &databuf_outsize, DMA_DIRECTION_FROM_DEVICE, tegra_se_get_memattrs(s));
+                    databuf_out = dma_memory_map(s->dma_as, out_entry.address, &databuf_outsize, DMA_DIRECTION_FROM_DEVICE, tegra_se_get_memattrs(s));
                 }
                 else if (cfg_dst==1) { // HASH_REG
                     databuf_out = &s->regs.SE_HASH_RESULT;
@@ -1300,7 +1303,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 
                    if (hash_alg!=QCRYPTO_HASH_ALGO__MAX) {
                        dma_addr_t tmplen = in_entry.size;
-                       void* databuf = dma_memory_map(&address_space_memory, in_entry.address, &tmplen, DMA_DIRECTION_TO_DEVICE, tegra_se_get_memattrs(s));
+                       void* databuf = dma_memory_map(s->dma_as, in_entry.address, &tmplen, DMA_DIRECTION_TO_DEVICE, tegra_se_get_memattrs(s));
 
                        uint8_t *result=NULL;
                        size_t resultlen=0;
@@ -1320,7 +1323,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                                g_free(result);
                            }
                            else datasize = 0;
-                           dma_memory_unmap(&address_space_memory, databuf, datasize, DMA_DIRECTION_TO_DEVICE, datasize);
+                           dma_memory_unmap(s->dma_as, databuf, datasize, DMA_DIRECTION_TO_DEVICE, datasize);
                        }
                        else {
                            qemu_log_mask(LOG_GUEST_ERROR, "tegra.se: Failed to DMA map SE hash data buffer: 0x%x 0x%x.\n", in_entry.address, in_entry.size);
@@ -1332,7 +1335,7 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 
                     datasize = in_entry.size;
                     if (datasize > sizeof(indata)) datasize = sizeof(indata);
-                    dma_memory_read(&address_space_memory, in_entry.address, indata, datasize, tegra_se_get_memattrs(s));
+                    dma_memory_read(s->dma_as, in_entry.address, indata, datasize, tegra_se_get_memattrs(s));
                     if (datasize > databuf_outsize) datasize = databuf_outsize;
 
                     s->regs.SE_INT_STATUS |= 1<<1; // INT_STATUS_IN_DONE
@@ -1379,8 +1382,8 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
                         qcrypto_akcipher_free(akcipher);
                     }
                 }
-                if (databuf_in && !(ctxsave && ctxsave_src!=4)) dma_memory_unmap(&address_space_memory, databuf_in, tmplen_in, DMA_DIRECTION_TO_DEVICE, tmplen_in);
-                if (cfg_dst==0 && databuf_out) dma_memory_unmap(&address_space_memory, databuf_out, databuf_outsize, DMA_DIRECTION_FROM_DEVICE, datasize);
+                if (databuf_in && !(ctxsave && ctxsave_src!=4)) dma_memory_unmap(s->dma_as, databuf_in, tmplen_in, DMA_DIRECTION_TO_DEVICE, tmplen_in);
+                if (cfg_dst==0 && databuf_out) dma_memory_unmap(s->dma_as, databuf_out, databuf_outsize, DMA_DIRECTION_FROM_DEVICE, datasize);
                 if (err) error_report_err(err);
             }
         break;
@@ -1404,8 +1407,8 @@ static void tegra_se_priv_write(void *opaque, hwaddr offset,
 
                 uint32_t rsa_tableoffset = s->regs.SE_RSA_KEYTABLE_ADDR & 0xff;
                 memset(&s->rsa_keytable[rsa_tableoffset], 0, 0x200);
-                dma_memory_read(&address_space_memory, in_entry.address, &s->rsa_keytable[rsa_tableoffset + 0x40], n_size, tegra_se_get_memattrs(s));
-                dma_memory_read(&address_space_memory, in_entry.address + 0x100, &s->rsa_keytable[rsa_tableoffset], e_size, tegra_se_get_memattrs(s));
+                dma_memory_read(s->dma_as, in_entry.address, &s->rsa_keytable[rsa_tableoffset + 0x40], n_size, tegra_se_get_memattrs(s));
+                dma_memory_read(s->dma_as, in_entry.address + 0x100, &s->rsa_keytable[rsa_tableoffset], e_size, tegra_se_get_memattrs(s));
             }
         break;
 
@@ -1577,6 +1580,10 @@ static void tegra_se_priv_realize(DeviceState *dev, Error **errp)
         memory_region_init_io(&s->iomem_pka, OBJECT(dev), &tegra_pka_mem_ops, s,
                               "tegra.pka", TEGRA_PKA1_SIZE);
         sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem_pka);
+
+        s->dma_as = tegra_mc_get_iommu_address_space(TegraIommuDeviceName_Se1, NULL);
+    } else {
+        s->dma_as = tegra_mc_get_iommu_address_space(TegraIommuDeviceName_Se, NULL);
     }
 
     memset(&s->regs, 0, sizeof(s->regs));

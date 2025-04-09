@@ -1807,4 +1807,63 @@ typedef union client_activity_monitor_emem_1_u {
 
 #define CLIENT_HOTRESET_STATUS_1_OFFSET 0x974
 
+typedef enum {
+    TegraIommuDeviceName_Afi        = 0,
+    TegraIommuDeviceName_Avpc       = 1,
+    TegraIommuDeviceName_Dc         = 2,
+    TegraIommuDeviceName_Dcb        = 3,
+    TegraIommuDeviceName_Hc         = 4,
+    TegraIommuDeviceName_Hda        = 5,
+    TegraIommuDeviceName_Isp2       = 6,
+    TegraIommuDeviceName_MsencNvenc = 7,
+    TegraIommuDeviceName_Nv         = 8,
+    TegraIommuDeviceName_Nv2        = 9,
+    TegraIommuDeviceName_Ppcs       = 10,
+    TegraIommuDeviceName_Sata       = 11,
+    TegraIommuDeviceName_Vi         = 12,
+    TegraIommuDeviceName_Vic        = 13,
+    TegraIommuDeviceName_XusbHost   = 14,
+    TegraIommuDeviceName_XusbDev    = 15,
+    TegraIommuDeviceName_Tsec       = 16,
+    TegraIommuDeviceName_Ppcs1      = 17,
+    TegraIommuDeviceName_Dc1        = 18,
+    TegraIommuDeviceName_Sdmmc1a    = 19,
+    TegraIommuDeviceName_Sdmmc2a    = 20,
+    TegraIommuDeviceName_Sdmmc3a    = 21,
+    TegraIommuDeviceName_Sdmmc4a    = 22,
+    TegraIommuDeviceName_Isp2b      = 23,
+    TegraIommuDeviceName_Gpu        = 24,
+    TegraIommuDeviceName_Gpub       = 25,
+    TegraIommuDeviceName_Ppcs2      = 26,
+    TegraIommuDeviceName_Nvdec      = 27,
+    TegraIommuDeviceName_Ape        = 28,
+    TegraIommuDeviceName_Se         = 29,
+    TegraIommuDeviceName_Nvjpg      = 30,
+    TegraIommuDeviceName_Hc1        = 31,
+    TegraIommuDeviceName_Se1        = 32,
+    TegraIommuDeviceName_Axiap      = 33,
+    TegraIommuDeviceName_Etr        = 34,
+    TegraIommuDeviceName_Tsecb      = 35,
+    TegraIommuDeviceName_Tsec1      = 36,
+    TegraIommuDeviceName_Tsecb1     = 37,
+    TegraIommuDeviceName_Nvdec1     = 38,
+
+    TegraIommuDeviceName_Count,
+} TegraIommuDeviceName;
+
+#define PTB_ASID_OFFSET 0x01C
+#define PTB_DATA_OFFSET 0x020
+#define SMMU_DC_ASID_OFFSET      0x240
+#define SMMU_SDMMC1A_ASID_OFFSET 0xA94
+#define SMMU_SDMMC2A_ASID_OFFSET 0xA98
+#define SMMU_SDMMC3A_ASID_OFFSET 0xA9C
+#define SMMU_SDMMC4A_ASID_OFFSET 0xAA0
+#define SMMU_APE_ASID_OFFSET 0xAB8
+#define SMMU_SE_ASID_OFFSET 0xABC
+#define SMMU_SE1_ASID_OFFSET 0xAC8
+
+AddressSpace *tegra_mc_get_iommu_address_space(TegraIommuDeviceName dev, MemoryRegion *target_mr);
+
+IOMMUTLBEntry tegra_mc_iommu_translate_for_device(TegraIommuDeviceName dev, hwaddr addr);
+
 #endif // TEGRA_MC_H
